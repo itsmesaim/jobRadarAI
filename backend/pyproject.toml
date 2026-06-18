@@ -1,0 +1,25 @@
+[project]
+name = "jobradar-backend"
+version = "0.1.0"
+description = "JobRadar AI — backend API"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.6",
+    "uvicorn[standard]>=0.34.0",
+    "motor>=3.6.0",
+    "pydantic>=2.10.4",
+    "pydantic-settings>=2.7.1",
+    "python-dotenv>=1.0.1",
+    "bcrypt>=4.2.1",
+    "pyjwt>=2.10.1",
+    "email-validator>=2.2.0",
+    "python-multipart>=0.0.20",
+]
+
+[tool.uv]
+# dev-only tools (optional, install with: uv sync --extra dev)
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.8.0",
+]

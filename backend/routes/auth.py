@@ -1,0 +1,65 @@
+"""
+Auth routes: /auth/register, /auth/login, /auth/me
+
+register & login both return a JWT so the frontend can store it and
+immediately start making authenticated calls.
+"""
+
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from core.security import create_access_token, hash_password, verify_password
+from database import get_database
+from deps import get_current_user
+from models.user import Token, UserLogin, UserPublic, UserRegister
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
+async def register(payload: UserRegister):
+    db = get_database()
+
+    existing = await db.users.find_one({"email": payload.email.lower()})
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        )
+
+    doc = {
+        "name": payload.name,
+        "email": payload.email.lower(),
+        "password_hash": hash_password(payload.password),
+        "created_at": datetime.now(timezone.utc),
+    }
+    result = await db.users.insert_one(doc)
+
+    token = create_access_token(str(result.inserted_id))
+    return Token(access_token=token)
+
+
+@router.post("/login", response_model=Token)
+async def login(payload: UserLogin):
+    db = get_database()
+
+    user = await db.users.find_one({"email": payload.email.lower()})
+    if not user or not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+
+    token = create_access_token(str(user["_id"]))
+    return Token(access_token=token)
+
+
+@router.get("/me", response_model=UserPublic)
+async def me(user=Depends(get_current_user)):
+    return UserPublic(
+        id=str(user["_id"]),
+        name=user["name"],
+        email=user["email"],
+        created_at=user["created_at"],
+    )
