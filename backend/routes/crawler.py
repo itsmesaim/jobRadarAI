@@ -16,7 +16,7 @@ from services.crawler import crawl_jobs_for_user
 
 router = APIRouter(prefix="/crawler", tags=["crawler"])
 
-MANUAL_DAILY_LIMIT = 3
+MANUAL_DAILY_LIMIT = 20
 
 
 @router.post("/search")
@@ -29,6 +29,10 @@ async def manual_search(user=Depends(get_current_user)):
     )
     manual_today = user.get("manual_crawl_count_today", 0)
     last_reset = user.get("manual_crawl_reset", None)
+
+    # normalize: MongoDB returns naive datetimes, make timezone-aware for comparison
+    if last_reset is not None and last_reset.tzinfo is None:
+        last_reset = last_reset.replace(tzinfo=timezone.utc)
 
     # reset count if it's a new day
     if last_reset is None or last_reset < today_start:
@@ -68,7 +72,6 @@ async def manual_search(user=Depends(get_current_user)):
         "skipped": result["skipped"],
         "manual_searches_remaining": MANUAL_DAILY_LIMIT - manual_today - 1,
     }
-
 
 @router.get("/status")
 async def crawl_status(user=Depends(get_current_user)):

@@ -41,5 +41,10 @@ class Settings(BaseSettings):
     tavily_api_key: str = ""
     pinecone_api_key: str = ""
 
+    langsmith_tracing: bool = False
+    langsmith_endpoint: str = ""
+    langsmith_api_key: str = ""
+    langsmith_project: str = "My first app"
+
 
 settings = Settings()

@@ -20,6 +20,7 @@ dependencies = [
     "langchain-openai>=1.3.2",
     "tavily-python>=0.7.26",
     "apscheduler>=3.11.2",
+    "langsmith>=0.8.16",
 ]
 
 [tool.uv]

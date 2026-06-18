@@ -9,10 +9,21 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
+from dotenv import load_dotenv
+load_dotenv()
+
+import os
 from config import settings
+# if settings.langsmith_tracing:
+#     os.environ["LANGCHAIN_TRACING_V2"] = "true"
+#     os.environ["LANGCHAIN_ENDPOINT"] = settings.langsmith_endpoint
+#     os.environ["LANGCHAIN_API_KEY"] = settings.langsmith_api_key
+#     os.environ["LANGCHAIN_PROJECT"] = settings.langsmith_project
+
 from database import close_mongo_connection, connect_to_mongo, get_database
-from routes import auth, cv , crawler
+from routes import auth, cv , crawler , jobs , users
 
 
 @asynccontextmanager
@@ -40,6 +51,8 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(cv.router)
 app.include_router(crawler.router)
+app.include_router(jobs.router)
+app.include_router(users.router)
 
 
 @app.get("/", tags=["health"])

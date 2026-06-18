@@ -14,6 +14,7 @@ import re
 
 import fitz  # PyMuPDF
 from langchain_core.messages import HumanMessage, SystemMessage
+from langsmith import traceable
 
 from services.llm import get_llm
 
@@ -81,7 +82,7 @@ Rules:
 - Keep bullet points concise and exactly as written in the CV.
 """.strip()
 
-
+@traceable(name="parse_cv_with_llm", run_type="llm")
 async def parse_cv_with_llm(raw_text: str) -> dict:
     llm = get_llm()
 
