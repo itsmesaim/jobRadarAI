@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from database import close_mongo_connection, connect_to_mongo, get_database
-from routes import auth, cv
+from routes import auth, cv , crawler
 
 
 @asynccontextmanager
@@ -39,6 +39,7 @@ app.add_middleware(
 # ── routers ──
 app.include_router(auth.router)
 app.include_router(cv.router)
+app.include_router(crawler.router)
 
 
 @app.get("/", tags=["health"])
