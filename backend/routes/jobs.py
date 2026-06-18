@@ -1,11 +1,12 @@
 """
 Jobs routes.
 
-GET  /jobs           — list all jobs with user's rating
-GET  /jobs/{id}      — single job detail
-POST /jobs/rate-all  — trigger rating for all unrated jobs
-POST /jobs/manual    — paste a JD manually and rate it instantly
-PATCH /jobs/{id}/status — update kanban status
+GET   /jobs              — list all jobs with user's rating
+GET   /jobs/{id}/brief   — export job brief
+PATCH /jobs/{id}/status  — update kanban status
+GET   /jobs/{id}         — single job detail
+POST  /jobs/rate-all     — trigger rating for all unrated jobs
+POST  /jobs/manual       — paste a JD manually and rate it instantly
 """
 
 import hashlib
@@ -17,7 +18,11 @@ from pydantic import BaseModel
 
 from database import get_database
 from deps import get_current_user
-from services.rating import rate_all_jobs_for_user, rate_job_for_user
+from services.rating import (
+    generate_job_brief,
+    rate_all_jobs_for_user,
+    rate_job_for_user,
+)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -62,42 +67,62 @@ def _format_job(job: dict, user_id: str) -> dict:
     }
 
 
+# ── LIST ─────────────────────────────────────────────────
 @router.get("")
-async def list_jobs(user=Depends(get_current_user)):
+async def list_jobs(
+    user=Depends(get_current_user),
+    score_min: int = 0,
+    score_max: int = 10,
+    status: str = None,
+    source: str = None,
+    page: int = 1,
+    limit: int = 20,
+):
     db = get_database()
     user_id = str(user["_id"])
-    jobs = await db.jobs.find().sort("crawled_at", -1).to_list(length=100)
-    return [_format_job(j, user_id) for j in jobs]
+
+    skip = (page - 1) * limit
+    all_jobs = (
+        await db.jobs.find()
+        .sort("crawled_at", -1)
+        .skip(skip)
+        .limit(limit * 3)
+        .to_list(length=limit * 3)
+    )
+
+    results = []
+    for job in all_jobs:
+        formatted = _format_job(job, user_id)
+        score = formatted.get("score")
+        if score is not None:
+            if score < score_min or score > score_max:
+                continue
+        if status and formatted.get("status") != status:
+            continue
+        if source and job.get("source") != source:
+            continue
+        results.append(formatted)
+        if len(results) >= limit:
+            break
+
+    total = await db.jobs.count_documents({})
+    return {
+        "jobs": results,
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "pages": (total + limit - 1) // limit,
+    }
 
 
-@router.get("/{job_id}")
-async def get_job(job_id: str, user=Depends(get_current_user)):
-    db = get_database()
-    user_id = str(user["_id"])
-
-    try:
-        job = await db.jobs.find_one({"_id": ObjectId(job_id)})
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid job ID."
-        )
-
-    if not job:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Job not found."
-        )
-
-    result = _format_job(job, user_id)
-    result["full_text"] = job.get("full_text", "")[:3000]
-    return result
-
-
+# ── RATE ALL ─────────────────────────────────────────────
 @router.post("/rate-all")
 async def rate_all(background_tasks: BackgroundTasks, user=Depends(get_current_user)):
     background_tasks.add_task(rate_all_jobs_for_user, user)
     return {"message": "Rating started in background. Check /jobs in 2-3 minutes."}
 
 
+# ── MANUAL JD ────────────────────────────────────────────
 @router.post("/manual")
 async def add_manual_jd(payload: ManualJD, user=Depends(get_current_user)):
     db = get_database()
@@ -126,7 +151,6 @@ async def add_manual_jd(payload: ManualJD, user=Depends(get_current_user)):
     result = await db.jobs.insert_one(doc)
     job_doc = await db.jobs.find_one({"_id": result.inserted_id})
 
-    # rate immediately — user is waiting
     rating = await rate_job_for_user(job_doc, user)
     rating["rated_at"] = datetime.now(timezone.utc)
 
@@ -144,6 +168,31 @@ async def add_manual_jd(payload: ManualJD, user=Depends(get_current_user)):
     }
 
 
+# ── BRIEF — must be before /{job_id} ─────────────────────
+@router.get("/{job_id}/brief")
+async def get_job_brief(job_id: str, user=Depends(get_current_user)):
+    db = get_database()
+    user_id = str(user["_id"])
+
+    try:
+        job = await db.jobs.find_one({"_id": ObjectId(job_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid job ID.")
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    rating = job.get("ratings", {}).get(user_id, {})
+    if not rating:
+        raise HTTPException(
+            status_code=400, detail="Job not rated yet. Run /jobs/rate-all first."
+        )
+
+    brief = await generate_job_brief(job, user, rating)
+    return {"brief": brief}
+
+
+# ── STATUS — must be before /{job_id} ────────────────────
 @router.patch("/{job_id}/status")
 async def update_status(
     job_id: str, payload: StatusUpdate, user=Depends(get_current_user)
@@ -160,3 +209,22 @@ async def update_status(
         {"_id": ObjectId(job_id)}, {"$set": {f"status_{user_id}": payload.status}}
     )
     return {"message": "Status updated.", "status": payload.status}
+
+
+# ── SINGLE JOB — must be last ────────────────────────────
+@router.get("/{job_id}")
+async def get_job(job_id: str, user=Depends(get_current_user)):
+    db = get_database()
+    user_id = str(user["_id"])
+
+    try:
+        job = await db.jobs.find_one({"_id": ObjectId(job_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid job ID.")
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    result = _format_job(job, user_id)
+    result["full_text"] = job.get("full_text", "")[:3000]
+    return result

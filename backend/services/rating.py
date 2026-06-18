@@ -45,6 +45,7 @@ appears to be a search results page rather than an actual job posting,
 score 0 and explain why in the verdict.
 """.strip()
 
+
 @traceable(name="rate_job_for_user", run_type="chain")
 async def rate_job_for_user(job: dict, user: dict) -> dict:
     cv = user.get("cv", {})
@@ -99,6 +100,7 @@ Education: {json.dumps(structured.get('education', []))}
             "auto_reject": False,
         }
 
+
 @traceable(name="rate_all_job", run_type="chain")
 async def rate_all_jobs_for_user(user: dict) -> dict:
     db = get_database()
@@ -121,3 +123,43 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
 
     await asyncio.gather(*[rate_and_store(job) for job in jobs])
     return {"rated": len(jobs)}
+
+
+@traceable(name="generate_job_brief", run_type="chain")
+async def generate_job_brief(job: dict, user: dict, rating: dict) -> str:
+    """
+    Generate a structured Job Brief for quick copy before applying.
+    """
+    cv = user.get("cv", {})
+    structured = cv.get("structured", {})
+
+    brief = f"""
+JOB BRIEF
+==============================
+ROLE:       {job.get('title', 'Unknown')}
+URL:        {job.get('url', 'N/A')}
+FIT SCORE:  {rating.get('score', 'N/A')}/10
+
+MATCHED STRENGTHS:
+{chr(10).join(f"  • {s}" for s in rating.get('matched_strengths', []))}
+
+GAPS TO ADDRESS:
+{chr(10).join(f"  • {g}" for g in rating.get('gaps', []))}
+
+VERDICT:
+  {rating.get('verdict', '')}
+
+CANDIDATE PROFILE:
+  Name:       {structured.get('name', '')}
+  Summary:    {structured.get('summary', '')[:300]}
+  Top Skills: {', '.join(structured.get('skills', [])[:12])}
+
+KEY PROJECTS:
+{chr(10).join(f"  • {p.get('name')}: {p.get('description', '')}" for p in structured.get('projects', [])[:3])}
+
+JD EXCERPT:
+{job.get('full_text', '')[:800]}
+==============================
+""".strip()
+
+    return brief
