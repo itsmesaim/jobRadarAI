@@ -4,13 +4,20 @@ interface Props {
 }
 
 export function ScoreBadge({ score, size = "sm" }: Props) {
+  const dims = { sm: 12, md: 14, lg: 22 }[size];
+  const padding = { sm: "3px 8px", md: "5px 11px", lg: "6px 14px" }[size];
+
   if (score === null) {
     return (
       <span
         style={{
           color: "var(--text-muted)",
           fontFamily: "monospace",
-          fontSize: size === "lg" ? 24 : 13,
+          fontSize: dims,
+          padding,
+          border: "1px dashed var(--border)",
+          borderRadius: 7,
+          display: "inline-block",
         }}
       >
         —
@@ -24,7 +31,7 @@ export function ScoreBadge({ score, size = "sm" }: Props) {
       : score >= 6
         ? "var(--warning)"
         : score >= 4
-          ? "#f97316"
+          ? "#ea580c"
           : "var(--danger)";
 
   const bg =
@@ -36,28 +43,34 @@ export function ScoreBadge({ score, size = "sm" }: Props) {
           ? "#fff7ed"
           : "var(--danger-bg)";
 
-  const fontSize = size === "lg" ? 22 : size === "md" ? 16 : 12;
+  const border =
+    score >= 8
+      ? "var(--success-border)"
+      : score >= 6
+        ? "var(--warning-border)"
+        : score >= 4
+          ? "#fed7aa"
+          : "var(--danger-border)";
 
   return (
     <span
       style={{
         display: "inline-flex",
         alignItems: "baseline",
-        gap: 1,
+        gap: 2,
         background: bg,
         color,
-        padding: size === "lg" ? "4px 10px" : "2px 7px",
-        borderRadius: 6,
+        border: `1px solid ${border}`,
+        padding,
+        borderRadius: 7,
         fontFamily: "monospace",
-        fontWeight: 600,
-        fontSize,
+        fontWeight: 700,
+        fontSize: dims,
         whiteSpace: "nowrap",
       }}
     >
       {score}
-      <span
-        style={{ fontSize: fontSize * 0.75, fontWeight: 400, opacity: 0.7 }}
-      >
+      <span style={{ fontSize: dims * 0.7, fontWeight: 500, opacity: 0.65 }}>
         /10
       </span>
     </span>

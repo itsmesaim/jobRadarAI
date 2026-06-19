@@ -46,5 +46,11 @@ class Settings(BaseSettings):
     langsmith_api_key: str = ""
     langsmith_project: str = "My first app"
 
+    #  Adzuna 
+    adzuna_app_id: str = ""
+    adzuna_app_key: str = ""
+
+    jooble_api_key: str = ""
+
 
 settings = Settings()

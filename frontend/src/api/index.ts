@@ -28,6 +28,7 @@ export const jobsApi = {
     score_max?: number;
     status?: string;
     source?: string;
+    q?: string;
     page?: number;
     limit?: number;
   }) => {

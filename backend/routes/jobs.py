@@ -58,6 +58,8 @@ def _format_job(job: dict, user_id: str) -> dict:
         "snippet": job.get("snippet", "")[:300],
         "crawled_at": job.get("crawled_at"),
         "source": job.get("source", "tavily"),
+        "company": job.get("company", ""),
+        "location": job.get("location", ""),
         "score": rating.get("score", None),
         "matched_strengths": rating.get("matched_strengths", []),
         "gaps": rating.get("gaps", []),
@@ -75,6 +77,7 @@ async def list_jobs(
     score_max: int = 10,
     status: str = None,
     source: str = None,
+    q: str = None,  # NEW — text search
     page: int = 1,
     limit: int = 20,
 ):
@@ -86,21 +89,24 @@ async def list_jobs(
         await db.jobs.find()
         .sort("crawled_at", -1)
         .skip(skip)
-        .limit(limit * 3)
-        .to_list(length=limit * 3)
+        .limit(limit * 5)
+        .to_list(length=limit * 5)
     )
 
     results = []
     for job in all_jobs:
         formatted = _format_job(job, user_id)
         score = formatted.get("score")
-        if score is not None:
-            if score < score_min or score > score_max:
-                continue
+        if score is not None and (score < score_min or score > score_max):
+            continue
         if status and formatted.get("status") != status:
             continue
         if source and job.get("source") != source:
             continue
+        if q:
+            searchable = f"{job.get('title','')} {job.get('company','')}".lower()
+            if q.lower() not in searchable:
+                continue
         results.append(formatted)
         if len(results) >= limit:
             break

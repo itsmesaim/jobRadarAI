@@ -11,7 +11,7 @@ export interface Job {
   url: string;
   snippet: string;
   crawled_at: string;
-  source: "tavily" | "manual";
+  source: "tavily" | "manual" | "jooble" | "adzuna";
   score: number | null;
   matched_strengths: string[];
   gaps: string[];
@@ -19,6 +19,11 @@ export interface Job {
   auto_reject: boolean;
   status: JobStatus;
   full_text?: string;
+  company?: string;
+  location?: string;
+  salary_text?: string;
+  salary_min?: number;
+  salary_max?: number;
 }
 
 export type JobStatus =

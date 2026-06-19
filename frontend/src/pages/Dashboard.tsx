@@ -12,7 +12,6 @@ import toast from "react-hot-toast";
 import { JobCard } from "../components/JobCard";
 import { ManualJDModal } from "../components/ManualJDModal";
 import { jobsApi, crawlerApi } from "../api/index";
-import type { JobStatus } from "../types";
 
 const SCORE_OPTS = [
   { label: "All scores", min: 0 },
@@ -41,16 +40,26 @@ export function Dashboard() {
   const [showFilters, setShowFilters] = useState(false);
   const [reminderDismissed, setReminderDismissed] = useState(false);
 
+  // search-within-list state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 400);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
   const queryClient = useQueryClient();
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ["jobs", scoreMin, statusFilter, page],
+    queryKey: ["jobs", scoreMin, statusFilter, page, debouncedQuery],
     queryFn: () =>
       jobsApi.list({
         score_min: scoreMin,
         status: statusFilter,
         page,
         limit: 20,
+        q: debouncedQuery || undefined,
       }),
     refetchInterval: 30000,
   });
@@ -58,7 +67,7 @@ export function Dashboard() {
   const crawlMutation = useMutation({
     mutationFn: crawlerApi.search,
     onSuccess: (res) => {
-      toast.success(`Found ${res.found} jobs, stored ${res.stored} new`);
+      toast.success(`Found ${res.found} jobs, ${res.stored} new`);
       if (res.stored > 0) {
         setTimeout(() => {
           jobsApi.rateAll();
@@ -78,33 +87,65 @@ export function Dashboard() {
   const highScoreUnaplied = jobs.filter(
     (j) => (j.score ?? 0) >= 8 && j.status === "NEW",
   );
-
   const showReminder = !reminderDismissed && highScoreUnaplied.length >= 2;
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 16px" }}>
+    <div style={{ maxWidth: 1180, margin: "0 auto", padding: "28px 20px" }}>
+      {/* Page header */}
+      <div style={{ marginBottom: 24 }}>
+        <h1
+          style={{
+            fontSize: 24,
+            fontWeight: 700,
+            margin: "0 0 4px",
+            color: "var(--text)",
+          }}
+        >
+          Jobs
+        </h1>
+        {data && (
+          <p style={{ margin: 0, fontSize: 14, color: "var(--text-muted)" }}>
+            <strong style={{ color: "var(--text)" }}>{data.total}</strong> total
+            {" · "}
+            <strong style={{ color: "var(--success)" }}>
+              {jobs.filter((j) => (j.score ?? 0) >= 7).length}
+            </strong>{" "}
+            strong matches
+            {" · "}
+            {jobs.filter((j) => j.status === "APPLIED").length} applied
+          </p>
+        )}
+      </div>
+
       {/* Reminder banner */}
       {showReminder && (
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 12,
+            gap: 14,
             background: "var(--warning-bg)",
-            border: "1px solid var(--warning)",
-            borderRadius: 9,
-            padding: "12px 16px",
-            marginBottom: 16,
+            border: "1px solid var(--warning-border)",
+            borderRadius: 12,
+            padding: "14px 18px",
+            marginBottom: 20,
           }}
         >
           <AlertCircle
-            size={16}
+            size={18}
             style={{ color: "var(--warning)", flexShrink: 0 }}
           />
-          <p style={{ fontSize: 13, color: "var(--text)", margin: 0, flex: 1 }}>
-            <strong>Hey!</strong> You have {highScoreUnaplied.length} jobs
-            scoring 8+/10 that you haven't applied to yet. Don't let good
-            opportunities slip by 👀
+          <p
+            style={{
+              fontSize: 14,
+              color: "var(--text)",
+              margin: 0,
+              flex: 1,
+              lineHeight: 1.5,
+            }}
+          >
+            <strong>Hey!</strong> {highScoreUnaplied.length} jobs scoring 8+/10
+            are sitting unapplied. Don't let good opportunities slip by 👀
           </p>
           <button
             onClick={() => {
@@ -112,7 +153,7 @@ export function Dashboard() {
               setStatusFilter("NEW");
             }}
             className="btn btn-secondary"
-            style={{ fontSize: 12, padding: "4px 10px", flexShrink: 0 }}
+            style={{ fontSize: 13, padding: "6px 12px", flexShrink: 0 }}
           >
             View them
           </button>
@@ -126,72 +167,51 @@ export function Dashboard() {
               display: "flex",
             }}
           >
-            <X size={14} />
+            <X size={15} />
           </button>
         </div>
       )}
 
-      {/* Top bar */}
+      {/* Action bar */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 8,
-          marginBottom: 16,
+          gap: 10,
+          marginBottom: 18,
           flexWrap: "wrap",
         }}
       >
-        <div style={{ flex: 1, minWidth: 200 }}>
-          {data && (
-            <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>
-              <strong style={{ color: "var(--text)" }}>{data.total}</strong>{" "}
-              jobs
-              {" · "}
-              <strong style={{ color: "var(--success)" }}>
-                {jobs.filter((j) => (j.score ?? 0) >= 7).length}
-              </strong>{" "}
-              strong matches
-              {" · "}
-              {jobs.filter((j) => j.status === "APPLIED").length} applied
-            </p>
-          )}
-        </div>
-
-        <button
-          onClick={() => setShowManual(true)}
-          className="btn btn-ghost"
-          style={{ fontSize: 12 }}
-        >
-          <Plus size={13} /> Paste JD
+        <button onClick={() => setShowManual(true)} className="btn btn-ghost">
+          <Plus size={14} /> Paste JD
         </button>
 
         <button
           onClick={() => crawlMutation.mutate()}
           disabled={crawlMutation.isPending}
           className="btn btn-primary"
-          style={{ fontSize: 12 }}
         >
-          <Search size={13} />
+          <Search size={14} />
           {crawlMutation.isPending ? "Searching..." : "Search jobs"}
         </button>
-      </div>
 
-      {/* Filters */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 16,
-          flexWrap: "wrap",
-        }}
-      >
+        {/* search within saved jobs */}
+        <input
+          type="text"
+          placeholder="Search saved jobs..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="input"
+          style={{ maxWidth: 220 }}
+        />
+
+        <div style={{ flex: 1 }} />
+
         <button
           onClick={() => setShowFilters(!showFilters)}
           className="btn btn-ghost"
-          style={{ fontSize: 12, padding: "5px 10px" }}
         >
-          <SlidersHorizontal size={12} />
+          <SlidersHorizontal size={13} />
           Filters
           {(scoreMin > 0 || statusFilter) && (
             <span
@@ -199,8 +219,8 @@ export function Dashboard() {
                 background: "var(--accent)",
                 color: "#fff",
                 borderRadius: "50%",
-                width: 16,
-                height: 16,
+                width: 17,
+                height: 17,
                 fontSize: 10,
                 display: "flex",
                 alignItems: "center",
@@ -212,9 +232,31 @@ export function Dashboard() {
           )}
         </button>
 
-        {showFilters && (
-          <>
-            <div style={{ display: "flex", gap: 4 }}>
+        <button
+          onClick={() => refetch()}
+          className="btn btn-ghost"
+          style={{ padding: "9px 11px" }}
+        >
+          <RefreshCw size={14} />
+        </button>
+      </div>
+
+      {showFilters && (
+        <div
+          className="card"
+          style={{
+            padding: 16,
+            marginBottom: 18,
+            display: "flex",
+            gap: 20,
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <p className="label" style={{ marginBottom: 8 }}>
+              Score
+            </p>
+            <div style={{ display: "flex", gap: 6 }}>
               {SCORE_OPTS.map((o) => (
                 <button
                   key={o.label}
@@ -223,9 +265,9 @@ export function Dashboard() {
                     setPage(1);
                   }}
                   style={{
-                    padding: "4px 10px",
-                    fontSize: 12,
-                    borderRadius: 6,
+                    padding: "6px 12px",
+                    fontSize: 13,
+                    borderRadius: 8,
                     cursor: "pointer",
                     border: "none",
                     background:
@@ -242,8 +284,13 @@ export function Dashboard() {
                 </button>
               ))}
             </div>
+          </div>
 
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          <div>
+            <p className="label" style={{ marginBottom: 8 }}>
+              Status
+            </p>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {STATUS_OPTS.map((o) => (
                 <button
                   key={o.label}
@@ -252,9 +299,9 @@ export function Dashboard() {
                     setPage(1);
                   }}
                   style={{
-                    padding: "4px 10px",
-                    fontSize: 12,
-                    borderRadius: 6,
+                    padding: "6px 12px",
+                    fontSize: 13,
+                    borderRadius: 8,
                     cursor: "pointer",
                     border: "none",
                     background:
@@ -273,43 +320,29 @@ export function Dashboard() {
                 </button>
               ))}
             </div>
-          </>
-        )}
-
-        <button
-          onClick={() => refetch()}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--text-muted)",
-            display: "flex",
-            marginLeft: "auto",
-          }}
-        >
-          <RefreshCw size={13} />
-        </button>
-      </div>
+          </div>
+        </div>
+      )}
 
       {/* Job grid */}
       {isLoading ? (
         <div
           style={{
             textAlign: "center",
-            padding: "60px 0",
+            padding: "80px 0",
             color: "var(--text-muted)",
-            fontSize: 13,
+            fontSize: 14,
           }}
         >
           Loading jobs...
         </div>
       ) : jobs.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "60px 0" }}>
+        <div style={{ textAlign: "center", padding: "80px 0" }}>
           <p
             style={{
               color: "var(--text-muted)",
-              fontSize: 14,
-              marginBottom: 16,
+              fontSize: 15,
+              marginBottom: 18,
             }}
           >
             No jobs found. Search to discover new roles.
@@ -325,8 +358,8 @@ export function Dashboard() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-            gap: 12,
+            gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
+            gap: 16,
           }}
         >
           {jobs.map((job) => (
@@ -348,21 +381,20 @@ export function Dashboard() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            gap: 10,
-            marginTop: 24,
+            gap: 12,
+            marginTop: 32,
           }}
         >
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
             className="btn btn-ghost"
-            style={{ fontSize: 12 }}
           >
             Previous
           </button>
           <span
             style={{
-              fontSize: 13,
+              fontSize: 14,
               color: "var(--text-muted)",
               fontFamily: "monospace",
             }}
@@ -373,7 +405,6 @@ export function Dashboard() {
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
             className="btn btn-ghost"
-            style={{ fontSize: 12 }}
           >
             Next
           </button>

@@ -19,20 +19,18 @@ export function Navbar() {
         style={{
           maxWidth: 1200,
           margin: "0 auto",
-          padding: "0 16px",
+          padding: "0 20px",
           display: "flex",
           alignItems: "center",
-          height: 52,
+          height: 60,
         }}
       >
-        {/* Logo */}
-        <Link to="/" style={{ textDecoration: "none", marginRight: 32 }}>
-          <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>
+        <Link to="/" style={{ textDecoration: "none", marginRight: 36 }}>
+          <span style={{ fontSize: 17, fontWeight: 700, color: "var(--text)" }}>
             Job<span style={{ color: "var(--accent)" }}>Radar</span>
           </span>
         </Link>
 
-        {/* Nav links */}
         <div style={{ display: "flex", gap: 4, flex: 1 }}>
           {links.map(({ to, label, icon: Icon }) => {
             const active = location.pathname === to;
@@ -42,17 +40,17 @@ export function Navbar() {
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 6,
-                    padding: "5px 10px",
-                    borderRadius: 7,
-                    fontSize: 13,
+                    gap: 7,
+                    padding: "7px 14px",
+                    borderRadius: 8,
+                    fontSize: 14,
                     fontWeight: 500,
                     color: active ? "var(--accent)" : "var(--text-secondary)",
                     background: active ? "var(--accent-light)" : "transparent",
                     transition: "all 0.15s",
                   }}
                 >
-                  <Icon size={14} />
+                  <Icon size={15} />
                   <span className="hidden sm:inline">{label}</span>
                 </div>
               </Link>
@@ -60,15 +58,14 @@ export function Navbar() {
           })}
         </div>
 
-        {/* Right side */}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button
             onClick={toggle}
             className="btn btn-ghost"
-            style={{ padding: "6px 8px" }}
+            style={{ padding: "8px 10px" }}
             title={dark ? "Light mode" : "Dark mode"}
           >
-            {dark ? <Sun size={15} /> : <Moon size={15} />}
+            {dark ? <Sun size={16} /> : <Moon size={16} />}
           </button>
           <button
             onClick={() => {
@@ -76,10 +73,10 @@ export function Navbar() {
               window.location.href = "/login";
             }}
             className="btn btn-ghost"
-            style={{ padding: "6px 8px" }}
+            style={{ padding: "8px 10px" }}
             title="Sign out"
           >
-            <LogOut size={15} />
+            <LogOut size={16} />
           </button>
         </div>
       </div>

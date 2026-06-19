@@ -12,7 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from database import get_database
 from deps import get_current_user
-from services.crawler import crawl_jobs_for_user
+from services.adzuna_crawler import crawl_jobs_for_user_adzuna
+from services.jooble_crawler import crawl_jobs_for_user_jooble
+
 
 router = APIRouter(prefix="/crawler", tags=["crawler"])
 
@@ -54,7 +56,14 @@ async def manual_search(user=Depends(get_current_user)):
         )
 
     # run crawl
-    result = await crawl_jobs_for_user(user)
+    result_jooble = await crawl_jobs_for_user_jooble(user)
+    result_adzuna = await crawl_jobs_for_user_adzuna(user)
+
+    result = {
+        "found": result_jooble["found"] + result_adzuna["found"],
+        "stored": result_jooble["stored"] + result_adzuna["stored"],
+        "skipped": result_jooble["skipped"] + result_adzuna["skipped"],
+    }
 
     # update counters
     await db.users.update_one(
