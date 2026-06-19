@@ -1,0 +1,77 @@
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "react-hot-toast";
+import { LoginPage } from "./pages/Login";
+import { Dashboard } from "./pages/Dashboard";
+import { KanbanPage } from "./pages/Kanban";
+import { SettingsPage } from "./pages/Settings";
+import { Navbar } from "./components/Navbar";
+import { useAuthStore } from "./hooks/useStores";
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
+});
+
+function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
+      <Navbar />
+      <main>{children}</main>
+    </div>
+  );
+}
+
+function Protected({ children }: { children: React.ReactNode }) {
+  const token = useAuthStore((s) => s.token);
+  if (!token) return <Navigate to="/login" replace />;
+  return <Layout>{children}</Layout>;
+}
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/"
+            element={
+              <Protected>
+                <Dashboard />
+              </Protected>
+            }
+          />
+          <Route
+            path="/kanban"
+            element={
+              <Protected>
+                <KanbanPage />
+              </Protected>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <Protected>
+                <SettingsPage />
+              </Protected>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          style: {
+            background: "var(--bg-card)",
+            color: "var(--text)",
+            border: "1px solid var(--border)",
+            fontSize: 13,
+            boxShadow: "var(--shadow-md)",
+          },
+        }}
+      />
+    </QueryClientProvider>
+  );
+}

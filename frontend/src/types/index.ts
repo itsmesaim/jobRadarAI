@@ -1,0 +1,85 @@
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  created_at: string;
+}
+
+export interface Job {
+  id: string;
+  title: string;
+  url: string;
+  snippet: string;
+  crawled_at: string;
+  source: "tavily" | "manual";
+  score: number | null;
+  matched_strengths: string[];
+  gaps: string[];
+  verdict: string;
+  auto_reject: boolean;
+  status: JobStatus;
+  full_text?: string;
+}
+
+export type JobStatus =
+  | "NEW"
+  | "SAVED"
+  | "APPLIED"
+  | "INTERVIEWING"
+  | "OFFER"
+  | "REJECTED"
+  | "FOLLOWUP"
+  | "HALF_APPLIED";
+
+export interface JobsResponse {
+  jobs: Job[];
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+export interface UserPreferences {
+  preferred_locations: string[];
+  primary_role: string;
+  secondary_roles: string[];
+  job_types: {
+    full_time: boolean;
+    internship: boolean;
+    contract: boolean;
+    remote: boolean;
+  };
+  min_salary: number;
+  key_skills: string[];
+}
+
+export interface CVData {
+  filename: string;
+  uploaded_at: string;
+  structured: {
+    name: string;
+    email: string;
+    summary: string;
+    skills: string[];
+    experience: Array<{
+      title: string;
+      company: string;
+      start: string;
+      end: string;
+      bullets: string[];
+    }>;
+    projects: Array<{
+      name: string;
+      description: string;
+      tech: string[];
+      url: string | null;
+    }>;
+    education: Array<{
+      degree: string;
+      institution: string;
+      start: string;
+      end: string;
+      grade: string | null;
+    }>;
+  };
+}
