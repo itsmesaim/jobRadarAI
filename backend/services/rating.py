@@ -27,6 +27,12 @@ class JobRating(BaseModel):
     gaps: list[str] = Field(
         description="Specific JD requirements the candidate is missing or weak on"
     )
+    structural_mismatch: bool = Field(
+        default=False,
+        description="True if there's a categorical disqualifier (role-type or "
+        "core-domain mismatch) that cannot be fixed by a better application — "
+        "not a skill gap.",
+    )
     verdict: str = Field(
         description="One sentence summary with an actionable suggestion"
     )
@@ -43,6 +49,41 @@ matches the job description.
 Be honest. Do not inflate scores. If the JD text is too short, vague, or
 appears to be a search results page rather than an actual job posting,
 score 0 and explain why in the verdict.
+
+CRITICAL — check for structural disqualifiers BEFORE scoring skill overlap.
+These are categorical mismatches, not skill gaps, and should cap the score
+low (3 or below) regardless of how well the tech stack matches:
+
+1. ROLE-TYPE MISMATCH
+   - Individual contributor (IC) vs people-management role
+   - If the JD requires "X years leading engineers", "managing a team",
+     "direct reports", or similar people-management language, and the
+     candidate's experience is IC/freelance/solo work with no management
+     history — this is disqualifying, not a gap to "address." Cap score
+     at 3 and say so plainly in the verdict.
+   - Junior/graduate scheme vs senior/staff/principal role mismatch in
+     either direction is similarly structural.
+
+2. DOMAIN-AS-CORE-REQUIREMENT
+   - Distinguish "nice to have" domain exposure from "must have to do
+     the job" domain expertise. Regulated industries (payments, banking,
+     healthcare compliance, defense) often require domain knowledge as
+     a hard prerequisite, not a learnable-on-the-job skill.
+   - If the JD treats the domain as core (e.g. "must understand PCI-DSS",
+     "healthcare compliance experience required") and the candidate has
+     zero exposure, this is a structural gap. Cap score at 4 and flag it
+     as domain-as-core, not as a minor gap.
+   - If domain is mentioned only as context ("join our payments team")
+     without being listed as a requirement, treat it as a nice-to-have
+     and don't penalize heavily for it.
+
+For both checks above: if triggered, the verdict must say explicitly
+that this is a structural/categorical mismatch, not something fixable
+by a better cover letter or CV tailoring. Be direct about this so the
+candidate doesn't waste time trying to "address" an unaddressable gap.
+
+If no structural disqualifier applies, proceed with normal skill/experience
+overlap scoring as before.
 """.strip()
 
 
