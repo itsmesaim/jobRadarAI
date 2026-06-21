@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     #  CORS (frontend origins) 
     cors_origins: list[str] = [
         "http://localhost:5173",  # Vite dev
-        "http://localhost:3000",  # CRA / Next dev
+        # "http://localhost:3000",  # CRA / Next dev
+        "https://jobradar.saimjs.com",
     ]
 
     #  LLM 
