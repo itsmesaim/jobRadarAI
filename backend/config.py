@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     adzuna_app_key: str = ""
 
     jooble_api_key: str = ""
+    jobsapi_key: str = ""
 
 
 settings = Settings()
