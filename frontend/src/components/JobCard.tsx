@@ -7,11 +7,12 @@ import {
   Check,
   Building2,
   MapPin,
+  EyeOff,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { ScoreBadge } from "./ScoreBadge";
 import { jobsApi } from "../api/index";
-import type { Job, JobStatus } from "../types";
+import type { Job, JobStatus, Props } from "../types";
 
 const STATUSES: JobStatus[] = [
   "NEW",
@@ -58,12 +59,7 @@ function cleanTitle(job: Job): string {
   return job.title;
 }
 
-interface Props {
-  job: Job;
-  onStatusChange?: () => void;
-}
-
-export function JobCard({ job, onStatusChange }: Props) {
+export function JobCard({ job, onStatusChange, onHidden }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<JobStatus>(job.status);
@@ -101,6 +97,16 @@ export function JobCard({ job, onStatusChange }: Props) {
       setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.error("Could not copy brief");
+    }
+  };
+
+  const handleHide = async () => {
+    try {
+      await jobsApi.hide(job.id);
+      toast.success("Job removed from your list");
+      onHidden?.();
+    } catch {
+      toast.error("Could not remove job");
     }
   };
 
@@ -341,6 +347,17 @@ export function JobCard({ job, onStatusChange }: Props) {
               {copied ? "Copied" : "Copy details"}
             </button>
           )}
+
+          {/* THE HIDE BUTTON — this was missing before */}
+          <button
+            onClick={handleHide}
+            className="btn btn-ghost"
+            style={{ padding: "6px 8px", fontSize: 12.5 }}
+            title="Remove from list"
+          >
+            <EyeOff size={12} />
+          </button>
+
           <button
             onClick={() => setExpanded(!expanded)}
             style={{

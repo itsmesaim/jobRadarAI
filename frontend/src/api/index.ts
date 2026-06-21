@@ -65,6 +65,11 @@ export const jobsApi = {
     const res = await api.get(`/jobs/${id}/brief`);
     return res.data as { brief: string };
   },
+
+  hide: async (id: string) => {
+    const res = await api.delete(`/jobs/${id}`);
+    return res.data;
+  },
 };
 
 export const crawlerApi = {

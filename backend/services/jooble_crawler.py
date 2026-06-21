@@ -23,10 +23,42 @@ def _hash_url(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()
 
 
+TECH_ANCHOR = "developer OR engineer OR software"
+
+
 def _build_search_terms(user: dict) -> list[str]:
     primary_role = user.get("primary_role", "Full Stack Developer")
     secondary_roles = user.get("secondary_roles", [])
-    return [primary_role] + secondary_roles
+    all_roles = [primary_role] + secondary_roles
+
+    # anchor generic terms to tech, leave already-specific terms alone
+    anchored = []
+    for role in all_roles:
+        role_lower = role.lower()
+        if any(
+            kw in role_lower
+            for kw in [
+                "developer",
+                "engineer",
+                "software",
+                "backend",
+                "frontend",
+                "full stack",
+                "ai",
+                "ml",
+            ]
+        ):
+            anchored.append(role)  # already tech-specific
+        else:
+            anchored.append(f"{role} software developer")  # force tech context
+
+    return anchored
+
+
+# def _build_search_terms(user: dict) -> list[str]:
+#     primary_role = user.get("primary_role", "Full Stack Developer")
+#     secondary_roles = user.get("secondary_roles", [])
+#     return [primary_role] + secondary_roles
 
 
 async def crawl_jobs_for_user_jooble(user: dict) -> dict:

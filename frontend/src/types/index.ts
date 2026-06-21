@@ -88,3 +88,9 @@ export interface CVData {
     }>;
   };
 }
+
+export interface Props {
+  job: Job;
+  onStatusChange?: () => void;
+  onHidden?: () => void;
+}

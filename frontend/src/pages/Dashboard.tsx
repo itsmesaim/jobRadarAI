@@ -14,8 +14,8 @@ import { ManualJDModal } from "../components/ManualJDModal";
 import { jobsApi, crawlerApi } from "../api/index";
 
 const SCORE_OPTS = [
-  { label: "All scores", min: 0 },
-  { label: "6+ only", min: 6 },
+  { label: "Show all (incl. <6)", min: 0 },
+  { label: "6+ (default)", min: 6 },
   { label: "7+ only", min: 7 },
   { label: "8+ only", min: 8 },
 ];
@@ -31,7 +31,7 @@ const STATUS_OPTS: { label: string; value: string | undefined }[] = [
 ];
 
 export function Dashboard() {
-  const [scoreMin, setScoreMin] = useState(0);
+  const [scoreMin, setScoreMin] = useState(6);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(
     undefined,
   );
@@ -367,6 +367,9 @@ export function Dashboard() {
               key={job.id}
               job={job}
               onStatusChange={() =>
+                queryClient.invalidateQueries({ queryKey: ["jobs"] })
+              }
+              onHidden={() =>
                 queryClient.invalidateQueries({ queryKey: ["jobs"] })
               }
             />

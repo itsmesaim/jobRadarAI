@@ -77,7 +77,7 @@ async def list_jobs(
     score_max: int = 10,
     status: str = None,
     source: str = None,
-    q: str = None,  # NEW — text search
+    q: str = None,
     page: int = 1,
     limit: int = 20,
 ):
@@ -95,6 +95,10 @@ async def list_jobs(
 
     results = []
     for job in all_jobs:
+        # skip hidden jobs first, before any other filter
+        if job.get(f"hidden_{user_id}"):
+            continue
+
         formatted = _format_job(job, user_id)
         score = formatted.get("score")
         if score is not None and (score < score_min or score > score_max):
@@ -234,3 +238,26 @@ async def get_job(job_id: str, user=Depends(get_current_user)):
     result = _format_job(job, user_id)
     result["full_text"] = job.get("full_text", "")[:3000]
     return result
+
+
+@router.delete("/{job_id}")
+async def hide_job(job_id: str, user=Depends(get_current_user)):
+    db = get_database()
+    user_id = str(user["_id"])
+
+    try:
+        job = await db.jobs.find_one({"_id": ObjectId(job_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid job ID.")
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    if job.get("source") == "manual":
+        await db.jobs.delete_one({"_id": ObjectId(job_id)})
+        return {"message": "Job deleted."}
+
+    await db.jobs.update_one(
+        {"_id": ObjectId(job_id)}, {"$set": {f"hidden_{user_id}": True}}
+    )
+    return {"message": "Job hidden."}

@@ -23,19 +23,36 @@ def _hash_url(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()
 
 
+TECH_ANCHOR = "developer OR engineer OR software"
+
+
 def _build_search_terms(user: dict) -> list[str]:
-    """Generate search terms from primary role + secondary roles + key skills."""
     primary_role = user.get("primary_role", "Full Stack Developer")
     secondary_roles = user.get("secondary_roles", [])
-    key_skills = user.get("key_skills", [])
+    all_roles = [primary_role] + secondary_roles
 
-    terms = [primary_role] + secondary_roles
+    # anchor generic terms to tech, leave already-specific terms alone
+    anchored = []
+    for role in all_roles:
+        role_lower = role.lower()
+        if any(
+            kw in role_lower
+            for kw in [
+                "developer",
+                "engineer",
+                "software",
+                "backend",
+                "frontend",
+                "full stack",
+                "ai",
+                "ml",
+            ]
+        ):
+            anchored.append(role)  # already tech-specific
+        else:
+            anchored.append(f"{role} software developer")  # force tech context
 
-    # add a couple of skill-combo searches for better coverage
-    if len(key_skills) >= 2:
-        terms.append(f"{key_skills[0]} {key_skills[1]} developer")
-
-    return terms
+    return anchored
 
 
 async def crawl_jobs_for_user_adzuna(user: dict) -> dict:
