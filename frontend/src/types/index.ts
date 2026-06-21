@@ -11,7 +11,7 @@ export interface Job {
   url: string;
   snippet: string;
   crawled_at: string;
-  source: "tavily" | "manual" | "jooble" | "adzuna";
+  source: "tavily" | "manual" | "jooble" | "adzuna" | "jobsapi-indeed";
   score: number | null;
   matched_strengths: string[];
   gaps: string[];
@@ -43,6 +43,11 @@ export interface JobsResponse {
   total: number;
   pages: number;
 }
+export interface WorkMode {
+  remote: boolean;
+  hybrid: boolean;
+  onsite: boolean;
+}
 
 export interface UserPreferences {
   preferred_locations: string[];
@@ -56,6 +61,10 @@ export interface UserPreferences {
   };
   min_salary: number;
   key_skills: string[];
+  experience_level: "junior" | "mid" | "senior";
+  work_authorization: string;
+  avoid_industries: string[];
+  work_mode: WorkMode;
 }
 
 export interface CVData {

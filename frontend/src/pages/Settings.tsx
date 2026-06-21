@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Upload, Check, Loader, Plus, X, Save } from "lucide-react";
+import { Upload, Check, Loader, Plus, X, Save, Info } from "lucide-react";
 import toast from "react-hot-toast";
 import { cvApi, userApi } from "../api/index";
 import type { UserPreferences } from "../types";
@@ -17,7 +17,21 @@ const DEFAULT_PREFS: UserPreferences = {
   },
   min_salary: 0,
   key_skills: [],
+  experience_level: "mid",
+  work_authorization: "",
+  avoid_industries: [],
+  work_mode: { remote: true, hybrid: true, onsite: false },
 };
+
+const EXPERIENCE_LEVELS: {
+  value: UserPreferences["experience_level"];
+  label: string;
+  hint: string;
+}[] = [
+  { value: "junior", label: "Junior", hint: "0-2 years" },
+  { value: "mid", label: "Mid-level", hint: "2-5 years" },
+  { value: "senior", label: "Senior", hint: "5+ years" },
+];
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
@@ -28,6 +42,7 @@ export function SettingsPage() {
   const [newLocation, setNewLocation] = useState("");
   const [newSkill, setNewSkill] = useState("");
   const [newRole, setNewRole] = useState("");
+  const [newIndustry, setNewIndustry] = useState("");
 
   const { data: cv } = useQuery({
     queryKey: ["cv"],
@@ -40,10 +55,9 @@ export function SettingsPage() {
     queryFn: userApi.getPreferences,
   });
 
-  // sync server prefs into local state once loaded
   useEffect(() => {
     if (prefs) {
-      setLocalPrefs(prefs);
+      setLocalPrefs({ ...DEFAULT_PREFS, ...prefs });
       setDirty(false);
     }
   }, [prefs]);
@@ -111,9 +125,16 @@ export function SettingsPage() {
     setNewRole("");
   };
 
+  const addIndustry = () => {
+    if (!newIndustry.trim()) return;
+    update({
+      avoid_industries: [...localPrefs.avoid_industries, newIndustry.trim()],
+    });
+    setNewIndustry("");
+  };
+
   return (
     <div style={{ maxWidth: 700, margin: "0 auto", padding: "24px 16px" }}>
-      {/* Header + Save button */}
       <div
         style={{
           display: "flex",
@@ -251,6 +272,7 @@ export function SettingsPage() {
         />
       </Section>
 
+      {/* Role */}
       <Section title="Role" subtitle="What roles should we search for?">
         <div style={{ marginBottom: 12 }}>
           <label className="label">Primary role</label>
@@ -294,6 +316,96 @@ export function SettingsPage() {
         </div>
       </Section>
 
+      {/* Experience level — NEW */}
+      <Section
+        title="Experience level"
+        subtitle="Helps the rating engine catch seniority mismatches (e.g. a role requiring 'lead a team' when you're IC)."
+      >
+        <div style={{ display: "flex", gap: 8 }}>
+          {EXPERIENCE_LEVELS.map((lvl) => {
+            const active = localPrefs.experience_level === lvl.value;
+            return (
+              <button
+                key={lvl.value}
+                onClick={() => update({ experience_level: lvl.value })}
+                style={{
+                  flex: 1,
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  border: active
+                    ? "1.5px solid var(--accent)"
+                    : "1px solid var(--border)",
+                  background: active
+                    ? "var(--accent-light)"
+                    : "var(--bg-secondary)",
+                  textAlign: "left",
+                  transition: "all 0.15s",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: active ? "var(--accent)" : "var(--text)",
+                  }}
+                >
+                  {lvl.label}
+                </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    marginTop: 2,
+                  }}
+                >
+                  {lvl.hint}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </Section>
+
+      {/* Work authorization — NEW */}
+      <Section
+        title="Work authorization"
+        subtitle="Used to flag jobs requiring sponsorship you don't have, or citizenship you can't meet."
+      >
+        <input
+          className="input"
+          placeholder="e.g. Stamp 1G, Ireland — no sponsorship needed"
+          value={localPrefs.work_authorization}
+          onChange={(e) => update({ work_authorization: e.target.value })}
+        />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 6,
+            marginTop: 8,
+          }}
+        >
+          <Info
+            size={13}
+            style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }}
+          />
+          <p
+            style={{
+              fontSize: 11.5,
+              color: "var(--text-muted)",
+              margin: 0,
+              lineHeight: 1.5,
+            }}
+          >
+            Be specific — this gets passed directly to the rating engine, so
+            "Stamp 1G, no sponsorship needed" works much better than just "Irish
+            work visa."
+          </p>
+        </div>
+      </Section>
+
+      {/* Locations */}
       <Section
         title="Locations"
         subtitle="Where should we search? Include city + country."
@@ -323,6 +435,46 @@ export function SettingsPage() {
         />
       </Section>
 
+      {/* Work mode — NEW, replaces simple remote checkbox */}
+      <Section
+        title="Work mode"
+        subtitle="Onsite-only roles will be flagged as a mismatch if not selected here."
+      >
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          {(["remote", "hybrid", "onsite"] as const).map((mode) => (
+            <label
+              key={mode}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={localPrefs.work_mode[mode]}
+                onChange={(e) =>
+                  update({
+                    work_mode: {
+                      ...localPrefs.work_mode,
+                      [mode]: e.target.checked,
+                    },
+                  })
+                }
+              />
+              <span
+                style={{ color: "var(--text)", textTransform: "capitalize" }}
+              >
+                {mode}
+              </span>
+            </label>
+          ))}
+        </div>
+      </Section>
+
+      {/* Job types */}
       <Section title="Job types" subtitle="What types of roles to include?">
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {(
@@ -362,6 +514,39 @@ export function SettingsPage() {
         </div>
       </Section>
 
+      {/* Avoid industries — NEW */}
+      <Section
+        title="Industries to avoid"
+        subtitle="Jobs in these sectors will be flagged even if technically a skills fit."
+      >
+        <div
+          style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}
+        >
+          {localPrefs.avoid_industries.map((ind) => (
+            <Tag
+              key={ind}
+              label={ind}
+              onRemove={() =>
+                update({
+                  avoid_industries: localPrefs.avoid_industries.filter(
+                    (x) => x !== ind,
+                  ),
+                })
+              }
+              color="var(--danger-bg)"
+              textColor="var(--danger)"
+            />
+          ))}
+        </div>
+        <TagInput
+          value={newIndustry}
+          onChange={setNewIndustry}
+          onAdd={addIndustry}
+          placeholder="e.g. Payments, Healthcare compliance"
+        />
+      </Section>
+
+      {/* Key skills */}
       <Section
         title="Key skills"
         subtitle="Used to generate personalised search queries."
@@ -391,6 +576,7 @@ export function SettingsPage() {
         />
       </Section>
 
+      {/* Salary */}
       <Section
         title="Minimum salary"
         subtitle="Jobs below this are flagged (€/year)."
@@ -434,7 +620,9 @@ export function SettingsPage() {
           <div style={{ display: "flex", gap: 8 }}>
             <button
               onClick={() => {
-                setLocalPrefs(prefs ?? DEFAULT_PREFS);
+                setLocalPrefs(
+                  prefs ? { ...DEFAULT_PREFS, ...prefs } : DEFAULT_PREFS,
+                );
                 setDirty(false);
               }}
               className="btn btn-ghost"

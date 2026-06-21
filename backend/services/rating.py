@@ -29,9 +29,9 @@ class JobRating(BaseModel):
     )
     structural_mismatch: bool = Field(
         default=False,
-        description="True if there's a categorical disqualifier (role-type or "
-        "core-domain mismatch) that cannot be fixed by a better application — "
-        "not a skill gap.",
+        description="True if there's a categorical disqualifier (role-type, "
+        "core-domain mismatch, work authorization, or work mode) that cannot "
+        "be fixed by a better application — not a skill gap.",
     )
     verdict: str = Field(
         description="One sentence summary with an actionable suggestion"
@@ -44,7 +44,7 @@ class JobRating(BaseModel):
 
 RATING_SYSTEM_PROMPT = """
 You are a senior technical recruiter. Rate how well this candidate's CV
-matches the job description.
+and stated preferences match the job description.
 
 Be honest. Do not inflate scores. If the JD text is too short, vague, or
 appears to be a search results page rather than an actual job posting,
@@ -62,7 +62,9 @@ low (3 or below) regardless of how well the tech stack matches:
      history — this is disqualifying, not a gap to "address." Cap score
      at 3 and say so plainly in the verdict.
    - Junior/graduate scheme vs senior/staff/principal role mismatch in
-     either direction is similarly structural.
+     either direction is similarly structural. Compare the JD's seniority
+     against the candidate's STATED experience level below, not just
+     years of experience inferred from the CV.
 
 2. DOMAIN-AS-CORE-REQUIREMENT
    - Distinguish "nice to have" domain exposure from "must have to do
@@ -76,8 +78,24 @@ low (3 or below) regardless of how well the tech stack matches:
    - If domain is mentioned only as context ("join our payments team")
      without being listed as a requirement, treat it as a nice-to-have
      and don't penalize heavily for it.
+   - If the JD's industry appears in the candidate's "avoid industries"
+     list below, flag this explicitly in the verdict even if technically
+     a fit — the candidate has chosen not to pursue this sector.
 
-For both checks above: if triggered, the verdict must say explicitly
+3. WORK AUTHORIZATION / SPONSORSHIP MISMATCH
+   - If the JD explicitly requires sponsorship is NOT available, or
+     requires a specific citizenship/work authorization the candidate
+     does not have (per their stated work authorization below), this
+     is an automatic structural mismatch. Cap score at 2 and set
+     auto_reject to true.
+
+4. WORK MODE MISMATCH
+   - If the JD is strictly onsite and the candidate's work mode
+     preferences exclude onsite (see below), flag this as a structural
+     mismatch in the verdict — note the commute/relocation implication
+     clearly rather than silently scoring it down.
+
+For any of the above checks: if triggered, the verdict must say explicitly
 that this is a structural/categorical mismatch, not something fixable
 by a better cover letter or CV tailoring. Be direct about this so the
 candidate doesn't waste time trying to "address" an unaddressable gap.
@@ -85,6 +103,31 @@ candidate doesn't waste time trying to "address" an unaddressable gap.
 If no structural disqualifier applies, proceed with normal skill/experience
 overlap scoring as before.
 """.strip()
+
+
+def _build_constraints_block(user: dict) -> str:
+    """
+    Builds a plain-text summary of the candidate's stated preferences
+    so the rating prompt can check the JD against them explicitly,
+    not just against the CV.
+    """
+    experience_level = user.get("experience_level", "mid")
+    work_auth = user.get("work_authorization", "")
+    avoid_industries = user.get("avoid_industries", [])
+    work_mode = user.get("work_mode", {"remote": True, "hybrid": True, "onsite": False})
+
+    allowed_modes = [k for k, v in work_mode.items() if v]
+    modes_str = ", ".join(allowed_modes) if allowed_modes else "not specified"
+
+    lines = [
+        f"Stated experience level: {experience_level}",
+        f"Work authorization: {work_auth or 'not specified'}",
+        f"Acceptable work modes: {modes_str}",
+    ]
+    if avoid_industries:
+        lines.append(f"Industries to avoid: {', '.join(avoid_industries)}")
+
+    return "\n".join(lines)
 
 
 @traceable(name="rate_job_for_user", run_type="chain")
@@ -109,6 +152,8 @@ Projects: {json.dumps(structured.get('projects', []))}
 Education: {json.dumps(structured.get('education', []))}
 """.strip()
 
+    constraints_text = _build_constraints_block(user)
+
     jd_text = job.get("full_text") or job.get("snippet", "")
     if len(jd_text) < 200:
         return {
@@ -125,7 +170,11 @@ Education: {json.dumps(structured.get('education', []))}
     messages = [
         SystemMessage(content=RATING_SYSTEM_PROMPT),
         HumanMessage(
-            content=f"JOB DESCRIPTION:\n{jd_text[:4000]}\n\nCANDIDATE CV:\n{cv_text}"
+            content=(
+                f"JOB DESCRIPTION:\n{jd_text[:4000]}\n\n"
+                f"CANDIDATE CV:\n{cv_text}\n\n"
+                f"CANDIDATE STATED CONSTRAINTS:\n{constraints_text}"
+            )
         ),
     ]
 
@@ -168,18 +217,49 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
 
 @traceable(name="generate_job_brief", run_type="chain")
 async def generate_job_brief(job: dict, user: dict, rating: dict) -> str:
-    """
-    Generate a structured Job Brief for quick copy before applying.
-    """
     cv = user.get("cv", {})
     structured = cv.get("structured", {})
+
+    experience_lines = []
+    for exp in structured.get("experience", []):
+        bullets = "\n".join(f"    - {b}" for b in exp.get("bullets", []))
+        experience_lines.append(
+            f"  {exp.get('title')} @ {exp.get('company')} "
+            f"({exp.get('start')} - {exp.get('end')})\n{bullets}"
+        )
+    experience_text = (
+        "\n\n".join(experience_lines) if experience_lines else "  (none listed)"
+    )
+
+    project_lines = []
+    for p in structured.get("projects", []):
+        bullets = "\n".join(f"    - {b}" for b in p.get("bullets", []))
+        tech = ", ".join(p.get("tech", []))
+        project_lines.append(
+            f"  {p.get('name')} [{tech}]\n  {p.get('description', '')}\n{bullets}"
+        )
+    projects_text = "\n\n".join(project_lines) if project_lines else "  (none listed)"
+
+    education_lines = []
+    for edu in structured.get("education", []):
+        education_lines.append(
+            f"  {edu.get('degree')} — {edu.get('institution')} "
+            f"({edu.get('start')} - {edu.get('end')})"
+        )
+    education_text = (
+        "\n".join(education_lines) if education_lines else "  (none listed)"
+    )
+
+    constraints_text = _build_constraints_block(user)
 
     brief = f"""
 JOB BRIEF
 ==============================
 ROLE:       {job.get('title', 'Unknown')}
+COMPANY:    {job.get('company', 'Unknown')}
 URL:        {job.get('url', 'N/A')}
 FIT SCORE:  {rating.get('score', 'N/A')}/10
+STRUCTURAL MISMATCH: {rating.get('structural_mismatch', False)}
 
 MATCHED STRENGTHS:
 {chr(10).join(f"  • {s}" for s in rating.get('matched_strengths', []))}
@@ -190,16 +270,29 @@ GAPS TO ADDRESS:
 VERDICT:
   {rating.get('verdict', '')}
 
-CANDIDATE PROFILE:
-  Name:       {structured.get('name', '')}
-  Summary:    {structured.get('summary', '')[:300]}
-  Top Skills: {', '.join(structured.get('skills', [])[:12])}
+==============================
+CANDIDATE PROFILE
+==============================
+Name:     {structured.get('name', '')}
+Summary:  {structured.get('summary', '')}
+Skills:   {', '.join(structured.get('skills', []))}
 
-KEY PROJECTS:
-{chr(10).join(f"  • {p.get('name')}: {p.get('description', '')}" for p in structured.get('projects', [])[:3])}
+CANDIDATE CONSTRAINTS:
+{constraints_text}
 
-JD EXCERPT:
-{job.get('full_text', '')[:800]}
+EXPERIENCE:
+{experience_text}
+
+PROJECTS:
+{projects_text}
+
+EDUCATION:
+{education_text}
+
+==============================
+FULL JOB DESCRIPTION
+==============================
+{job.get('full_text', '')[:6000]}
 ==============================
 """.strip()
 

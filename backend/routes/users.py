@@ -1,7 +1,7 @@
 """
 User preference routes.
 
-PATCH /users/preferences  — set locations, role, job types, skills
+PATCH /users/preferences  — set locations, role, job types, skills, constraints
 GET   /users/preferences  — get current preferences
 """
 
@@ -22,6 +22,12 @@ class JobTypes(BaseModel):
     remote: bool = True
 
 
+class WorkMode(BaseModel):
+    remote: bool = True
+    hybrid: bool = True
+    onsite: bool = False
+
+
 class UserPreferences(BaseModel):
     preferred_locations: list[str] = ["Dublin Ireland"]
     primary_role: str = "Full Stack Developer"
@@ -29,6 +35,12 @@ class UserPreferences(BaseModel):
     job_types: JobTypes = JobTypes()
     min_salary: int = 0
     key_skills: list[str] = []
+
+    # new fields
+    experience_level: str = "mid"  # "junior" | "mid" | "senior"
+    work_authorization: str = ""  # e.g. "Stamp 1G, no sponsorship needed"
+    avoid_industries: list[str] = []
+    work_mode: WorkMode = WorkMode()
 
 
 @router.patch("/preferences")
@@ -46,6 +58,10 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
                 "job_types": prefs["job_types"],
                 "min_salary": prefs["min_salary"],
                 "key_skills": prefs["key_skills"],
+                "experience_level": prefs["experience_level"],
+                "work_authorization": prefs["work_authorization"],
+                "avoid_industries": prefs["avoid_industries"],
+                "work_mode": prefs["work_mode"],
             }
         },
     )
@@ -61,4 +77,10 @@ async def get_preferences(user=Depends(get_current_user)):
         "job_types": user.get("job_types", {}),
         "min_salary": user.get("min_salary", 0),
         "key_skills": user.get("key_skills", []),
+        "experience_level": user.get("experience_level", "mid"),
+        "work_authorization": user.get("work_authorization", ""),
+        "avoid_industries": user.get("avoid_industries", []),
+        "work_mode": user.get(
+            "work_mode", {"remote": True, "hybrid": True, "onsite": False}
+        ),
     }

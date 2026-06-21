@@ -1,16 +1,16 @@
 import { useState } from "react";
 import {
   ExternalLink,
-  ChevronDown,
-  ChevronUp,
   Copy,
   Check,
   Building2,
   MapPin,
   EyeOff,
+  Maximize2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { ScoreBadge } from "./ScoreBadge";
+import { JobDetailModal } from "./JobDetailModal";
 import { jobsApi } from "../api/index";
 import type { Job, JobStatus, Props } from "../types";
 
@@ -45,7 +45,7 @@ const REJECTION_QUOTES = [
 ];
 
 function extractCompany(job: Job): string {
-  // @ts-ignore — company may exist on newer Adzuna/Jooble records
+  // @ts-ignore
   if (job.company) return job.company;
   const parts = job.title.split("—");
   return parts.length > 1 ? parts[1].trim() : "";
@@ -60,7 +60,7 @@ function cleanTitle(job: Job): string {
 }
 
 export function JobCard({ job, onStatusChange, onHidden }: Props) {
-  const [expanded, setExpanded] = useState(false);
+  const [showModal, setShowModal] = useState(false);
   const [copied, setCopied] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<JobStatus>(job.status);
 
@@ -88,7 +88,8 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
     }
   };
 
-  const handleCopyBrief = async () => {
+  const handleCopyBrief = async (e: React.MouseEvent) => {
+    e.stopPropagation();
     try {
       const { brief } = await jobsApi.getBrief(job.id);
       await navigator.clipboard.writeText(brief);
@@ -100,7 +101,8 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
     }
   };
 
-  const handleHide = async () => {
+  const handleHide = async (e: React.MouseEvent) => {
+    e.stopPropagation();
     try {
       await jobsApi.hide(job.id);
       toast.success("Job removed from your list");
@@ -114,356 +116,292 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
   const isGoodScore = job.score !== null && job.score >= 6 && job.score < 8;
   const isUnrated = job.score === null;
 
+  const borderColor = isHighScore
+    ? "var(--success)"
+    : isGoodScore
+      ? "var(--warning)"
+      : "transparent";
+
   return (
-    <div
-      className="card card-hover"
-      style={{
-        padding: 20,
-        opacity: job.auto_reject ? 0.45 : 1,
-        borderLeft: isHighScore
-          ? "3px solid var(--success)"
-          : isGoodScore
-            ? "3px solid var(--warning)"
-            : "3px solid transparent",
-      }}
-    >
-      {/* Header row */}
+    <>
       <div
+        onClick={() => setShowModal(true)}
+        className="card card-hover"
         style={{
+          padding: "18px 20px",
+          opacity: job.auto_reject ? 0.45 : 1,
+          borderLeft: `3px solid ${borderColor}`,
+          cursor: "pointer",
           display: "flex",
-          gap: 14,
-          alignItems: "flex-start",
-          marginBottom: 10,
+          flexDirection: "column",
+          minHeight: 248,
+          boxSizing: "border-box",
         }}
       >
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-              marginBottom: 6,
-              flexWrap: "wrap",
-            }}
-          >
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.05em",
-                textTransform: "uppercase",
-                color: "var(--text-muted)",
-              }}
-            >
-              {job.source === "manual"
-                ? "Manual"
-                : job.source === "jooble"
-                  ? "Jooble"
-                  : job.source === "adzuna"
-                    ? "Adzuna"
-                    : "Auto"}
-            </span>
-            {isHighScore && (
-              <span
-                className="badge"
-                style={{
-                  background: "var(--success-bg)",
-                  color: "var(--success)",
-                  border: "1px solid var(--success-border)",
-                }}
-              >
-                Strong match
-              </span>
-            )}
-            {job.auto_reject && (
-              <span
-                className="badge"
-                style={{
-                  background: "var(--danger-bg)",
-                  color: "var(--danger)",
-                  border: "1px solid var(--danger-border)",
-                }}
-              >
-                Auto-reject
-              </span>
-            )}
-          </div>
-
-          <h3
-            style={{
-              fontSize: 16,
-              fontWeight: 600,
-              color: "var(--text)",
-              lineHeight: 1.4,
-              margin: "0 0 4px",
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-            }}
-          >
-            {title}
-          </h3>
-
-          {(company || location) && (
+        {/* Header row */}
+        <div
+          style={{
+            display: "flex",
+            gap: 14,
+            alignItems: "flex-start",
+            marginBottom: 10,
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 12,
+                gap: 7,
+                marginBottom: 6,
                 flexWrap: "wrap",
               }}
             >
-              {company && (
+              <span
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 600,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                  color: "var(--text-muted)",
+                }}
+              >
+                {job.source === "manual"
+                  ? "Manual"
+                  : job.source === "jooble"
+                    ? "Jooble"
+                    : job.source === "jobsapi-indeed"
+                      ? "Indeed"
+                      : job.source === "adzuna"
+                        ? "Adzuna"
+                        : "Auto"}
+              </span>
+              {isHighScore && (
                 <span
+                  className="badge"
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 5,
-                    fontSize: 13,
-                    color: "var(--text-secondary)",
+                    background: "var(--success-bg)",
+                    color: "var(--success)",
+                    border: "1px solid var(--success-border)",
+                    fontSize: 10.5,
                   }}
                 >
-                  <Building2 size={13} style={{ flexShrink: 0 }} />
-                  {company}
+                  Strong match
                 </span>
               )}
-              {location && (
+              {job.auto_reject && (
                 <span
+                  className="badge"
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 5,
-                    fontSize: 13,
-                    color: "var(--text-secondary)",
+                    background: "var(--danger-bg)",
+                    color: "var(--danger)",
+                    border: "1px solid var(--danger-border)",
+                    fontSize: 10.5,
                   }}
                 >
-                  <MapPin size={13} style={{ flexShrink: 0 }} />
-                  {location}
+                  Auto-reject
                 </span>
               )}
             </div>
+
+            <h3
+              style={{
+                fontSize: 14.5,
+                fontWeight: 600,
+                color: "var(--text)",
+                lineHeight: 1.4,
+                margin: "0 0 5px",
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+                minHeight: 40,
+              }}
+            >
+              {title}
+            </h3>
+
+            {(company || location) && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                {company && (
+                  <span
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      fontSize: 12,
+                      color: "var(--text-secondary)",
+                      minWidth: 0,
+                    }}
+                  >
+                    <Building2 size={11} style={{ flexShrink: 0 }} />
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        maxWidth: 130,
+                      }}
+                    >
+                      {company}
+                    </span>
+                  </span>
+                )}
+                {location && (
+                  <span
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      fontSize: 12,
+                      color: "var(--text-secondary)",
+                    }}
+                  >
+                    <MapPin size={11} style={{ flexShrink: 0 }} />
+                    {location}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-end",
+              gap: 8,
+              flexShrink: 0,
+            }}
+          >
+            <ScoreBadge score={job.score} size="md" />
+            {job.url && (
+              <a
+                href={job.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                style={{ color: "var(--text-muted)", display: "flex" }}
+              >
+                <ExternalLink size={12} />
+              </a>
+            )}
+          </div>
+        </div>
+
+        {/* Verdict — clamped at 2 lines, ellipsis not mid-word cut */}
+        <div style={{ flex: 1, minHeight: 0, marginBottom: 12 }}>
+          {!isUnrated && job.verdict && job.verdict !== "Not rated yet" ? (
+            <p
+              style={{
+                fontSize: 12.5,
+                color: "var(--text-secondary)",
+                margin: 0,
+                lineHeight: 1.55,
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {job.verdict}
+            </p>
+          ) : (
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+              {isUnrated ? "Not rated yet — run Search to rate" : ""}
+            </p>
           )}
         </div>
 
+        {/* Footer */}
         <div
           style={{
             display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-end",
+            alignItems: "center",
+            justifyContent: "space-between",
             gap: 8,
+            paddingTop: 12,
+            borderTop: "1px solid var(--border)",
             flexShrink: 0,
           }}
         >
-          <ScoreBadge score={job.score} size="md" />
-          {job.url && (
-            <a
-              href={job.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "var(--text-muted)", display: "flex" }}
-            >
-              <ExternalLink size={14} />
-            </a>
-          )}
-        </div>
-      </div>
-
-      {/* Verdict */}
-      {!isUnrated && job.verdict && job.verdict !== "Not rated yet" && (
-        <p
-          style={{
-            fontSize: 13.5,
-            color: "var(--text-secondary)",
-            margin: "0 0 14px",
-            lineHeight: 1.6,
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-          }}
-        >
-          {job.verdict}
-        </p>
-      )}
-
-      {isUnrated && (
-        <p
-          style={{
-            fontSize: 13,
-            color: "var(--text-muted)",
-            margin: "0 0 14px",
-          }}
-        >
-          Not rated yet — run Search to rate
-        </p>
-      )}
-
-      {/* Footer */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-          paddingTop: 14,
-          borderTop: "1px solid var(--border)",
-        }}
-      >
-        <select
-          value={currentStatus}
-          onChange={(e) => handleStatus(e.target.value as JobStatus)}
-          style={{
-            fontSize: 12.5,
-            fontWeight: 600,
-            color: STATUS_COLORS[currentStatus],
-            background: "transparent",
-            border: "1px solid var(--border)",
-            borderRadius: 7,
-            padding: "5px 8px",
-            cursor: "pointer",
-            outline: "none",
-          }}
-        >
-          {STATUSES.map((s) => (
-            <option
-              key={s}
-              value={s}
-              style={{ color: "var(--text)", background: "var(--bg-card)" }}
-            >
-              {s.replace("_", " ")}
-            </option>
-          ))}
-        </select>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {job.score !== null && job.score > 0 && (
-            <button
-              onClick={handleCopyBrief}
-              className="btn btn-ghost"
-              style={{ padding: "6px 10px", fontSize: 12.5 }}
-            >
-              {copied ? <Check size={12} /> : <Copy size={12} />}
-              {copied ? "Copied" : "Copy details"}
-            </button>
-          )}
-
-          {/* THE HIDE BUTTON — this was missing before */}
-          <button
-            onClick={handleHide}
-            className="btn btn-ghost"
-            style={{ padding: "6px 8px", fontSize: 12.5 }}
-            title="Remove from list"
-          >
-            <EyeOff size={12} />
-          </button>
-
-          <button
-            onClick={() => setExpanded(!expanded)}
+          <select
+            value={currentStatus}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => handleStatus(e.target.value as JobStatus)}
             style={{
-              background: "none",
-              border: "none",
+              fontSize: 11.5,
+              fontWeight: 600,
+              color: STATUS_COLORS[currentStatus],
+              background: "transparent",
+              border: "1px solid var(--border)",
+              borderRadius: 7,
+              padding: "4px 6px",
               cursor: "pointer",
-              color: "var(--text-muted)",
-              display: "flex",
-              padding: 5,
+              outline: "none",
+              maxWidth: 110,
             }}
           >
-            {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          </button>
+            {STATUSES.map((s) => (
+              <option
+                key={s}
+                value={s}
+                style={{ color: "var(--text)", background: "var(--bg-card)" }}
+              >
+                {s.replace("_", " ")}
+              </option>
+            ))}
+          </select>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              flexShrink: 0,
+            }}
+          >
+            {job.score !== null && job.score > 0 && (
+              <button
+                onClick={handleCopyBrief}
+                className="btn btn-ghost"
+                style={{ padding: "5px 8px", fontSize: 11.5 }}
+              >
+                {copied ? <Check size={11} /> : <Copy size={11} />}
+                {copied ? "Copied" : "Copy"}
+              </button>
+            )}
+            <button
+              onClick={handleHide}
+              className="btn btn-ghost"
+              style={{ padding: "5px 6px", fontSize: 11.5 }}
+              title="Remove from list"
+            >
+              <EyeOff size={11} />
+            </button>
+            <button
+              onClick={() => setShowModal(true)}
+              className="btn btn-ghost"
+              style={{ padding: "5px 6px", fontSize: 11.5 }}
+              title="View full details"
+            >
+              <Maximize2 size={11} />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Expanded */}
-      {expanded && (
-        <div
-          style={{
-            marginTop: 16,
-            paddingTop: 16,
-            borderTop: "1px solid var(--border)",
-          }}
-        >
-          {job.matched_strengths.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <div
-                style={{
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  color: "var(--success)",
-                  marginBottom: 8,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                Strengths
-              </div>
-              {job.matched_strengths.map((s, i) => (
-                <div
-                  key={i}
-                  style={{ display: "flex", gap: 8, marginBottom: 6 }}
-                >
-                  <span
-                    style={{
-                      color: "var(--success)",
-                      fontWeight: 700,
-                      flexShrink: 0,
-                    }}
-                  >
-                    +
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 13,
-                      color: "var(--text-secondary)",
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    {s}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {job.gaps.length > 0 && (
-            <div>
-              <div
-                style={{
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  color: "#f97316",
-                  marginBottom: 8,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                Gaps
-              </div>
-              {job.gaps.map((g, i) => (
-                <div
-                  key={i}
-                  style={{ display: "flex", gap: 8, marginBottom: 6 }}
-                >
-                  <span
-                    style={{ color: "#f97316", fontWeight: 700, flexShrink: 0 }}
-                  >
-                    −
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 13,
-                      color: "var(--text-secondary)",
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    {g}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      {showModal && (
+        <JobDetailModal job={job} onClose={() => setShowModal(false)} />
       )}
-    </div>
+    </>
   );
 }
