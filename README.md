@@ -10,10 +10,271 @@ An AI-powered job hunting assistant that finds roles for you, scores how well ea
 
 | Layer | Tech | Role |
 |-------|------|------|
-| **Backend** | FastAPI, MongoDB, LangChain | Auth, CV parsing, job crawling, AI rating, API |
-| **Frontend** | React, Vite, TanStack Query, Zustand | Login, job dashboard, Kanban board, settings |
+| **Backend** | FastAPI, Motor (MongoDB), LangChain, LangSmith, PyMuPDF | Auth, CV parsing, job crawling, AI rating, REST API |
+| **Frontend** | React 18, TypeScript, Vite, TanStack Query, Zustand, @dnd-kit, Tailwind CSS | Login, job dashboard, drag-and-drop Kanban, settings |
 
 The core idea: upload your CV once, set your preferences, hit **Search jobs**, and the system discovers listings, rates each one against your profile (1–10), and gives you strengths, gaps, and a verdict — so you spend time on roles that actually fit.
+
+---
+
+## System Architecture
+
+### High-Level Overview
+
+JobRadar is a three-tier system: a React SPA talks to a FastAPI backend, which orchestrates MongoDB persistence, external job APIs, and a swappable LLM provider (Ollama or OpenAI) via LangChain.
+
+```mermaid
+flowchart TB
+    subgraph Client["Frontend — React SPA (Vite)"]
+        Pages["Pages: Login · Dashboard · Kanban · Settings"]
+        State["Zustand (auth) + TanStack Query (server state)"]
+        Axios["Axios client + JWT interceptor"]
+    end
+
+    subgraph Backend["Backend — FastAPI"]
+        Routes["API Routes<br/>auth · cv · crawler · jobs · users"]
+        Deps["JWT auth dependency"]
+        subgraph Services["Service Layer"]
+            CVParser["cv_parser.py"]
+            Rating["rating.py"]
+            Crawlers["jooble · jobsapi · adzuna · tavily"]
+            LLM["llm.py — provider abstraction"]
+        end
+        Security["core/security.py — bcrypt + JWT"]
+    end
+
+    subgraph Data["Data Layer"]
+        MongoDB[("MongoDB<br/>users · jobs")]
+    end
+
+    subgraph External["External Services"]
+        Jooble["Jooble API"]
+        JobsAPI["JobsAPI (Indeed)"]
+        Adzuna["Adzuna API"]
+        Tavily["Tavily Search"]
+        Ollama["Ollama (local)"]
+        OpenAI["OpenAI API"]
+    end
+
+    Pages --> State --> Axios
+    Axios -->|"REST + Bearer JWT"| Routes
+    Routes --> Deps --> Security
+    Routes --> Services
+    Services --> MongoDB
+    CVParser --> LLM
+    Rating --> LLM
+    Crawlers --> Jooble & JobsAPI & Adzuna & Tavily
+    LLM --> Ollama & OpenAI
+```
+
+### Backend Layered Architecture
+
+The backend follows a thin-routes, fat-services pattern. Routes handle HTTP concerns; services own business logic; `llm.py` abstracts the AI provider so CV parsing and rating never depend on a specific vendor.
+
+```mermaid
+flowchart TB
+    subgraph Presentation["Presentation — FastAPI Routes"]
+        auth_r["routes/auth.py"]
+        cv_r["routes/cv.py"]
+        crawler_r["routes/crawler.py"]
+        jobs_r["routes/jobs.py"]
+        users_r["routes/users.py"]
+    end
+
+    subgraph Business["Business — Services"]
+        cv_s["cv_parser.py<br/>PDF → text → JSON"]
+        rating_s["rating.py<br/>CV vs JD scoring"]
+        jooble_s["jooble_crawler.py"]
+        jobsapi_s["jobsapi_indeed_crawler.py"]
+        adzuna_s["adzuna_crawler.py"]
+        tavily_s["crawler.py (Tavily)"]
+        llm_s["llm.py"]
+    end
+
+    subgraph Core["Core"]
+        security["security.py"]
+        deps["deps.py"]
+        models["models/user.py"]
+    end
+
+    subgraph Infra["Infrastructure"]
+        config["config.py"]
+        database["database.py (Motor)"]
+    end
+
+    auth_r & cv_r & crawler_r & jobs_r & users_r --> Business
+    auth_r --> security
+    Presentation --> deps
+    Business --> llm_s
+    Business --> database
+    database --> MongoDB[("MongoDB")]
+    Infra --> database
+```
+
+### Frontend Architecture
+
+```mermaid
+flowchart LR
+    subgraph UI["UI Layer"]
+        Login["Login.tsx"]
+        Dashboard["Dashboard.tsx"]
+        Kanban["Kanban.tsx"]
+        Settings["Settings.tsx"]
+        Components["JobCard · ManualJDModal · ScoreBadge · Navbar"]
+    end
+
+    subgraph DataLayer["Data Layer"]
+        Zustand["Zustand — JWT token"]
+        TQ["TanStack Query — jobs, crawl status"]
+        API["api/client.ts + api/index.ts"]
+    end
+
+    Login --> Zustand
+    Dashboard & Kanban & Settings --> TQ
+    Dashboard & Kanban --> Components
+    TQ --> API
+    API -->|"http://localhost:8000"| FastAPI["FastAPI Backend"]
+```
+
+### Data Model
+
+Jobs are stored in a shared collection; per-user data (ratings, Kanban status, hidden flag) is embedded on each job document using `{user_id}` keys. This lets multiple users rate the same listing independently without duplicating job records.
+
+```mermaid
+erDiagram
+    USERS {
+        ObjectId _id PK
+        string name
+        string email UK
+        string password_hash
+        datetime created_at
+        string cv_raw_text
+        object cv_parsed
+        object preferences
+        datetime last_crawl_at
+        int manual_crawl_count_today
+    }
+
+    JOBS {
+        ObjectId _id PK
+        string title
+        string url
+        string url_hash UK
+        string snippet
+        string full_text
+        string source
+        string company
+        string location
+        datetime crawled_at
+        object ratings
+        string status_per_user
+        bool hidden_per_user
+    }
+
+    USERS ||--o{ JOBS : "rates and tracks via embedded fields"
+```
+
+**`ratings.{user_id}`** stores `score`, `matched_strengths`, `gaps`, `verdict`, `auto_reject`, `rated_at`.
+
+**`status_{user_id}`** tracks Kanban pipeline: `NEW` → `SAVED` → `HALF_APPLIED` → `APPLIED` → `FOLLOWUP` → `INTERVIEWING` → `OFFER` / `REJECTED`.
+
+### Deployment Topology
+
+```mermaid
+flowchart LR
+    Browser["Browser"] --> Vite["Vite dev server<br/>:5173"]
+    Vite --> FastAPI["FastAPI + Uvicorn<br/>:8000"]
+    FastAPI --> Mongo["MongoDB<br/>:27017 or Atlas"]
+    FastAPI --> Ollama["Ollama<br/>:11434"]
+    FastAPI --> JobAPIs["Jooble · JobsAPI · Adzuna"]
+    FastAPI -.->|"optional"| OpenAI["OpenAI API"]
+    FastAPI -.->|"optional"| Tavily["Tavily API"]
+```
+
+### Sequence: Job Discovery & AI Rating
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant FE as React Frontend
+    participant API as FastAPI
+    participant Crawler as Job Crawlers
+    participant Ext as Jooble / JobsAPI
+    participant DB as MongoDB
+    participant Rating as rating.py
+    participant LLM as Ollama / OpenAI
+
+    User->>FE: Click "Search jobs"
+    FE->>API: POST /crawler/search (JWT)
+    API->>API: Check 20/day rate limit
+
+    par Parallel crawl
+        API->>Crawler: crawl_jobs_for_user_jooble()
+        Crawler->>Ext: Search with roles + skills
+        Ext-->>Crawler: Listings
+        API->>Crawler: crawl_jobs_for_user_jobsapi()
+        Crawler->>Ext: Search with roles + skills
+        Ext-->>Crawler: Listings
+    end
+
+    Crawler->>DB: Dedupe by url_hash, skip short JDs, insert new
+    API-->>FE: found / stored / skipped
+
+    FE->>API: POST /jobs/rate-all (background task)
+    loop Each unrated job for user
+        Rating->>DB: Load user CV + job full_text
+        Rating->>LLM: Structured output (JobRating Pydantic)
+        LLM-->>Rating: score, strengths, gaps, verdict
+        Rating->>DB: Set ratings.{user_id}
+    end
+
+    FE->>API: GET /jobs (poll every 30s)
+    API-->>FE: Rated job cards for dashboard
+```
+
+### Sequence: CV Upload & Parsing
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant FE as React Frontend
+    participant API as FastAPI
+    participant CV as cv_parser.py
+    participant PDF as PyMuPDF
+    participant LLM as Ollama / OpenAI
+    participant DB as MongoDB
+
+    User->>FE: Upload PDF (max 5 MB)
+    FE->>API: POST /cv/upload (multipart)
+    API->>CV: process_cv(pdf_bytes)
+    CV->>PDF: extract_text_from_pdf()
+    PDF-->>CV: Raw text
+    CV->>LLM: parse_cv_with_llm() → structured JSON
+    LLM-->>CV: name, skills, experience, projects, education
+    CV->>DB: Save cv_raw_text + cv_parsed on user doc
+    API-->>FE: Parsed CV summary
+```
+
+### Sequence: Authentication
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant FE as React Frontend
+    participant API as FastAPI
+    participant DB as MongoDB
+
+    User->>FE: Register or login
+    FE->>API: POST /auth/register or /auth/login
+    API->>DB: Lookup / create user (bcrypt hash)
+    API-->>FE: JWT access_token (7-day expiry)
+    FE->>FE: Store token in Zustand + localStorage
+
+    Note over FE,API: All protected routes
+    FE->>API: Request with Authorization: Bearer {token}
+    API->>API: deps.py decodes JWT, loads user
+    API-->>FE: Authenticated response
+```
 
 ---
 
@@ -25,7 +286,7 @@ flowchart LR
     B --> C[LLM parses CV to JSON]
     C --> D[Set preferences in Settings]
     D --> E[Search jobs]
-    E --> F[Adzuna + Jooble APIs]
+    E --> F[Jooble + JobsAPI]
     F --> G[Store jobs in MongoDB]
     G --> H[LLM rates CV vs each JD]
     H --> I[Dashboard + Kanban]
@@ -67,7 +328,9 @@ Manual search (`POST /crawler/search`) runs **two APIs in parallel**:
 | Source | How it works |
 |--------|----------------|
 | **Jooble** | POST API; keywords + Dublin, Ireland; jobs from last 7 days; fetches full JD from link if snippet is short |
-| **Adzuna** | GET API; Ireland (`ie`); searches by role + skills; returns structured title, company, location, salary, description |
+| **JobsAPI (Indeed)** | GET API; searches by role + skills; returns structured title, company, location, salary, description |
+
+**Adzuna** is also implemented (`adzuna_crawler.py`) but currently disabled in the live search endpoint.
 
 **Shared logic for all crawlers:**
 
@@ -147,6 +410,7 @@ langchain-jobradar/
 │       ├── rating.py        # CV vs JD scoring + job brief
 │       ├── adzuna_crawler.py
 │       ├── jooble_crawler.py
+│       ├── jobsapi_indeed_crawler.py
 │       └── crawler.py       # Tavily-based discovery (alternate)
 └── frontend/
     └── src/
@@ -192,7 +456,7 @@ langchain-jobradar/
 - Node.js 18+
 - MongoDB (local or Atlas)
 - Ollama running locally (or OpenAI API key)
-- Adzuna + Jooble API keys (for job search)
+- Jooble + JobsAPI API keys (for job search)
 
 ### Backend
 
@@ -227,8 +491,9 @@ See `backend/.env.example`. Key ones:
 | `JWT_SECRET` | Token signing secret |
 | `LLM_PROVIDER` | `ollama` or `openai` |
 | `OLLAMA_MODEL` | e.g. `qwen2.5:14b` |
-| `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Adzuna job API |
 | `JOOBLE_API_KEY` | Jooble job API |
+| `JOBSAPI_KEY` | JobsAPI (Indeed) job API |
+| `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Adzuna job API (optional) |
 | `TAVILY_API_KEY` | Optional, for Tavily crawler |
 
 ---
@@ -239,7 +504,7 @@ You built **JobRadar AI** — a personalised job search copilot:
 
 1. **Upload your CV** → AI extracts structured skills, experience, and projects.
 2. **Set preferences** → roles, locations, job types, key skills.
-3. **Search** → Jooble + Adzuna fetch Ireland-focused listings tailored to your profile.
+3. **Search** → Jooble + JobsAPI fetch Ireland-focused listings tailored to your profile.
 4. **Rate** → LangChain compares each job description to your CV and returns a 1–10 score with strengths, gaps, and a verdict.
 5. **Act** → Filter by score, track status on a Kanban board, copy job briefs, paste manual JDs.
 
@@ -251,8 +516,19 @@ The architecture is designed to be **provider-agnostic**: swap `LLM_PROVIDER` in
 
 ## Tech Stack
 
-- **Backend:** FastAPI, Motor (async MongoDB), Pydantic, LangChain, PyMuPDF, httpx
-- **Frontend:** React 18, TypeScript, Vite, TanStack Query, Zustand, React Router, Tailwind CSS
-- **AI:** LangChain (Ollama / OpenAI), structured output for reliable JSON
-- **Data:** MongoDB
-- **Job APIs:** Adzuna, Jooble (+ Tavily as alternate discovery)
+| Category | Technologies |
+|----------|--------------|
+| **Language & runtime** | Python 3.11+ (backend), TypeScript (frontend) |
+| **Backend framework** | FastAPI, Uvicorn, Pydantic v2, pydantic-settings, python-dotenv |
+| **Auth & security** | bcrypt, PyJWT, email-validator |
+| **Database** | MongoDB, Motor (async driver) |
+| **AI / LLM** | LangChain, langchain-ollama, langchain-openai, LangSmith (tracing), structured Pydantic output |
+| **LLM providers** | Ollama (local, default) or OpenAI (cloud) — swappable via `.env` |
+| **PDF processing** | PyMuPDF (`fitz`) |
+| **Job discovery** | Jooble API, JobsAPI (Indeed), Adzuna, Tavily Python SDK |
+| **HTTP client** | httpx (async crawlers) |
+| **Scheduling** | APScheduler |
+| **Frontend framework** | React 18, Vite 5, React Router 6 |
+| **Frontend state & data** | TanStack Query, Zustand, Axios |
+| **Frontend UI** | Tailwind CSS, Lucide React (icons), react-hot-toast (notifications), @dnd-kit (Kanban drag-and-drop) |
+| **Dev tooling** | uv (Python package manager), npm, Ruff (linting) |
