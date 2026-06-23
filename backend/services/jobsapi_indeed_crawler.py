@@ -25,7 +25,36 @@ def _hash_url(url: str) -> str:
 def _build_search_terms(user: dict) -> list[str]:
     primary_role = user.get("primary_role", "Full Stack Developer")
     secondary_roles = user.get("secondary_roles", [])
-    return [primary_role] + secondary_roles
+    roles = [primary_role] + secondary_roles
+
+    key_skills = user.get("key_skills", [])
+    if not key_skills:
+        cv = user.get("cv", {})
+        structured = cv.get("structured", {})
+        all_skills = structured.get("skills", [])
+        skip = {
+            "HTML5",
+            "CSS3",
+            "Git / GitHub",
+            "Postman",
+            "Agile / Scrum",
+            "Performance Optimisation",
+            "Technical Documentation",
+        }
+        key_skills = [s for s in all_skills if s not in skip][:5]
+
+    terms = []
+    for role in roles:
+        terms.append(role)
+        if key_skills:
+            for skill in key_skills[:3]:
+                terms.append(f"{role} {skill}")
+            if len(key_skills) >= 2:
+                terms.append(f"{key_skills[0]} {key_skills[1]} developer")
+
+    seen = set()
+    unique = [t for t in terms if not (t in seen or seen.add(t))]
+    return unique[:10]
 
 
 def _detect_country_code(location: str) -> str:
@@ -162,7 +191,10 @@ async def crawl_jobs_for_user_jobsapi(user: dict) -> dict:
                         continue
 
                     url_hash = _hash_url(url)
-                    existing = await db.jobs.find_one({"url_hash": url_hash})
+                    # dedup per user only
+                    existing = await db.jobs.find_one(
+                        {"url_hash": url_hash, "crawled_by": str(user["_id"])}
+                    )
                     if existing:
                         skipped += 1
                         continue
@@ -172,8 +204,26 @@ async def crawl_jobs_for_user_jobsapi(user: dict) -> dict:
                         skipped += 1
                         continue
 
+                    # Relevance filter — avoid storing clearly off-target jobs
+                    if not _is_relevant_job(full_text, user):
+                        skipped += 1
+                        continue
+
                     company_obj = job.get("company", {}) or {}
                     location_obj = job.get("location", {}) or {}
+
+                    # JobsAPI sometimes includes postedDate
+                    posted_at = None
+                    posted = (
+                        job.get("postedDate") or job.get("date") or job.get("posted")
+                    )
+                    if posted:
+                        try:
+                            posted_at = datetime.fromisoformat(
+                                str(posted).replace("Z", "+00:00")
+                            ).isoformat()
+                        except Exception:
+                            posted_at = None
 
                     doc = {
                         "title": job.get("title", "Unknown Role"),
@@ -187,6 +237,7 @@ async def crawl_jobs_for_user_jobsapi(user: dict) -> dict:
                         "query": term,
                         "search_location": raw_location,
                         "crawled_at": datetime.now(timezone.utc),
+                        "posted_at": posted_at,
                         "crawled_by": str(user["_id"]),
                         "ratings": {},
                     }
@@ -198,3 +249,24 @@ async def crawl_jobs_for_user_jobsapi(user: dict) -> dict:
                     )
 
     return {"found": found, "stored": stored, "skipped": skipped}
+
+
+def _is_relevant_job(full_text: str, user: dict) -> bool:
+    """Lightweight relevance gate before persisting job."""
+    text = full_text.lower()
+
+    key_skills = user.get("key_skills", [])
+    if not key_skills:
+        cv = user.get("cv", {})
+        structured = cv.get("structured", {})
+        all_skills = structured.get("skills", [])
+        skip = {"HTML5", "CSS3", "Git / GitHub", "Postman", "Agile / Scrum"}
+        key_skills = [s for s in all_skills if s not in skip][:5]
+
+    if key_skills:
+        matches = sum(1 for sk in key_skills if sk.lower() in text)
+        primary = user.get("primary_role", "").lower()
+        if matches == 0 and primary and primary.split()[0] not in text:
+            return False
+
+    return True

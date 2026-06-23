@@ -1,5 +1,13 @@
 import { Link, useLocation } from "react-router-dom";
-import { Sun, Moon, LogOut, LayoutGrid, Kanban, Settings } from "lucide-react";
+import {
+  Sun,
+  Moon,
+  LogOut,
+  LayoutGrid,
+  Kanban,
+  Settings,
+  Shield,
+} from "lucide-react";
 import { useAuthStore, useThemeStore } from "../hooks/useStores";
 
 export function Navbar() {
@@ -7,11 +15,15 @@ export function Navbar() {
   const logout = useAuthStore((s) => s.logout);
   const { dark, toggle } = useThemeStore();
 
+  const { user } = useAuthStore();
   const links = [
     { to: "/", label: "Jobs", icon: LayoutGrid },
     { to: "/kanban", label: "Pipeline", icon: Kanban },
     { to: "/settings", label: "Settings", icon: Settings },
   ];
+
+  const isAdmin = !!user?.isAdmin;
+  const adminBase = user?.adminBasePath;
 
   return (
     <nav className="nav">
@@ -56,6 +68,32 @@ export function Navbar() {
               </Link>
             );
           })}
+          {isAdmin && (
+            <Link to="/admin" style={{ textDecoration: "none" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                  padding: "7px 14px",
+                  borderRadius: 8,
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color:
+                    location.pathname === "/admin"
+                      ? "var(--accent)"
+                      : "var(--text-secondary)",
+                  background:
+                    location.pathname === "/admin"
+                      ? "var(--accent-light)"
+                      : "transparent",
+                }}
+              >
+                <Shield size={15} />
+                <span className="hidden sm:inline">Admin</span>
+              </div>
+            </Link>
+          )}
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

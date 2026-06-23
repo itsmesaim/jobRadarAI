@@ -1,9 +1,33 @@
-import { X, ExternalLink, Building2, MapPin, Copy, Check } from "lucide-react";
+import {
+  X,
+  ExternalLink,
+  Building2,
+  MapPin,
+  Copy,
+  Check,
+  Clock,
+} from "lucide-react";
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { ScoreBadge } from "./ScoreBadge";
 import { jobsApi } from "../api/index";
 import type { Job } from "../types";
+
+function timeAgo(dateStr?: string): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return `${Math.floor(days / 7)}w ago`;
+}
 
 interface Props {
   job: Job;
@@ -101,6 +125,19 @@ export function JobDetailModal({ job, onClose }: Props) {
               >
                 {job.source === "manual" ? "Manual" : job.source}
               </span>
+              {timeAgo(job.posted_at || job.crawled_at) && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <Clock size={11} /> {timeAgo(job.posted_at || job.crawled_at)}
+                </span>
+              )}
             </div>
             <h2
               style={{

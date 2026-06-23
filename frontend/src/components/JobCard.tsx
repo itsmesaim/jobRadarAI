@@ -7,12 +7,30 @@ import {
   MapPin,
   EyeOff,
   Maximize2,
+  Clock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { ScoreBadge } from "./ScoreBadge";
 import { JobDetailModal } from "./JobDetailModal";
 import { jobsApi } from "../api/index";
 import type { Job, JobStatus, Props } from "../types";
+
+function timeAgo(dateStr?: string): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  return `${weeks}w ago`;
+}
 
 const STATUSES: JobStatus[] = [
   "NEW",
@@ -68,6 +86,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
   const title = cleanTitle(job);
   // @ts-ignore
   const location = job.location as string | undefined;
+  const postedTime = timeAgo(job.posted_at || job.crawled_at);
 
   const handleStatus = async (status: JobStatus) => {
     try {
@@ -176,6 +195,19 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                         ? "Adzuna"
                         : "Auto"}
               </span>
+              {postedTime && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 3,
+                  }}
+                >
+                  <Clock size={10} /> {postedTime}
+                </span>
+              )}
               {isHighScore && (
                 <span
                   className="badge"

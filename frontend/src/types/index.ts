@@ -3,6 +3,16 @@ export interface User {
   name: string;
   email: string;
   created_at: string;
+  isAdmin?: boolean;
+  adminBasePath?: string | null;
+  usage?: {
+    searches_used: number;
+    ratings_used: number;
+    search_limit: number;
+    rating_limit: number;
+    is_admin: boolean;
+    [key: string]: any;
+  };
 }
 
 export interface Job {
@@ -11,6 +21,7 @@ export interface Job {
   url: string;
   snippet: string;
   crawled_at: string;
+  posted_at?: string; // actual job posting date from source when available
   source: "tavily" | "manual" | "jooble" | "adzuna" | "jobsapi-indeed";
   score: number | null;
   matched_strengths: string[];
@@ -103,4 +114,26 @@ export interface Props {
   job: Job;
   onStatusChange?: () => void;
   onHidden?: () => void;
+}
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  created_at: string;
+  searches_used: number;
+  ratings_used: number;
+  search_limit: number;
+  rating_limit: number;
+  full_access?: boolean;
+  full_access_until?: string;
+  is_admin: boolean;
+  last_reset?: string;
+  admin_notes?: string;
+}
+
+export interface AdminUsersResponse {
+  users: AdminUser[];
+  total: number;
+  page: number;
 }

@@ -1,6 +1,6 @@
 # JobRadar AI
 
-An AI-powered job hunting assistant that finds roles for you, scores how well each job fits your CV, and helps you track applications from discovery to offer.
+An AI-powered job hunting assistant that finds roles for you, rates them intelligently against your CV (with separate fast rating models), shows when jobs were posted, and helps you track applications — with built-in freemium limits and an admin panel.
 
 ---
 
@@ -21,7 +21,9 @@ The core idea: upload your CV once, set your preferences, hit **Search jobs**, a
 
 ### High-Level Overview
 
-JobRadar is a three-tier system: a React SPA talks to a FastAPI backend, which orchestrates MongoDB persistence, external job APIs, and a swappable LLM provider (Ollama or OpenAI) via LangChain.
+JobRadar is a three-tier system: a React SPA talks to a FastAPI backend, which orchestrates MongoDB persistence, external job APIs, and **split LLM providers** via LangChain.
+
+You can use one model/provider for CV parsing and briefs, and a different (usually faster/cheaper) model for bulk job rating. xAI/Grok is fully supported for rating.
 
 ```mermaid
 flowchart TB
@@ -64,12 +66,14 @@ flowchart TB
     CVParser --> LLM
     Rating --> LLM
     Crawlers --> Jooble & JobsAPI & Adzuna & Tavily
-    LLM --> Ollama & OpenAI
+    LLM --> Ollama & OpenAI & xAI
 ```
 
 ### Backend Layered Architecture
 
-The backend follows a thin-routes, fat-services pattern. Routes handle HTTP concerns; services own business logic; `llm.py` abstracts the AI provider so CV parsing and rating never depend on a specific vendor.
+The backend follows a thin-routes, fat-services pattern. Routes handle HTTP concerns; services own business logic; `llm.py` abstracts the AI providers.
+
+A key design: **main LLM** (for CV parsing, briefs) vs **rating LLM** (for fast bulk job scoring). They can use completely different providers/models controlled only via `.env`.
 
 ```mermaid
 flowchart TB
@@ -88,7 +92,7 @@ flowchart TB
         jobsapi_s["jobsapi_indeed_crawler.py"]
         adzuna_s["adzuna_crawler.py"]
         tavily_s["crawler.py (Tavily)"]
-        llm_s["llm.py"]
+        llm_s["llm.py — main + rating LLM split + xAI support"]
     end
 
     subgraph Core["Core"]
@@ -166,6 +170,7 @@ erDiagram
         string company
         string location
         datetime crawled_at
+        datetime posted_at
         object ratings
         string status_per_user
         bool hidden_per_user
@@ -201,8 +206,8 @@ sequenceDiagram
     participant Crawler as Job Crawlers
     participant Ext as Jooble / JobsAPI
     participant DB as MongoDB
-    participant Rating as rating.py
-    participant LLM as Ollama / OpenAI
+    participant Rating as rating.py (prefilter + concurrency)
+    participant LLM as Main LLM + Rating LLM (split, xAI supported)
 
     User->>FE: Click "Search jobs"
     FE->>API: POST /crawler/search (JWT)
@@ -222,9 +227,14 @@ sequenceDiagram
 
     FE->>API: POST /jobs/rate-all (background task)
     loop Each unrated job for user
-        Rating->>DB: Load user CV + job full_text
-        Rating->>LLM: Structured output (JobRating Pydantic)
-        LLM-->>Rating: score, strengths, gaps, verdict
+        Rating->>DB: Load user CV + job
+        Rating->>Rating: Embedding pre-filter (cosine similarity)
+        alt Low similarity
+            Rating->>DB: Cheap low score (no LLM)
+        else
+            Rating->>LLM: Rating LLM (can be different provider)
+            LLM-->>Rating: score, strengths, gaps, verdict, tailoring_tips
+        end
         Rating->>DB: Set ratings.{user_id}
     end
 
@@ -288,8 +298,8 @@ flowchart LR
     D --> E[Search jobs]
     E --> F[Jooble + JobsAPI]
     F --> G[Store jobs in MongoDB]
-    G --> H[LLM rates CV vs each JD]
-    H --> I[Dashboard + Kanban]
+    G --> H[Pre-filter + Rating LLM (split model) rates jobs]
+    H --> I[Dashboard (with posted date) + Kanban + usage pills]
 ```
 
 ### 1. Authentication
@@ -344,29 +354,34 @@ There is also a **Tavily-based crawler** (`services/crawler.py`) that uses web s
 
 **Rate limit:** 20 manual searches per user per day.
 
-### 5. AI Job Rating (LangChain)
+### 5. AI Job Rating (LangChain + Performance)
 
 After new jobs are stored, the frontend triggers `POST /jobs/rate-all` in the background.
 
-For each unrated job, the rating service:
+The rating engine has several optimizations for speed and cost:
 
-1. Builds a CV summary from your structured profile
-2. Sends the job description (up to 4,000 chars) + CV to the LLM
-3. Uses **LangChain structured output** (`JobRating` Pydantic model) so the response is always valid JSON
+- **Embedding pre-filter**: Computes cosine similarity between your CV and each job. Low-similarity jobs get a cheap score (1-4) instantly with **no LLM call**.
+- **Split LLMs**: You can use a fast/cheap model (e.g. xAI Grok) **only for rating**, while keeping another model for CV parsing and briefs.
+- **Concurrency**: Up to 10 jobs rated in parallel.
+- **Structured output**: Uses `JobRating` Pydantic model for reliable JSON.
 
-**Rating fields:**
+**Rating fields** (returned by the rating LLM):
 
 | Field | Meaning |
 |-------|---------|
 | `score` | 1–10 fit score (honest, not inflated) |
-| `matched_strengths` | Where your CV aligns with the JD |
+| `matched_strengths` | Specific ways your profile matches the JD |
 | `gaps` | Requirements you are missing or weak on |
 | `verdict` | One-sentence summary + actionable suggestion |
-| `auto_reject` | True if visa/location/hard skill blockers exist |
+| `auto_reject` | True if there are hard blockers (visa, location, etc.) |
+| `tailoring_tips` | Concrete advice on what to emphasize when applying |
 
-Ratings are stored per user on each job document (`ratings.{user_id}`), so the same job can be rated differently for different users.
+Ratings are stored per user (`ratings.{user_id}`).
 
-**LLM provider** is swappable via `.env`: `ollama` (default, local) or `openai`.
+**Configuration** (all via `.env` only):
+- `LLM_PROVIDER` + `OPENAI_MODEL` / `OLLAMA_MODEL` (main LLM)
+- `RATING_PROVIDER` + `RATING_MODEL` (can be `xai` + a fast Grok model)
+- Full xAI support (native or OpenAI-compatible fallback)
 
 ### 6. Manual Job Entry
 
@@ -374,9 +389,33 @@ You can paste a job description directly (**Paste JD** on the dashboard). It is 
 
 ### 7. Job Brief Export
 
-For rated jobs, **Copy details** generates a formatted brief: role, URL, score, strengths, gaps, verdict, your profile snapshot, and a JD excerpt — ready to paste before applying.
+For rated jobs, **Copy details** generates a formatted brief including:
+- Score, matched strengths, gaps, verdict
+- Actionable **tailoring tips** (new)
+- Snapshot of your profile + constraints
+- JD excerpt
 
-### 8. Application Tracking
+### 8. Admin Panel & Freemium Limits
+
+JobRadar includes a built-in freemium system:
+
+- Daily limits on searches and ratings (configurable via `FREE_SEARCH_LIMIT` / `FREE_RATING_LIMIT`)
+- Full admin panel available at a secret URL path (`ADMIN_SECRET_PATH`)
+- Admins can:
+  - View all users and their usage
+  - Grant/revoke full access
+  - Give temporary full access (12 hours or 1 day)
+- Users with full access see "Unlimited"
+
+Limits reset daily. The admin email is also defined in `.env`.
+
+### 9. Job Freshness
+
+Job cards now show **when the job was posted** (or first seen) using relative time (e.g. "2d ago", "5h ago").
+
+This uses `posted_at` when the source provides it, falling back to `crawled_at`.
+
+### 10. Application Tracking
 
 Each user has their own Kanban status per job (`status_{user_id}`):
 
@@ -402,12 +441,15 @@ langchain-jobradar/
 │   │   ├── auth.py          # Register, login, me
 │   │   ├── cv.py            # Upload, get, delete CV
 │   │   ├── crawler.py       # Manual search, crawl status
-│   │   ├── jobs.py          # List, rate, manual JD, brief, status
+│   │   ├── jobs.py          # List, rate-all, manual JD, brief, status
+│   │   ├── admin.py         # Secret-path admin (users, access grants)
 │   │   └── users.py         # Preferences
 │   └── services/
-│       ├── llm.py           # LangChain LLM + embeddings abstraction
+│       ├── llm.py           # Main LLM + Rating LLM split + xAI support
 │       ├── cv_parser.py     # PDF → text → structured JSON
-│       ├── rating.py        # CV vs JD scoring + job brief
+│       ├── rating.py        # CV vs JD scoring + pre-filter + briefs + tailoring tips
+│       ├── limits.py        # Freemium limits + admin overrides
+│       ├── scheduler.py     # Auto crawl + rate
 │       ├── adzuna_crawler.py
 │       ├── jooble_crawler.py
 │       ├── jobsapi_indeed_crawler.py
@@ -441,10 +483,11 @@ langchain-jobradar/
 | POST | `/crawler/search` | Run job discovery |
 | GET | `/crawler/status` | Crawl stats & limits |
 | GET | `/jobs` | List jobs (filter by score, status, search) |
-| POST | `/jobs/rate-all` | Rate all unrated jobs (background) |
+| POST | `/jobs/rate-all` | Rate all unrated jobs (background, with pre-filter) |
 | POST | `/jobs/manual` | Add & rate a pasted JD |
-| GET | `/jobs/{id}/brief` | Export job brief |
+| GET | `/jobs/{id}/brief` | Export job brief (now includes tailoring tips) |
 | PATCH | `/jobs/{id}/status` | Update Kanban status |
+| GET | `/{ADMIN_SECRET_PATH}/admin` | Admin panel (users, usage, grants) |
 
 ---
 
@@ -471,6 +514,10 @@ uvicorn main:app --reload
 
 API runs at `http://localhost:8000`.
 
+**Useful for development**:
+- `backend/test_llms.py` — test your main LLM and rating LLM directly (bypasses the app)
+- `handoff.md` — detailed development notes and issue history from recent work
+
 ### Frontend
 
 ```bash
@@ -483,34 +530,46 @@ App runs at `http://localhost:5173`.
 
 ### Environment Variables
 
-See `backend/.env.example`. Key ones:
+**Everything is configured via `.env`** — no model names are hardcoded.
+
+See `backend/.env.example`. Important variables:
 
 | Variable | Purpose |
 |----------|---------|
-| `MONGO_URI` | MongoDB connection string |
-| `JWT_SECRET` | Token signing secret |
-| `LLM_PROVIDER` | `ollama` or `openai` |
-| `OLLAMA_MODEL` | e.g. `qwen2.5:14b` |
-| `JOOBLE_API_KEY` | Jooble job API |
-| `JOBSAPI_KEY` | JobsAPI (Indeed) job API |
-| `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Adzuna job API (optional) |
-| `TAVILY_API_KEY` | Optional, for Tavily crawler |
+| `LLM_PROVIDER` | `ollama`, `openai`, or `xai` |
+| `OPENAI_MODEL` / `OLLAMA_MODEL` | Model for CV parsing, briefs, etc. |
+| `RATING_PROVIDER` | Separate provider for job rating (`xai` recommended for speed) |
+| `RATING_MODEL` | Model used only for rating (e.g. fast Grok model) |
+| `XAI_API_KEY` / `GROK_API_KEY` | For xAI rating |
+| `OPENAI_API_KEY` | For main LLM + embeddings |
+| `ADMIN_EMAIL` | Admin account email |
+| `ADMIN_SECRET_PATH` | Random string for admin URL (e.g. `k9x7p2mQvL4r`) |
+| `FREE_SEARCH_LIMIT` / `FREE_RATING_LIMIT` | Daily limits for free users |
+| `JOOBLE_API_KEY`, `JOBSAPI_KEY`, etc. | Job sources |
+
+**Key principle**: Change providers/models only in `.env`. The code stays the same.
 
 ---
 
 ## Summary (TL;DR)
 
-You built **JobRadar AI** — a personalised job search copilot:
+**JobRadar AI** — personalised job search with smart, fast AI rating:
 
-1. **Upload your CV** → AI extracts structured skills, experience, and projects.
-2. **Set preferences** → roles, locations, job types, key skills.
-3. **Search** → Jooble + JobsAPI fetch Ireland-focused listings tailored to your profile.
-4. **Rate** → LangChain compares each job description to your CV and returns a 1–10 score with strengths, gaps, and a verdict.
-5. **Act** → Filter by score, track status on a Kanban board, copy job briefs, paste manual JDs.
+1. Upload CV → structured parsing
+2. Set preferences
+3. Search jobs (Jooble + JobsAPI + others)
+4. **Rate-all** → Uses embedding pre-filter + separate fast rating model (xAI supported) for hundreds of jobs
+5. Get scores + **tailoring tips** + track in Kanban
+6. Admin panel for limits & access control
 
-The architecture is designed to be **provider-agnostic**: swap `LLM_PROVIDER` in `.env` and the same LangChain code works with Ollama or OpenAI. Job data lives in MongoDB with per-user ratings and statuses, so the system scales to multiple users without mixing their data.
+**Major current capabilities**:
+- Separate main LLM vs Rating LLM (configurable in `.env` only)
+- Fast bulk rating via cosine pre-filter + concurrency
+- Freemium daily limits + powerful admin grants (incl. temporary full access)
+- Job posted date shown on cards
+- Clean usage display with "Unlimited" state
 
-**LangChain is used for:** CV parsing (text → JSON), job-CV fit rating (structured Pydantic output), and optional LangSmith tracing. **PyMuPDF** handles PDF extraction. **FastAPI + React** deliver the API and UI.
+The system is deliberately **.env-driven** — no model names or providers are hardcoded in code.
 
 ---
 
@@ -522,8 +581,8 @@ The architecture is designed to be **provider-agnostic**: swap `LLM_PROVIDER` in
 | **Backend framework** | FastAPI, Uvicorn, Pydantic v2, pydantic-settings, python-dotenv |
 | **Auth & security** | bcrypt, PyJWT, email-validator |
 | **Database** | MongoDB, Motor (async driver) |
-| **AI / LLM** | LangChain, langchain-ollama, langchain-openai, LangSmith (tracing), structured Pydantic output |
-| **LLM providers** | Ollama (local, default) or OpenAI (cloud) — swappable via `.env` |
+| **AI / LLM** | LangChain, langchain-ollama, langchain-openai, langchain-xai, LangSmith (tracing), structured Pydantic output |
+| **LLM providers** | Ollama, OpenAI, or xAI (Grok). Main LLM and Rating LLM can be different. |
 | **PDF processing** | PyMuPDF (`fitz`) |
 | **Job discovery** | Jooble API, JobsAPI (Indeed), Adzuna, Tavily Python SDK |
 | **HTTP client** | httpx (async crawlers) |

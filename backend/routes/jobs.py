@@ -23,6 +23,7 @@ from services.rating import (
     rate_all_jobs_for_user,
     rate_job_for_user,
 )
+from services.limits import check_and_increment_rating, get_user_usage
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -51,12 +52,14 @@ class ManualJD(BaseModel):
 
 def _format_job(job: dict, user_id: str) -> dict:
     rating = job.get("ratings", {}).get(user_id, {})
+    posted = job.get("posted_at") or job.get("crawled_at")
     return {
         "id": str(job["_id"]),
         "title": job.get("title"),
         "url": job.get("url"),
         "snippet": job.get("snippet", "")[:300],
         "crawled_at": job.get("crawled_at"),
+        "posted_at": posted,
         "source": job.get("source", "tavily"),
         "company": job.get("company", ""),
         "location": job.get("location", ""),
@@ -115,7 +118,7 @@ async def list_jobs(
         if len(results) >= limit:
             break
 
-    total = await db.jobs.count_documents({})
+    total = await db.jobs.count_documents({"crawled_by": user_id})
     return {
         "jobs": results,
         "page": page,
@@ -128,8 +131,42 @@ async def list_jobs(
 # ── RATE ALL ─────────────────────────────────────────────
 @router.post("/rate-all")
 async def rate_all(background_tasks: BackgroundTasks, user=Depends(get_current_user)):
+    db = get_database()
+    user_id = str(user["_id"])
+
+    # Quick visibility into the current "rating queue" size before accepting
+    pending_count = 0
+    try:
+        pending_count = await db.jobs.count_documents(
+            {"crawled_by": user_id, f"ratings.{user_id}": {"$exists": False}}
+        )
+        print(
+            f"[rating] [route] /rate-all: current pending unrated jobs in queue for user: {pending_count}"
+        )
+    except Exception:
+        pass
+
+    # Freemium: we don't know exactly how many yet, so check a reasonable batch or let the function handle.
+    # For simplicity, allow and let internal pre-filter + limit check kick in.
+    # Better: estimate unrated count or just check for at least 1.
+    allowed, msg, remaining = await check_and_increment_rating(user, jobs_to_rate=1)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=msg,
+        )
+
+    print(
+        f"[rating] [route] /rate-all accepted for user={user_id}, spawning background task rate_all_jobs_for_user (real work happens async)"
+    )
     background_tasks.add_task(rate_all_jobs_for_user, user)
-    return {"message": "Rating started in background. Check /jobs in 2-3 minutes."}
+    usage = await get_user_usage(user_id)
+    return {
+        "message": "Rating started in background.",
+        "queued": pending_count,
+        "ratings_remaining": usage.get("rating_limit", 0)
+        - usage.get("ratings_used", 0),
+    }
 
 
 # ── MANUAL JD ────────────────────────────────────────────
@@ -142,9 +179,10 @@ async def add_manual_jd(payload: ManualJD, user=Depends(get_current_user)):
         (payload.url or payload.title + payload.company).encode()
     ).hexdigest()
 
-    existing = await db.jobs.find_one({"url_hash": url_hash})
+    # per-user: allow same JD for different users
+    existing = await db.jobs.find_one({"url_hash": url_hash, "crawled_by": user_id})
     if existing:
-        raise HTTPException(status_code=409, detail="Job already exists.")
+        raise HTTPException(status_code=409, detail="Job already exists for you.")
 
     doc = {
         "title": f"{payload.title} — {payload.company}",
@@ -161,6 +199,16 @@ async def add_manual_jd(payload: ManualJD, user=Depends(get_current_user)):
 
     result = await db.jobs.insert_one(doc)
     job_doc = await db.jobs.find_one({"_id": result.inserted_id})
+
+    # Freemium limit for rating
+    allowed, msg, remaining = await check_and_increment_rating(user, jobs_to_rate=1)
+    if not allowed:
+        # still saved the job but not rated
+        return {
+            "message": "Job added but rating limit reached.",
+            "id": str(result.inserted_id),
+            "detail": msg,
+        }
 
     rating = await rate_job_for_user(job_doc, user)
     rating["rated_at"] = datetime.now(timezone.utc)
@@ -190,7 +238,7 @@ async def get_job_brief(job_id: str, user=Depends(get_current_user)):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid job ID.")
 
-    if not job:
+    if not job or job.get("crawled_by") != user_id:
         raise HTTPException(status_code=404, detail="Job not found.")
 
     rating = job.get("ratings", {}).get(user_id, {})
@@ -216,6 +264,10 @@ async def update_status(
     db = get_database()
     user_id = str(user["_id"])
 
+    job = await db.jobs.find_one({"_id": ObjectId(job_id)})
+    if not job or job.get("crawled_by") != user_id:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
     await db.jobs.update_one(
         {"_id": ObjectId(job_id)}, {"$set": {f"status_{user_id}": payload.status}}
     )
@@ -233,7 +285,7 @@ async def get_job(job_id: str, user=Depends(get_current_user)):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid job ID.")
 
-    if not job:
+    if not job or job.get("crawled_by") != user_id:
         raise HTTPException(status_code=404, detail="Job not found.")
 
     result = _format_job(job, user_id)
@@ -251,7 +303,7 @@ async def hide_job(job_id: str, user=Depends(get_current_user)):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid job ID.")
 
-    if not job:
+    if not job or job.get("crawled_by") != user_id:
         raise HTTPException(status_code=404, detail="Job not found.")
 
     if job.get("source") == "manual":

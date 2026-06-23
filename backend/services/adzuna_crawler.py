@@ -88,7 +88,10 @@ async def crawl_jobs_for_user_adzuna(user: dict) -> dict:
                 url = job.get("redirect_url", "")
                 url_hash = _hash_url(url)
 
-                existing = await db.jobs.find_one({"url_hash": url_hash})
+                # dedup per user only
+                existing = await db.jobs.find_one(
+                    {"url_hash": url_hash, "crawled_by": str(user["_id"])}
+                )
                 if existing:
                     skipped += 1
                     continue
@@ -101,6 +104,21 @@ async def crawl_jobs_for_user_adzuna(user: dict) -> dict:
                 salary_min = job.get("salary_min")
                 salary_max = job.get("salary_max")
                 location = job.get("location", {}).get("display_name", "")
+
+                # Adzuna returns "created" as the job posting date (YYYY-MM-DD or ISO)
+                posted_at = None
+                created = job.get("created")
+                if created:
+                    try:
+                        # Normalize to ISO
+                        if len(created) == 10:  # YYYY-MM-DD
+                            posted_at = f"{created}T00:00:00+00:00"
+                        else:
+                            posted_at = datetime.fromisoformat(
+                                str(created).replace("Z", "+00:00")
+                            ).isoformat()
+                    except Exception:
+                        posted_at = None
 
                 doc = {
                     "title": job.get("title", "Unknown Role"),
@@ -115,6 +133,8 @@ async def crawl_jobs_for_user_adzuna(user: dict) -> dict:
                     "source": "adzuna",
                     "query": term,
                     "crawled_at": datetime.now(timezone.utc),
+                    "posted_at": posted_at,
+                    "crawled_by": str(user["_id"]),
                     "ratings": {},
                 }
 

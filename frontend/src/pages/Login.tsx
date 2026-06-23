@@ -34,6 +34,10 @@ export function LoginPage() {
         data = await authApi.register(form.name, form.email, form.password);
       }
       setToken(data.access_token);
+      try {
+        const me = await authApi.me();
+        useAuthStore.getState().setUser(me);
+      } catch {}
       navigate("/");
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Something went wrong");

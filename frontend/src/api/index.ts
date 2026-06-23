@@ -123,6 +123,32 @@ export const userApi = {
   },
 };
 
+// Admin APIs — these must be called with the full prefixed path when adminBasePath is present
+// e.g. api.get(`${adminBasePath}/users`)
+export const adminApi = {
+  listUsers: async (basePath: string, page = 1, limit = 50) => {
+    const res = await api.get(`${basePath}/users`, { params: { page, limit } });
+    return res.data as { users: any[]; total: number; page: number };
+  },
+  getUser: async (basePath: string, userId: string) => {
+    const res = await api.get(`${basePath}/users/${userId}`);
+    return res.data;
+  },
+  updateAccess: async (
+    basePath: string,
+    userId: string,
+    data: {
+      search_limit?: number;
+      rating_limit?: number;
+      notes?: string;
+      full_access?: boolean;
+    },
+  ) => {
+    const res = await api.patch(`${basePath}/users/${userId}/access`, data);
+    return res.data;
+  },
+};
+
 export const scrapeApi = {
   fetchJobFromUrl: async (
     url: string,

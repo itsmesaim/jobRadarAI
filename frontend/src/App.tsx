@@ -5,8 +5,11 @@ import { LoginPage } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { KanbanPage } from "./pages/Kanban";
 import { SettingsPage } from "./pages/Settings";
+import { AdminPage } from "./pages/Admin";
 import { Navbar } from "./components/Navbar";
 import { useAuthStore } from "./hooks/useStores";
+import { authApi } from "./api";
+import { useEffect } from "react";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -28,6 +31,17 @@ function Protected({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  const { token, setUser, user } = useAuthStore();
+
+  useEffect(() => {
+    if (token && !user) {
+      authApi
+        .me()
+        .then(setUser)
+        .catch(() => {});
+    }
+  }, [token, user, setUser]);
+
   return (
     <QueryClientProvider client={queryClient}>
       {/* <BrowserRouter> */}
@@ -57,6 +71,14 @@ export default function App() {
             element={
               <Protected>
                 <SettingsPage />
+              </Protected>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <Protected>
+                <AdminPage />
               </Protected>
             }
           />

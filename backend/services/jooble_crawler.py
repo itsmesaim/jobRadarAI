@@ -27,7 +27,43 @@ def _hash_url(url: str) -> str:
 def _build_search_terms(user: dict) -> list[str]:
     primary_role = user.get("primary_role", "Full Stack Developer")
     secondary_roles = user.get("secondary_roles", [])
-    return [primary_role] + secondary_roles
+    roles = [primary_role] + secondary_roles
+
+    # Pull key skills (from prefs or CV) to make searches much more relevant
+    key_skills = user.get("key_skills", [])
+    if not key_skills:
+        cv = user.get("cv", {})
+        structured = cv.get("structured", {})
+        all_skills = structured.get("skills", [])
+        skip = {
+            "HTML5",
+            "CSS3",
+            "Git / GitHub",
+            "Postman",
+            "Agile / Scrum",
+            "Performance Optimisation",
+            "Technical Documentation",
+        }
+        key_skills = [s for s in all_skills if s not in skip][:5]
+
+    terms = []
+    for role in roles:
+        terms.append(role)
+        if key_skills:
+            # Create more targeted keyword strings (Jooble handles this well)
+            for skill in key_skills[:3]:
+                terms.append(f"{role} {skill}")
+            if len(key_skills) >= 2:
+                terms.append(f"{key_skills[0]} {key_skills[1]} {role}")
+
+    # dedupe while preserving order
+    seen = set()
+    unique = []
+    for t in terms:
+        if t not in seen:
+            seen.add(t)
+            unique.append(t)
+    return unique[:12]  # cap to avoid too many API calls
 
 
 def _clean_html(text: str) -> str:
@@ -87,7 +123,10 @@ async def crawl_jobs_for_user_jooble(user: dict) -> dict:
                     url = job.get("link", "")
                     url_hash = _hash_url(url)
 
-                    existing = await db.jobs.find_one({"url_hash": url_hash})
+                    # dedup per user only
+                    existing = await db.jobs.find_one(
+                        {"url_hash": url_hash, "crawled_by": str(user["_id"])}
+                    )
                     if existing:
                         skipped += 1
                         continue
@@ -114,6 +153,22 @@ async def crawl_jobs_for_user_jooble(user: dict) -> dict:
                         skipped += 1
                         continue
 
+                    # === Relevance filter to avoid non-relevant jobs (saves tokens later) ===
+                    if not _is_relevant_job(full_text, snippet, user):
+                        skipped += 1
+                        continue
+
+                    # Jooble often has "updated" as posted/refresh date
+                    posted_at = None
+                    updated = job.get("updated") or job.get("created")
+                    if updated:
+                        try:
+                            posted_at = datetime.fromisoformat(
+                                str(updated).replace("Z", "+00:00")
+                            ).isoformat()
+                        except Exception:
+                            posted_at = None
+
                     doc = {
                         "title": job.get("title", "Unknown Role"),
                         "url": url,
@@ -127,6 +182,7 @@ async def crawl_jobs_for_user_jooble(user: dict) -> dict:
                         "query": term,
                         "search_location": raw_location,
                         "crawled_at": datetime.now(timezone.utc),
+                        "posted_at": posted_at,
                         "crawled_by": str(user["_id"]),
                         "ratings": {},
                     }
@@ -149,3 +205,26 @@ async def _fetch_full_text(client: httpx.AsyncClient, url: str) -> str:
     except Exception:
         pass
     return ""
+
+
+def _is_relevant_job(
+    full_text: str, snippet: str, user: dict, cv_embedding: list = None
+) -> bool:
+    """Keyword-based relevance gate before storing. (Heavy sim filtering happens in rating pre-filter.)"""
+    text = (full_text + " " + snippet).lower()
+
+    key_skills = user.get("key_skills", [])
+    if not key_skills:
+        cv = user.get("cv", {})
+        structured = cv.get("structured", {})
+        all_skills = structured.get("skills", [])
+        skip = {"HTML5", "CSS3", "Git / GitHub", "Postman", "Agile / Scrum"}
+        key_skills = [s for s in all_skills if s not in skip][:5]
+
+    if key_skills:
+        matches = sum(1 for sk in key_skills if sk.lower() in text)
+        role = user.get("primary_role", "").lower()
+        if matches == 0 and (not role or role.split()[0] not in text):
+            return False
+
+    return True

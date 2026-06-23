@@ -15,6 +15,7 @@ from deps import get_current_user
 from services.adzuna_crawler import crawl_jobs_for_user_adzuna
 from services.jooble_crawler import crawl_jobs_for_user_jooble
 from services.jobsapi_indeed_crawler import crawl_jobs_for_user_jobsapi
+from services.limits import check_and_increment_search, get_user_usage
 
 
 router = APIRouter(prefix="/crawler", tags=["crawler"])
@@ -25,77 +26,67 @@ MANUAL_DAILY_LIMIT = 20
 @router.post("/search")
 async def manual_search(user=Depends(get_current_user)):
     db = get_database()
+    user_id = str(user["_id"])
 
-    # check daily manual limit
-    today_start = datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    manual_today = user.get("manual_crawl_count_today", 0)
-    last_reset = user.get("manual_crawl_reset", None)
-
-    # normalize: MongoDB returns naive datetimes, make timezone-aware for comparison
-    if last_reset is not None and last_reset.tzinfo is None:
-        last_reset = last_reset.replace(tzinfo=timezone.utc)
-
-    # reset count if it's a new day
-    if last_reset is None or last_reset < today_start:
-        manual_today = 0
-        await db.users.update_one(
-            {"_id": ObjectId(user["_id"])},
-            {
-                "$set": {
-                    "manual_crawl_count_today": 0,
-                    "manual_crawl_reset": today_start,
-                }
-            },
-        )
-
-    if manual_today >= MANUAL_DAILY_LIMIT:
+    # Freemium check
+    allowed, message, remaining = await check_and_increment_search(user)
+    if not allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Manual search limit reached ({MANUAL_DAILY_LIMIT}/day). Try again tomorrow.",
+            detail=message,
         )
 
-    # run crawl
+    # run crawl (legacy counter still updated for backward compat)
     result_jooble = await crawl_jobs_for_user_jooble(user)
     result_jobsapi = await crawl_jobs_for_user_jobsapi(user)
-    # result_adzuna = await crawl_jobs_for_user_adzuna(user)
     result_adzuna = {"found": 0, "stored": 0, "skipped": 0}
 
-
-
     result = {
-    "found": result_jooble["found"] + result_jobsapi["found"] + result_adzuna["found"],
-    "stored": result_jooble["stored"] + result_jobsapi["stored"] + result_adzuna["stored"],
-    "skipped": result_jooble["skipped"] + result_jobsapi["skipped"] + result_adzuna["skipped"],
-}
+        "found": result_jooble["found"]
+        + result_jobsapi["found"]
+        + result_adzuna["found"],
+        "stored": result_jooble["stored"]
+        + result_jobsapi["stored"]
+        + result_adzuna["stored"],
+        "skipped": result_jooble["skipped"]
+        + result_jobsapi["skipped"]
+        + result_adzuna["skipped"],
+    }
 
-    # update counters
     await db.users.update_one(
-        {"_id": ObjectId(user["_id"])},
-        {
-            "$set": {"last_crawl_at": datetime.now(timezone.utc)},
-            "$inc": {"manual_crawl_count_today": 1},
-        },
+        {"_id": ObjectId(user_id)},
+        {"$set": {"last_crawl_at": datetime.now(timezone.utc)}},
     )
 
+    usage = await get_user_usage(user_id)
     return {
         "message": "Crawl complete.",
         "found": result["found"],
         "stored": result["stored"],
         "skipped": result["skipped"],
-        "manual_searches_remaining": MANUAL_DAILY_LIMIT - manual_today - 1,
+        "searches_remaining": usage.get("search_limit", 0)
+        - usage.get("searches_used", 0),
     }
+
 
 @router.get("/status")
 async def crawl_status(user=Depends(get_current_user)):
     db = get_database()
-    total_jobs = await db.jobs.count_documents({})
+    total_jobs = await db.jobs.count_documents({"crawled_by": str(user["_id"])})
+    usage = await get_user_usage(str(user["_id"]))
+    is_full = usage.get("full_access") or (
+        usage.get("full_access_until")
+        and datetime.now(timezone.utc)
+        < datetime.fromisoformat(usage.get("full_access_until").replace("Z", "+00:00"))
+    )
     return {
         "last_crawl_at": user.get("last_crawl_at"),
-        "manual_searches_today": user.get("manual_crawl_count_today", 0),
-        "manual_searches_remaining": max(
-            0, MANUAL_DAILY_LIMIT - user.get("manual_crawl_count_today", 0)
-        ),
-        "total_jobs_in_db": total_jobs,
+        "searches_used": usage.get("searches_used", 0),
+        "search_limit": 9999 if is_full else usage.get("search_limit", 0),
+        "ratings_used": usage.get("ratings_used", 0),
+        "rating_limit": 9999 if is_full else usage.get("rating_limit", 0),
+        "full_access": is_full,
+        "full_access_until": usage.get("full_access_until"),
+        "my_jobs": total_jobs,
+        "is_admin": usage.get("is_admin", False),
     }

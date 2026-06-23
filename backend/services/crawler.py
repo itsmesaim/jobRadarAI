@@ -131,6 +131,7 @@ async def _fetch_jd_text(url: str) -> str:
         pass
     return ""
 
+
 @traceable(name="crawl_jobs_for_user", run_type="chain")
 async def crawl_jobs_for_user(user: dict) -> dict:
     db = get_database()
@@ -168,8 +169,10 @@ async def crawl_jobs_for_user(user: dict) -> dict:
             url = result.get("url", "")
             url_hash = _hash_url(url)
 
-            # dedup
-            existing = await db.jobs.find_one({"url_hash": url_hash})
+            # dedup per user (to allow same job for different users)
+            existing = await db.jobs.find_one(
+                {"url_hash": url_hash, "crawled_by": str(user["_id"])}
+            )
             if existing:
                 skipped += 1
                 continue

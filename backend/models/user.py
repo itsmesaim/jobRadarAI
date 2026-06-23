@@ -26,6 +26,12 @@ class UserPublic(BaseModel):
     name: str
     email: EmailStr
     created_at: datetime
+    isAdmin: bool = False
+    adminBasePath: str | None = None  # only sent to admins
+    usage: dict | None = None  # full usage for admin self-view
+
+    class Config:
+        extra = "allow"  # allow additional fields from backend
 
 
 class Token(BaseModel):

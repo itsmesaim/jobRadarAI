@@ -1,16 +1,18 @@
 """
-Rating service — v2.
+Rating service — v3 (performance focused).
 
-Improvements over v1:
-  1. Required vs preferred skills weighted differently
-  2. Explicit tool-name matching rewarded
-  3. Aspirational leadership language no longer treated as hard disqualifier
-  4. Candidate knowledge override system (per-user skill memory)
-  5. about_me field surfaced early in prompt, not buried at bottom
+Key improvements for speed at 500-1000+ jobs:
+  - Embedding pre-filter: low-similarity JDs get score 2 instantly (no LLM call)
+  - Bounded concurrency via semaphore (safe parallel LLM calls)
+  - Removed 50-job artificial cap; now pulls up to RATE_ALL_MAX_JOBS
+  - JD embeddings are cached on job documents (jd_embedding)
+
+Still uses the full structured LLM rating (gpt-4o-mini or your model) for promising matches.
 """
 
 import asyncio
 import json
+import math
 from datetime import datetime, timezone
 
 from bson import ObjectId
@@ -19,7 +21,13 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from database import get_database
-from services.llm import get_llm
+from config import settings
+from services.llm import get_embeddings, get_llm, get_rating_llm
+from services.limits import (
+    check_and_increment_rating,
+    get_remaining_ratings,
+    get_user_usage,
+)
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -45,6 +53,10 @@ class JobRating(BaseModel):
     auto_reject: bool = Field(
         description="True if job requires visa/location candidate cannot meet, "
         "or a hard skill they completely lack"
+    )
+    tailoring_tips: list[str] = Field(
+        default=[],
+        description="2-4 concrete, specific things the candidate should emphasize, reword, or highlight in their application/CV/cover note for this exact role (e.g. 'Lead with the production JobRadar agentic rating system you built and deployed yourself'). Be direct and usable.",
     )
 
 
@@ -137,6 +149,24 @@ Each named-tool hit that is confirmed in the candidate profile should:
   - Contribute +0.1 to +0.2 if preferred/contextual
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 3.5 — CREDIT FOR BUILDING PRODUCTION AGENTIC / LLM SYSTEMS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If the candidate has **built, deployed, and operated** a real production system that demonstrates agentic/LLM engineering patterns (orchestration, structured LLM outputs, parallel/background LLM work, multi-provider abstraction, evaluation/observability, crawling + LLM processing, developer tooling around AI, etc.), give this **heavy positive weight**.
+
+This is often stronger evidence than "I used LangGraph in one internal script".
+
+Examples of strong signals:
+- Shipped a live platform where LLMs rate/analyze/process data at scale for users
+- Built async/parallel LLM pipelines in production
+- Created provider-agnostic LLM layers, tracing (LangSmith), prompt engineering in real apps
+- End-to-end ownership: crawl → LLM rating → user-facing pipeline + deployment
+
+Even if they didn't use the exact framework name the JD lists (e.g. they used LangChain equivalents instead of "OpenAI Agents SDK"), treat demonstrated production agentic patterns as direct relevant experience.
+
+List the concrete system name (e.g. "JobRadar AI production agentic platform") in matched_strengths when it applies.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 4 — SCORE CALIBRATION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -160,6 +190,25 @@ Caps:
   - Missing core required skills but otherwise good fit: 5-6
   - Strong match with minor preferred gaps: 7-8
   - Excellent match across required + named tools: 9-10
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 5 — TAILORING TIPS (for the candidate)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After deciding the score, matched strengths, and gaps, also produce 2-4 short, **highly specific and actionable** "tailoring_tips".
+
+These are practical instructions the candidate can directly use when customizing their application for *this* job:
+- What exact project / bullet / phrase to lead with or reword.
+- Which concrete achievement or technology name to emphasize because it maps to language in the JD.
+- How to address one of the gaps without lying.
+- A strong hook sentence or angle that aligns their story with the JD's "Agentic AI", "production platforms", "developer tooling", etc.
+
+Examples of good tips:
+- "Lead your cover note and first bullet with the fact that you built and shipped JobRadar — a live production agentic system that crawls jobs, does parallel LLM structured rating with LangChain, and is deployed end-to-end."
+- "Explicitly name LangGraph + LangSmith + structured outputs when describing your AI work, even if currently only in the skills section."
+- "Frame your 4 years as 'full ownership of production AI systems from 0 to live' rather than just years of experience."
+
+Make the tips specific to the JD text and the candidate's actual projects. Avoid generic advice.
 """.strip()
 
 
@@ -291,18 +340,31 @@ Education: {json.dumps(structured.get('education', []))}
 
     human_message_content = "\n".join(sections)
 
-    llm = get_llm()
-    structured_llm = llm.with_structured_output(JobRating)
-
     messages = [
         SystemMessage(content=RATING_SYSTEM_PROMPT),
         HumanMessage(content=human_message_content),
     ]
 
     try:
+        llm = get_rating_llm()
+        structured_llm = llm.with_structured_output(JobRating)
+        print(
+            "[rating] [job] about to invoke structured LLM (check the [rating] Using provider=... line above for the exact model)"
+        )
+        print(
+            "[rating] [job] sending prompt to rating LLM (this is the expensive part)"
+        )
         result: JobRating = await structured_llm.ainvoke(messages)
+        print("[rating] [job] LLM response received successfully")
         return result.model_dump()
     except Exception as e:
+        import traceback
+
+        # Log the full error for debugging the split/provider
+        print(
+            f"[rating] !!! Structured rating error for provider/model (see previous [rating] log): {e}"
+        )
+        traceback.print_exc()
         return {
             "score": 0,
             "matched_strengths": [],
@@ -312,30 +374,246 @@ Education: {json.dumps(structured.get('education', []))}
         }
 
 
-# ── Rate all ─────────────────────────────────────────────────────────────────
+# ── Fast path config ──────────────────────────────────────────────────────────
+
+# Max concurrent LLM rating calls. Tune based on your provider limits.
+# Grok fast models often handle higher concurrency well.
+RATING_CONCURRENCY = 10
+
+# Embedding similarity threshold (cosine).
+# Jobs below this get a cheap low score (no full LLM call) to save tokens on irrelevant results from broad search.
+# Lower value = more jobs go through the expensive model.
+EMBEDDING_SIMILARITY_CUTOFF = 0.18
+
+# Max jobs to pull in one rate-all run. Set high to process hundreds in one background task.
+RATE_ALL_MAX_JOBS = 2000
+
+
+# ── Embedding helpers (cheap & fast pre-filter) ───────────────────────────────
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(x * x for x in b))
+    if na == 0 or nb == 0:
+        return 0.0
+    return dot / (na * nb)
+
+
+async def _get_cv_embedding(user: dict) -> list[float] | None:
+    """Embed the user's CV once. Prefer raw_text; fall back to a condensed structured version."""
+    cv = user.get("cv", {})
+    raw = cv.get("raw_text", "") or ""
+    if len(raw) > 200:
+        text = raw[:8000]
+    else:
+        # fallback: build a compact string from structured CV
+        structured = cv.get("structured", {})
+        parts = [
+            structured.get("summary", ""),
+            " ".join(structured.get("skills", [])),
+        ]
+        for exp in structured.get("experience", []):
+            parts.append(f"{exp.get('title','')} {exp.get('company','')}")
+            parts.extend(exp.get("bullets", [])[:2])
+        text = " ".join(p for p in parts if p)[:8000]
+
+    if not text.strip():
+        return None
+
+    try:
+        emb = get_embeddings()
+        vecs = await emb.aembed_documents([text])
+        return vecs[0] if vecs else None
+    except Exception:
+        return None
+
+
+async def _get_jd_embedding(job: dict, embeddings) -> list[float] | None:
+    """Return JD embedding. Compute + store if missing."""
+    existing = job.get("jd_embedding")
+    if isinstance(existing, list) and existing:
+        return existing
+
+    jd_text = (job.get("full_text") or job.get("snippet", ""))[:6000]
+    if len(jd_text) < 100:
+        return None
+
+    try:
+        vecs = await embeddings.aembed_documents([jd_text])
+        vec = vecs[0] if vecs else None
+        if vec:
+            # persist so we never re-embed this job
+            db = get_database()
+            await db.jobs.update_one(
+                {"_id": ObjectId(job["_id"])},
+                {"$set": {"jd_embedding": vec}},
+            )
+        return vec
+    except Exception:
+        return None
+
+
+async def _fast_low_score_rating(sim: float = 0.0) -> dict:
+    """Cheap low score for clearly non-matching jobs (no LLM call)."""
+    # graduated low score based on how bad the match was
+    score = max(1, min(4, int(sim * 12))) if sim > 0 else 2
+    return {
+        "score": score,
+        "matched_strengths": [],
+        "gaps": [f"Low semantic match (sim={sim:.2f})"],
+        "structural_mismatch": False,
+        "verdict": "Low semantic similarity to your profile — not a good fit (pre-filtered to save tokens).",
+        "auto_reject": False,
+    }
+
+
+# ── Rate all (now fast for hundreds of jobs) ──────────────────────────────────
 
 
 @traceable(name="rate_all_jobs", run_type="chain")
 async def rate_all_jobs_for_user(user: dict) -> dict:
     db = get_database()
     user_id = str(user["_id"])
+    user_email = user.get("email", user_id)
 
-    jobs = await db.jobs.find({f"ratings.{user_id}": {"$exists": False}}).to_list(
-        length=50
+    print(f"[rating] === START rate_all for user={user_email} (id={user_id}) ===")
+    print(
+        f"[rating] [env] rating_provider={settings.rating_provider} rating_model={settings.rating_model} (llm_provider={settings.llm_provider})"
     )
+
+    # Freemium: peek first
+    remaining = await get_remaining_ratings(user)
+    print(f"[rating] [queue] Remaining rating quota for user: {remaining}")
+
+    if remaining <= 0:
+        msg = "Free rating limit reached. Contact us for more access."
+        print(f"[rating] Skipped for {user_email}: {msg}")
+        return {"rated": 0, "error": msg}
+
+    # This is the "rating queue": all jobs crawled by this user that have no rating yet for them
+    jobs = await db.jobs.find(
+        {"crawled_by": user_id, f"ratings.{user_id}": {"$exists": False}}
+    ).to_list(length=min(RATE_ALL_MAX_JOBS, remaining))
+    print(
+        f"[rating] [queue] Unrated jobs found in queue for user: {len(jobs)} (capped by remaining quota)"
+    )
+
     if not jobs:
+        print(f"[rating] No unrated jobs found for {user_email}.")
         return {"rated": 0}
 
-    async def rate_and_store(job):
-        rating = await rate_job_for_user(job, user)
-        rating["rated_at"] = datetime.now(timezone.utc)
-        await db.jobs.update_one(
-            {"_id": ObjectId(job["_id"])},
-            {"$set": {f"ratings.{user_id}": rating}},
+    print(
+        f"[rating] Found {len(jobs)} unrated jobs for {user_email}, will attempt up to {min(len(jobs), remaining)} (quota remaining: {remaining})"
+    )
+    print(
+        f"[rating] [queue] Jobs in this rating batch: {[str(j.get('_id')) for j in jobs[:5]]}... (showing first 5)"
+    )
+    print(f"[rating] Starting bulk rating for {len(jobs)} jobs (prefilter active)...")
+
+    # One embedding for the CV (cheap) — fall back gracefully if it fails
+    cv_embedding = await _get_cv_embedding(user)
+    embeddings = None
+    if cv_embedding is not None:
+        try:
+            embeddings = get_embeddings()
+        except Exception:
+            embeddings = None
+    if embeddings:
+        print(
+            "[rating] Embeddings ready — low-similarity jobs will be pre-filtered (no LLM)"
+        )
+        print(
+            f"[rating] EMBEDDING_SIMILARITY_CUTOFF={EMBEDDING_SIMILARITY_CUTOFF} (jobs below this get cheap pre-filter, no LLM call)"
         )
 
-    await asyncio.gather(*[rate_and_store(job) for job in jobs])
-    return {"rated": len(jobs)}
+    sem = asyncio.Semaphore(RATING_CONCURRENCY)
+
+    prefilter_count = 0
+    llm_count = 0
+    error_count = 0
+
+    async def rate_and_store(job):
+        nonlocal prefilter_count, llm_count, error_count
+        async with sem:
+            job_id = str(job["_id"])
+            job_title = str(job.get("title", "Unknown"))[:50]
+            # Embedding fast-path: skip LLM for clear non-matches
+            sim: float | None = None
+            if cv_embedding and embeddings:
+                jd_emb = await _get_jd_embedding(job, embeddings)
+                if jd_emb:
+                    sim = _cosine_similarity(cv_embedding, jd_emb)
+                    if sim < EMBEDDING_SIMILARITY_CUTOFF:
+                        rating = await _fast_low_score_rating(sim)
+                        rating["rated_at"] = datetime.now(timezone.utc)
+                        await db.jobs.update_one(
+                            {"_id": ObjectId(job["_id"])},
+                            {"$set": {f"ratings.{user_id}": rating}},
+                        )
+                        prefilter_count += 1
+                        print(
+                            f"[rating] [{job_id}] PRE-FILTER (cheap, no LLM) sim={sim:.3f} title='{job_title}' → score={rating.get('score')}"
+                        )
+                        return 1
+
+            # Full LLM rating
+            llm_count += 1
+            sim_str = f" sim={sim:.3f}" if sim is not None else ""
+            print(
+                f"[rating] [{job_id}] LLM-CALL (expensive){sim_str} title='{job_title}'"
+            )
+            try:
+                rating = await rate_job_for_user(job, user)
+                rating["rated_at"] = datetime.now(timezone.utc)
+                await db.jobs.update_one(
+                    {"_id": ObjectId(job["_id"])},
+                    {"$set": {f"ratings.{user_id}": rating}},
+                )
+                if str(rating.get("verdict", "")).startswith("Rating failed"):
+                    error_count += 1
+                    print(f"[rating] [{job_id}] LLM-FAILED: {rating.get('verdict')}")
+                else:
+                    print(
+                        f"[rating] [{job_id}] LLM-OK score={rating.get('score')} title='{job_title}'"
+                    )
+                return 1
+            except Exception as e:
+                error_count += 1
+                print(f"[rating] [{job_id}] UNEXPECTED ERROR during rating: {e}")
+                return 0
+
+    results = await asyncio.gather(
+        *[rate_and_store(job) for job in jobs], return_exceptions=True
+    )
+
+    # Collect any top-level exceptions from gather
+    for res in results:
+        if isinstance(res, Exception):
+            error_count += 1
+            print(f"[rating] GATHER-EXCEPTION: {res}")
+
+    rated_count = sum(1 for r in results if r == 1)
+
+    if rated_count > 0:
+        db = get_database()
+        await db.users.update_one(
+            {"_id": ObjectId(user_id)}, {"$inc": {"usage.ratings": rated_count}}
+        )
+
+    print(f"[rating] === FINISHED {user_email} ===")
+    print(
+        f"[rating] [queue] Summary: total_in_queue={len(jobs)} | prefiltered(cheap,no-LLM)={prefilter_count} | llm_called(expensive)={llm_count} | errors={error_count} | successfully_stored={rated_count}"
+    )
+    return {
+        "rated": rated_count,
+        "prefiltered": prefilter_count,
+        "llm_calls": llm_count,
+        "errors": error_count,
+    }
 
 
 # ── Roast mode ────────────────────────────────────────────────────────────────
@@ -432,6 +710,9 @@ GAPS TO ADDRESS:
 
 VERDICT:
   {rating.get('verdict', '')}
+
+ACTIONABLE TAILORING TIPS (use these when applying):
+{chr(10).join(f"  • {t}" for t in rating.get('tailoring_tips', [])) or "  (none generated)"}
 
 ==============================
 CANDIDATE PROFILE
