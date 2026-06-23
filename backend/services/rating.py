@@ -1,9 +1,12 @@
 """
-Rating service.
+Rating service — v2.
 
-Uses LangChain's structured output (Pydantic model) instead of manual
-JSON parsing. This forces the LLM to return valid structured data —
-no more regex stripping, no more JSON parse failures.
+Improvements over v1:
+  1. Required vs preferred skills weighted differently
+  2. Explicit tool-name matching rewarded
+  3. Aspirational leadership language no longer treated as hard disqualifier
+  4. Candidate knowledge override system (per-user skill memory)
+  5. about_me field surfaced early in prompt, not buried at bottom
 """
 
 import asyncio
@@ -19,10 +22,13 @@ from database import get_database
 from services.llm import get_llm
 
 
+# ── Pydantic models ───────────────────────────────────────────────────────────
+
+
 class JobRating(BaseModel):
     score: int = Field(description="Fit score from 1-10. Be honest, do not inflate.")
     matched_strengths: list[str] = Field(
-        description="Specific ways the candidate's CV matches the JD requirements"
+        description="Specific ways the candidate's profile matches the JD requirements"
     )
     gaps: list[str] = Field(
         description="Specific JD requirements the candidate is missing or weak on"
@@ -42,75 +48,142 @@ class JobRating(BaseModel):
     )
 
 
+class RoastResult(BaseModel):
+    roast: str = Field(description="The full roast, 4-6 funny brutal lines")
+    savage_score: int = Field(description="1-10 how savage this roast was")
+
+
+# ── System prompts ────────────────────────────────────────────────────────────
+
 RATING_SYSTEM_PROMPT = """
-You are a senior technical recruiter. Rate how well this candidate's CV
-and stated preferences match the job description.
+You are a senior technical recruiter rating how well a candidate matches a job.
 
 Be honest. Do not inflate scores. If the JD text is too short, vague, or
 appears to be a search results page rather than an actual job posting,
 score 0 and explain why in the verdict.
 
-CRITICAL — check for structural disqualifiers BEFORE scoring skill overlap.
-These are categorical mismatches, not skill gaps, and should cap the score
-low (3 or below) regardless of how well the tech stack matches:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 1 — STRUCTURAL DISQUALIFIERS (check first)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. ROLE-TYPE MISMATCH
-   - Individual contributor (IC) vs people-management role
-   - If the JD requires "X years leading engineers", "managing a team",
-     "direct reports", or similar people-management language, and the
-     candidate's experience is IC/freelance/solo work with no management
-     history — this is disqualifying, not a gap to "address." Cap score
-     at 3 and say so plainly in the verdict.
-   - Junior/graduate scheme vs senior/staff/principal role mismatch in
-     either direction is similarly structural. Compare the JD's seniority
-     against the candidate's STATED experience level below, not just
-     years of experience inferred from the CV.
+These are categorical mismatches. If any apply, cap the score at 3 or below
+and set structural_mismatch = true. Do NOT penalise for these the same way
+you penalise skill gaps — they are deal-breakers, not "areas to improve."
+
+1. ROLE-TYPE / PEOPLE-MANAGEMENT MISMATCH
+   Flag ONLY if the role title contains Lead/Principal/Head/Manager/Director
+   OR the JD explicitly states a minimum number of years leading a team
+   OR the JD explicitly says "direct reports" / "line management" / "hiring".
+   
+   Do NOT flag generic aspirational phrases like:
+     - "provide leadership on AI projects"
+     - "promote best practices"
+     - "mentor teammates when needed"
+     - "senior presence expected"
+   These appear in mid-level JDs and are NOT disqualifying for an IC candidate.
+   Only hard management requirements count here.
 
 2. DOMAIN-AS-CORE-REQUIREMENT
-   - Distinguish "nice to have" domain exposure from "must have to do
-     the job" domain expertise. Regulated industries (payments, banking,
-     healthcare compliance, defense) often require domain knowledge as
-     a hard prerequisite, not a learnable-on-the-job skill.
-   - If the JD treats the domain as core (e.g. "must understand PCI-DSS",
-     "healthcare compliance experience required") and the candidate has
-     zero exposure, this is a structural gap. Cap score at 4 and flag it
-     as domain-as-core, not as a minor gap.
-   - If domain is mentioned only as context ("join our payments team")
-     without being listed as a requirement, treat it as a nice-to-have
-     and don't penalize heavily for it.
-   - If the JD's industry appears in the candidate's "avoid industries"
-     list below, flag this explicitly in the verdict even if technically
-     a fit — the candidate has chosen not to pursue this sector.
+   Flag ONLY if the JD says the domain is required (e.g. "must have PCI-DSS
+   experience", "healthcare compliance required", "financial services background
+   essential") AND the candidate has zero exposure.
+   If domain is just context ("join our payments team"), treat as nice-to-have.
 
 3. WORK AUTHORIZATION / SPONSORSHIP MISMATCH
-   - If the JD explicitly requires sponsorship is NOT available, or
-     requires a specific citizenship/work authorization the candidate
-     does not have (per their stated work authorization below), this
-     is an automatic structural mismatch. Cap score at 2 and set
-     auto_reject to true.
+   If the JD says sponsorship is unavailable and the candidate's work auth
+   does not cover this jurisdiction, auto_reject = true, score ≤ 2.
 
 4. WORK MODE MISMATCH
-   - If the JD is strictly onsite and the candidate's work mode
-     preferences exclude onsite (see below), flag this as a structural
-     mismatch in the verdict — note the commute/relocation implication
-     clearly rather than silently scoring it down.
+   If the JD is strictly onsite and the candidate's acceptable work modes
+   exclude onsite, flag it clearly in the verdict.
 
-For any of the above checks: if triggered, the verdict must say explicitly
-that this is a structural/categorical mismatch, not something fixable
-by a better cover letter or CV tailoring. Be direct about this so the
-candidate doesn't waste time trying to "address" an unaddressable gap.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 2 — PARSE THE JD INTO REQUIRED vs PREFERRED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-If no structural disqualifier applies, proceed with normal skill/experience
-overlap scoring as before.
+Before scoring, mentally split the JD requirements into two buckets:
+
+REQUIRED (hard requirements):
+  - Section headers like "Required", "Essential", "Must have", "Minimum"
+  - Language like "you must have", "required experience", "you will need"
+  - Core technologies named in the role title itself
+
+PREFERRED (soft requirements):
+  - Section headers like "Preferred", "Desirable", "Nice to have", "Bonus"
+  - Language like "would be a plus", "exposure to", "ideally", "bonus if"
+  - Anything listed after the core requirements section
+
+Apply different penalty weights:
+  - Missing a REQUIRED skill: costs 1.5-2 points depending on centrality
+  - Missing a PREFERRED skill: costs 0.3-0.5 points at most
+  - Never dock full points for a missing "nice to have"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 3 — EXPLICIT TOOL-NAME MATCHING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+When the JD explicitly names a specific tool and the candidate uses it daily
+or has demonstrable experience with it — this is a STRONG POSITIVE SIGNAL.
+Do not group tool-name hits into vague categories like "AI experience".
+
+Examples of named tools that should earn explicit credit when matched:
+  LangChain, LangGraph, LangSmith, Anthropic API, Claude Code, Cursor,
+  FastAPI, Next.js, Spring Boot, Socket.IO, LiveKit, Pinecone, Weaviate,
+  Docker, Kubernetes, Terraform, Airflow, dbt, Snowflake, etc.
+
+Each named-tool hit that is confirmed in the candidate profile should:
+  - Be listed individually in matched_strengths (not grouped)
+  - Contribute +0.3 to +0.5 to the score if the tool is required
+  - Contribute +0.1 to +0.2 if preferred/contextual
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 4 — SCORE CALIBRATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Start at 5 (neutral baseline for a relevant candidate in the right domain).
+
+Adjust up for:
+  + Core tech stack match on required skills
+  + Named tool hits (see Step 3)
+  + Project/experience directly relevant to the JD's domain
+  + About me / candidate context that aligns with role direction
+  + Knowledge overrides confirming skills the CV didn't explicitly mention
+
+Adjust down for:
+  - Missing REQUIRED skills (1.5-2 pts each)
+  - Missing PREFERRED skills (0.3-0.5 pts each)
+  - Experience level mismatch (if stated)
+  - Domain exposure gap (if required, not just mentioned)
+
+Caps:
+  - Structural mismatch (Step 1): ≤ 3
+  - Missing core required skills but otherwise good fit: 5-6
+  - Strong match with minor preferred gaps: 7-8
+  - Excellent match across required + named tools: 9-10
 """.strip()
 
 
+ROAST_SYSTEM_PROMPT = """
+You are a brutally honest, savagely funny tech recruiter doing a comedy
+roast of how badly this candidate's CV does NOT fit this job description.
+
+Be genuinely funny and cutting — think roast battle energy, not HR-speak.
+Reference SPECIFIC details from their CV and the JD to make the burns land.
+Still be accurate about the real gaps — the roast should be funny BECAUSE
+it's true, not because it's mean for no reason.
+
+Keep it to 4-6 punchy lines. End with one (sarcastic) actionable tip.
+
+Do not hold back. This is for entertainment — the user explicitly asked
+to be roasted. Do not soften it into generic encouragement.
+""".strip()
+
+
+# ── Context builders ──────────────────────────────────────────────────────────
+
+
 def _build_constraints_block(user: dict) -> str:
-    """
-    Builds a plain-text summary of the candidate's stated preferences
-    so the rating prompt can check the JD against them explicitly,
-    not just against the CV.
-    """
+    """Candidate stated preferences injected into the rating prompt."""
     experience_level = user.get("experience_level", "mid")
     work_auth = user.get("work_authorization", "")
     avoid_industries = user.get("avoid_industries", [])
@@ -128,6 +201,41 @@ def _build_constraints_block(user: dict) -> str:
         lines.append(f"Industries to avoid: {', '.join(avoid_industries)}")
 
     return "\n".join(lines)
+
+
+def _build_overrides_block(user: dict) -> str:
+    """
+    Candidate knowledge overrides — per-user skill memory stored in MongoDB.
+    Key = skill name, value = candidate's own description of their experience.
+    Injected into the prompt so the LLM knows about skills not on the CV.
+    """
+    overrides: dict = user.get("skill_overrides", {})
+    if not overrides:
+        return ""
+
+    lines = [
+        "The candidate has provided additional context on specific skills",
+        "they use that may not be visible on their CV. Treat these as",
+        "confirmed first-hand experience when scoring:",
+    ]
+    for skill, context in overrides.items():
+        lines.append(f"  - {skill}: {context}")
+
+    return "\n".join(lines)
+
+
+def _build_about_me_block(user: dict) -> str:
+    """
+    Free-text career context field — injaced EARLY in the prompt so the LLM
+    weights it alongside CV skills, not as a footnote.
+    """
+    about_me = user.get("about_me", "").strip()
+    if not about_me:
+        return ""
+    return f"Additional candidate context (weight this alongside CV skills and overrides):\n{about_me}"
+
+
+# ── Main rating function ──────────────────────────────────────────────────────
 
 
 @traceable(name="rate_job_for_user", run_type="chain")
@@ -152,7 +260,10 @@ Projects: {json.dumps(structured.get('projects', []))}
 Education: {json.dumps(structured.get('education', []))}
 """.strip()
 
-    constraints_text = _build_constraints_block(user)
+    # Build all context blocks
+    about_me_block = _build_about_me_block(user)
+    overrides_block = _build_overrides_block(user)
+    constraints_block = _build_constraints_block(user)
 
     jd_text = job.get("full_text") or job.get("snippet", "")
     if len(jd_text) < 200:
@@ -164,18 +275,28 @@ Education: {json.dumps(structured.get('education', []))}
             "auto_reject": False,
         }
 
+    # Compose the human message in the order that matters most
+    # (about_me and overrides BEFORE the JD so they're in the LLM's context
+    # when it reads the requirements, not appended as an afterthought)
+    sections = ["CANDIDATE CV:", cv_text]
+
+    if about_me_block:
+        sections += ["", about_me_block]
+
+    if overrides_block:
+        sections += ["", "CANDIDATE KNOWLEDGE OVERRIDES:", overrides_block]
+
+    sections += ["", "CANDIDATE STATED CONSTRAINTS:", constraints_block]
+    sections += ["", f"JOB DESCRIPTION:\n{jd_text[:4000]}"]
+
+    human_message_content = "\n".join(sections)
+
     llm = get_llm()
     structured_llm = llm.with_structured_output(JobRating)
 
     messages = [
         SystemMessage(content=RATING_SYSTEM_PROMPT),
-        HumanMessage(
-            content=(
-                f"JOB DESCRIPTION:\n{jd_text[:4000]}\n\n"
-                f"CANDIDATE CV:\n{cv_text}\n\n"
-                f"CANDIDATE STATED CONSTRAINTS:\n{constraints_text}"
-            )
-        ),
+        HumanMessage(content=human_message_content),
     ]
 
     try:
@@ -191,7 +312,10 @@ Education: {json.dumps(structured.get('education', []))}
         }
 
 
-@traceable(name="rate_all_job", run_type="chain")
+# ── Rate all ─────────────────────────────────────────────────────────────────
+
+
+@traceable(name="rate_all_jobs", run_type="chain")
 async def rate_all_jobs_for_user(user: dict) -> dict:
     db = get_database()
     user_id = str(user["_id"])
@@ -199,7 +323,6 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
     jobs = await db.jobs.find({f"ratings.{user_id}": {"$exists": False}}).to_list(
         length=50
     )
-
     if not jobs:
         return {"rated": 0}
 
@@ -215,6 +338,42 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
     return {"rated": len(jobs)}
 
 
+# ── Roast mode ────────────────────────────────────────────────────────────────
+
+
+@traceable(name="roast_job_fit", run_type="chain")
+async def roast_job_fit(job: dict, user: dict) -> dict:
+    cv = user.get("cv", {})
+    structured = cv.get("structured", {})
+    cv_text = f"""
+Name: {structured.get('name')}
+Summary: {structured.get('summary')}
+Skills: {', '.join(structured.get('skills', []))}
+Experience: {json.dumps(structured.get('experience', []))}
+""".strip()
+
+    jd_text = job.get("full_text") or job.get("snippet", "")
+
+    llm = get_llm()
+    structured_llm = llm.with_structured_output(RoastResult)
+
+    messages = [
+        SystemMessage(content=ROAST_SYSTEM_PROMPT),
+        HumanMessage(
+            content=f"JOB DESCRIPTION:\n{jd_text[:3000]}\n\nCANDIDATE CV:\n{cv_text}"
+        ),
+    ]
+
+    try:
+        result: RoastResult = await structured_llm.ainvoke(messages)
+        return result.model_dump()
+    except Exception as e:
+        return {"roast": f"Roast failed: {str(e)[:150]}", "savage_score": 0}
+
+
+# ── Job brief ─────────────────────────────────────────────────────────────────
+
+
 @traceable(name="generate_job_brief", run_type="chain")
 async def generate_job_brief(job: dict, user: dict, rating: dict) -> str:
     cv = user.get("cv", {})
@@ -227,9 +386,7 @@ async def generate_job_brief(job: dict, user: dict, rating: dict) -> str:
             f"  {exp.get('title')} @ {exp.get('company')} "
             f"({exp.get('start')} - {exp.get('end')})\n{bullets}"
         )
-    experience_text = (
-        "\n\n".join(experience_lines) if experience_lines else "  (none listed)"
-    )
+    experience_text = "\n\n".join(experience_lines) or "  (none listed)"
 
     project_lines = []
     for p in structured.get("projects", []):
@@ -238,7 +395,7 @@ async def generate_job_brief(job: dict, user: dict, rating: dict) -> str:
         project_lines.append(
             f"  {p.get('name')} [{tech}]\n  {p.get('description', '')}\n{bullets}"
         )
-    projects_text = "\n\n".join(project_lines) if project_lines else "  (none listed)"
+    projects_text = "\n\n".join(project_lines) or "  (none listed)"
 
     education_lines = []
     for edu in structured.get("education", []):
@@ -246,10 +403,16 @@ async def generate_job_brief(job: dict, user: dict, rating: dict) -> str:
             f"  {edu.get('degree')} — {edu.get('institution')} "
             f"({edu.get('start')} - {edu.get('end')})"
         )
-    education_text = (
-        "\n".join(education_lines) if education_lines else "  (none listed)"
+    education_text = "\n".join(education_lines) or "  (none listed)"
+
+    overrides = user.get("skill_overrides", {})
+    overrides_text = (
+        "\n".join(f"  {k}: {v}" for k, v in overrides.items())
+        if overrides
+        else "  (none)"
     )
 
+    about_me = user.get("about_me", "").strip()
     constraints_text = _build_constraints_block(user)
 
     brief = f"""
@@ -277,7 +440,13 @@ Name:     {structured.get('name', '')}
 Summary:  {structured.get('summary', '')}
 Skills:   {', '.join(structured.get('skills', []))}
 
-CANDIDATE CONSTRAINTS:
+ABOUT ME:
+  {about_me or '(not set)'}
+
+KNOWLEDGE OVERRIDES:
+{overrides_text}
+
+CONSTRAINTS:
 {constraints_text}
 
 EXPERIENCE:

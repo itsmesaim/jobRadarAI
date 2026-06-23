@@ -1,6 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Upload, Check, Loader, Plus, X, Save, Info } from "lucide-react";
+import {
+  Upload,
+  Check,
+  Loader,
+  Plus,
+  X,
+  Save,
+  Info,
+  Brain,
+  Trash2,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import { cvApi, userApi } from "../api/index";
 import type { UserPreferences } from "../types";
@@ -21,6 +31,7 @@ const DEFAULT_PREFS: UserPreferences = {
   work_authorization: "",
   avoid_industries: [],
   work_mode: { remote: true, hybrid: true, onsite: false },
+  about_me: "",
 };
 
 const EXPERIENCE_LEVELS: {
@@ -33,6 +44,17 @@ const EXPERIENCE_LEVELS: {
   { value: "senior", label: "Senior", hint: "5+ years" },
 ];
 
+const CURRENCIES = ["EUR", "USD", "INR", "AED", "GBP", "SGD"];
+
+const LOCATION_EXAMPLES = [
+  "Dublin Ireland",
+  "Remote",
+  "Bangalore India",
+  "Dubai UAE",
+  "London UK",
+  "Berlin Germany",
+];
+
 export function SettingsPage() {
   const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -43,6 +65,10 @@ export function SettingsPage() {
   const [newSkill, setNewSkill] = useState("");
   const [newRole, setNewRole] = useState("");
   const [newIndustry, setNewIndustry] = useState("");
+  const [salaryCurrency, setSalaryCurrency] = useState("EUR");
+  const [newOverrideSkill, setNewOverrideSkill] = useState("");
+  const [newOverrideContext, setNewOverrideContext] = useState("");
+  const [addingOverride, setAddingOverride] = useState(false);
 
   const { data: cv } = useQuery({
     queryKey: ["cv"],
@@ -55,6 +81,12 @@ export function SettingsPage() {
     queryFn: userApi.getPreferences,
   });
 
+  const { data: overridesData, refetch: refetchOverrides } = useQuery({
+    queryKey: ["skill-overrides"],
+    queryFn: userApi.getSkillOverrides,
+  });
+
+  // sync server prefs into local state once loaded
   useEffect(() => {
     if (prefs) {
       setLocalPrefs({ ...DEFAULT_PREFS, ...prefs });
@@ -70,6 +102,30 @@ export function SettingsPage() {
       toast.success("Preferences saved");
     },
     onError: () => toast.error("Failed to save"),
+  });
+
+  const addOverrideMutation = useMutation({
+    mutationFn: () =>
+      userApi.addSkillOverride(
+        newOverrideSkill.trim(),
+        newOverrideContext.trim(),
+      ),
+    onSuccess: () => {
+      refetchOverrides();
+      setNewOverrideSkill("");
+      setNewOverrideContext("");
+      setAddingOverride(false);
+      toast.success("Skill override saved");
+    },
+    onError: () => toast.error("Failed to save override"),
+  });
+
+  const deleteOverrideMutation = useMutation({
+    mutationFn: (skill: string) => userApi.deleteSkillOverride(skill),
+    onSuccess: () => {
+      refetchOverrides();
+      toast.success("Override removed");
+    },
   });
 
   const update = (updates: Partial<UserPreferences>) => {
@@ -132,6 +188,9 @@ export function SettingsPage() {
     });
     setNewIndustry("");
   };
+
+  const overrides: { skill: string; context: string }[] =
+    overridesData?.overrides ?? [];
 
   return (
     <div style={{ maxWidth: 700, margin: "0 auto", padding: "24px 16px" }}>
@@ -272,6 +331,21 @@ export function SettingsPage() {
         />
       </Section>
 
+      {/* About you — NEW */}
+      <Section
+        title="About you"
+        subtitle="Career context fed directly to the rating engine. Pivot goals, constraints, priorities — injected before the JD so the LLM factors it into strengths, not just gaps."
+      >
+        <textarea
+          className="input"
+          placeholder="e.g. Looking to move from backend into AI engineering. Built production LangChain apps but PyTorch isn't on my CV — comfortable learning on the job. Not interested in pure enterprise Java roles."
+          value={localPrefs.about_me}
+          onChange={(e) => update({ about_me: e.target.value })}
+          rows={4}
+          style={{ resize: "vertical", lineHeight: 1.6 }}
+        />
+      </Section>
+
       {/* Role */}
       <Section title="Role" subtitle="What roles should we search for?">
         <div style={{ marginBottom: 12 }}>
@@ -316,7 +390,7 @@ export function SettingsPage() {
         </div>
       </Section>
 
-      {/* Experience level — NEW */}
+      {/* Experience level */}
       <Section
         title="Experience level"
         subtitle="Helps the rating engine catch seniority mismatches (e.g. a role requiring 'lead a team' when you're IC)."
@@ -367,7 +441,7 @@ export function SettingsPage() {
         </div>
       </Section>
 
-      {/* Work authorization — NEW */}
+      {/* Work authorization */}
       <Section
         title="Work authorization"
         subtitle="Used to flag jobs requiring sponsorship you don't have, or citizenship you can't meet."
@@ -398,9 +472,8 @@ export function SettingsPage() {
               lineHeight: 1.5,
             }}
           >
-            Be specific — this gets passed directly to the rating engine, so
-            "Stamp 1G, no sponsorship needed" works much better than just "Irish
-            work visa."
+            Be specific — "Stamp 1G, no sponsorship needed" works much better
+            than just "Irish work visa."
           </p>
         </div>
       </Section>
@@ -408,7 +481,7 @@ export function SettingsPage() {
       {/* Locations */}
       <Section
         title="Locations"
-        subtitle="Where should we search? Include city + country."
+        subtitle="Every location gets its own separate search. Add as many as you want."
       >
         <div
           style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}
@@ -433,9 +506,49 @@ export function SettingsPage() {
           onAdd={addLocation}
           placeholder="e.g. Dublin Ireland"
         />
+        {/* quick-add examples */}
+        <div style={{ marginTop: 10 }}>
+          <p
+            style={{
+              fontSize: 11.5,
+              color: "var(--text-muted)",
+              margin: "0 0 6px",
+            }}
+          >
+            Quick add:
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            {LOCATION_EXAMPLES.filter(
+              (ex) => !localPrefs.preferred_locations.includes(ex),
+            ).map((ex) => (
+              <button
+                key={ex}
+                onClick={() =>
+                  update({
+                    preferred_locations: [
+                      ...localPrefs.preferred_locations,
+                      ex,
+                    ],
+                  })
+                }
+                style={{
+                  fontSize: 11,
+                  padding: "3px 9px",
+                  borderRadius: 20,
+                  cursor: "pointer",
+                  border: "1px dashed var(--border)",
+                  background: "transparent",
+                  color: "var(--text-muted)",
+                }}
+              >
+                + {ex}
+              </button>
+            ))}
+          </div>
+        </div>
       </Section>
 
-      {/* Work mode — NEW, replaces simple remote checkbox */}
+      {/* Work mode */}
       <Section
         title="Work mode"
         subtitle="Onsite-only roles will be flagged as a mismatch if not selected here."
@@ -514,7 +627,7 @@ export function SettingsPage() {
         </div>
       </Section>
 
-      {/* Avoid industries — NEW */}
+      {/* Avoid industries */}
       <Section
         title="Industries to avoid"
         subtitle="Jobs in these sectors will be flagged even if technically a skills fit."
@@ -576,13 +689,31 @@ export function SettingsPage() {
         />
       </Section>
 
-      {/* Salary */}
+      {/* Minimum salary */}
       <Section
         title="Minimum salary"
-        subtitle="Jobs below this are flagged (€/year)."
+        subtitle="Jobs below this are flagged. Pick the currency that matches your target market."
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>€</span>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <select
+            value={salaryCurrency}
+            onChange={(e) => setSalaryCurrency(e.target.value)}
+            className="input"
+            style={{ maxWidth: 90, cursor: "pointer" }}
+          >
+            {CURRENCIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
           <input
             className="input"
             type="number"
@@ -596,6 +727,174 @@ export function SettingsPage() {
             per year
           </span>
         </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 6,
+            marginTop: 8,
+          }}
+        >
+          <Info
+            size={13}
+            style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }}
+          />
+          <p
+            style={{
+              fontSize: 11.5,
+              color: "var(--text-muted)",
+              margin: 0,
+              lineHeight: 1.5,
+            }}
+          >
+            €40-70k is mid-level in Ireland · ₹20-40 LPA is strong in India ·
+            AED 15-25k/mo is good in UAE (tax-free, higher real value than EUR
+            equivalent).
+          </p>
+        </div>
+      </Section>
+
+      {/* Skill overrides — NEW */}
+      <Section
+        title="Skill overrides"
+        subtitle="Skills you have that aren't on your CV. Injected into every rating call so the LLM stops flagging them as gaps."
+      >
+        {overrides.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              marginBottom: 14,
+            }}
+          >
+            {overrides.map((o) => (
+              <div
+                key={o.skill}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  background: "var(--purple-bg)",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <Brain
+                  size={13}
+                  style={{
+                    color: "var(--purple)",
+                    flexShrink: 0,
+                    marginTop: 1,
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      color: "var(--purple)",
+                      marginBottom: 2,
+                    }}
+                  >
+                    {o.skill}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-secondary)",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {o.context}
+                  </div>
+                </div>
+                <button
+                  onClick={() => deleteOverrideMutation.mutate(o.skill)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    padding: 2,
+                    flexShrink: 0,
+                  }}
+                  title="Remove override"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!addingOverride ? (
+          <button
+            onClick={() => setAddingOverride(true)}
+            className="btn btn-ghost"
+            style={{ fontSize: 12.5 }}
+          >
+            <Plus size={13} /> Add skill override
+          </button>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                className="input"
+                placeholder="Skill (e.g. plotly)"
+                value={newOverrideSkill}
+                onChange={(e) => setNewOverrideSkill(e.target.value)}
+                style={{ maxWidth: 160 }}
+                autoFocus
+              />
+              <input
+                className="input"
+                placeholder="Your experience with it..."
+                value={newOverrideContext}
+                onChange={(e) => setNewOverrideContext(e.target.value)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" &&
+                  newOverrideSkill &&
+                  newOverrideContext &&
+                  addOverrideMutation.mutate()
+                }
+              />
+            </div>
+            <p
+              style={{ fontSize: 11.5, color: "var(--text-muted)", margin: 0 }}
+            >
+              e.g. "plotly" → "used in BEng for ML model visualisation across 3
+              projects"
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => addOverrideMutation.mutate()}
+                disabled={
+                  !newOverrideSkill.trim() ||
+                  !newOverrideContext.trim() ||
+                  addOverrideMutation.isPending
+                }
+                className="btn btn-primary"
+                style={{ fontSize: 12 }}
+              >
+                {addOverrideMutation.isPending ? "Saving..." : "Save override"}
+              </button>
+              <button
+                onClick={() => {
+                  setAddingOverride(false);
+                  setNewOverrideSkill("");
+                  setNewOverrideContext("");
+                }}
+                className="btn btn-ghost"
+                style={{ fontSize: 12 }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </Section>
 
       {/* Floating save bar */}

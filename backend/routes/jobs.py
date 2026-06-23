@@ -86,7 +86,7 @@ async def list_jobs(
 
     skip = (page - 1) * limit
     all_jobs = (
-        await db.jobs.find()
+        await db.jobs.find({"crawled_by": user_id})
         .sort("crawled_at", -1)
         .skip(skip)
         .limit(limit * 5)
@@ -155,6 +155,7 @@ async def add_manual_jd(payload: ManualJD, user=Depends(get_current_user)):
         "source": "manual",
         "query": "manual",
         "crawled_at": datetime.now(timezone.utc),
+        "crawled_by": str(user["_id"]),
         "ratings": {},
     }
 

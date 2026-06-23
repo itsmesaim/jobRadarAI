@@ -107,6 +107,20 @@ export const userApi = {
     const res = await api.patch("/users/preferences", prefs);
     return res.data;
   },
+  getSkillOverrides: async () => {
+    const res = await api.get("/users/skill-overrides");
+    return res.data as { overrides: { skill: string; context: string }[] };
+  },
+  addSkillOverride: async (skill: string, context: string) => {
+    const res = await api.post("/users/skill-overrides", { skill, context });
+    return res.data;
+  },
+  deleteSkillOverride: async (skill: string) => {
+    const res = await api.delete(
+      `/users/skill-overrides/${encodeURIComponent(skill)}`,
+    );
+    return res.data;
+  },
 };
 
 export const scrapeApi = {

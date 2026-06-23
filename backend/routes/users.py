@@ -5,6 +5,15 @@ PATCH /users/preferences  — set locations, role, job types, skills, constraint
 GET   /users/preferences  — get current preferences
 """
 
+"""
+Skill override routes — candidate knowledge memory system.
+
+POST /users/skill-overrides        — add or update a skill override
+GET  /users/skill-overrides        — list all overrides
+DELETE /users/skill-overrides/{skill} — remove a specific override
+
+Also adds about_me to UserPreferences.
+"""
 from bson import ObjectId
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -35,12 +44,19 @@ class UserPreferences(BaseModel):
     job_types: JobTypes = JobTypes()
     min_salary: int = 0
     key_skills: list[str] = []
-
-    # new fields
-    experience_level: str = "mid"  # "junior" | "mid" | "senior"
-    work_authorization: str = ""  # e.g. "Stamp 1G, no sponsorship needed"
+    experience_level: str = "mid"
+    work_authorization: str = ""
     avoid_industries: list[str] = []
     work_mode: WorkMode = WorkMode()
+    about_me: str = ""  # free-text career context, surfaced early in rating prompt
+
+
+class SkillOverride(BaseModel):
+    skill: str  # key e.g. "plotly"
+    context: str  # candidate's description e.g. "used in BEng for ML visualisation"
+
+
+# ── Preferences ───────────────────────────────────────────────────────────────
 
 
 @router.patch("/preferences")
@@ -62,6 +78,7 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
                 "work_authorization": prefs["work_authorization"],
                 "avoid_industries": prefs["avoid_industries"],
                 "work_mode": prefs["work_mode"],
+                "about_me": prefs["about_me"],
             }
         },
     )
@@ -83,4 +100,41 @@ async def get_preferences(user=Depends(get_current_user)):
         "work_mode": user.get(
             "work_mode", {"remote": True, "hybrid": True, "onsite": False}
         ),
+        "about_me": user.get("about_me", ""),
     }
+
+
+# ── Skill overrides ───────────────────────────────────────────────────────────
+
+
+@router.post("/skill-overrides")
+async def add_skill_override(payload: SkillOverride, user=Depends(get_current_user)):
+    db = get_database()
+    skill_key = payload.skill.lower().strip()
+
+    await db.users.update_one(
+        {"_id": ObjectId(user["_id"])},
+        {"$set": {f"skill_overrides.{skill_key}": payload.context}},
+    )
+    return {
+        "message": f"Override saved for '{skill_key}'.",
+        "skill": skill_key,
+        "context": payload.context,
+    }
+
+
+@router.get("/skill-overrides")
+async def get_skill_overrides(user=Depends(get_current_user)):
+    overrides = user.get("skill_overrides", {})
+    return {"overrides": [{"skill": k, "context": v} for k, v in overrides.items()]}
+
+
+@router.delete("/skill-overrides/{skill}")
+async def delete_skill_override(skill: str, user=Depends(get_current_user)):
+    db = get_database()
+    skill_key = skill.lower().strip()
+
+    await db.users.update_one(
+        {"_id": ObjectId(user["_id"])}, {"$unset": {f"skill_overrides.{skill_key}": ""}}
+    )
+    return {"message": f"Override removed for '{skill_key}'."}

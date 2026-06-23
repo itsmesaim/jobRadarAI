@@ -201,6 +201,7 @@ async def crawl_jobs_for_user(user: dict) -> dict:
                 "source": "tavily",
                 "query": query,
                 "crawled_at": datetime.now(timezone.utc),
+                "crawled_by": str(user["_id"]),
                 "ratings": {},
             }
 

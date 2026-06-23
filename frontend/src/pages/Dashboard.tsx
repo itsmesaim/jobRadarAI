@@ -7,6 +7,7 @@ import {
   SlidersHorizontal,
   AlertCircle,
   X,
+  Loader,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { JobCard } from "../components/JobCard";
@@ -50,6 +51,18 @@ export function Dashboard() {
   }, [searchQuery]);
 
   const queryClient = useQueryClient();
+
+  const rateMutation = useMutation({
+    mutationFn: jobsApi.rateAll,
+    onSuccess: () => {
+      toast("Rating jobs in background...", { icon: "⚡", duration: 3000 });
+      setTimeout(
+        () => queryClient.invalidateQueries({ queryKey: ["jobs"] }),
+        3000,
+      );
+    },
+    onError: () => toast.error("Rating failed"),
+  });
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["jobs", scoreMin, statusFilter, page, debouncedQuery],
@@ -145,7 +158,7 @@ export function Dashboard() {
             }}
           >
             <strong>Hey!</strong> {highScoreUnaplied.length} jobs scoring 8+/10
-            are sitting unapplied. Don't let good opportunities slip by 👀
+            are sitting unapplied. Don't let good opportunities slip by
           </p>
           <button
             onClick={() => {
@@ -193,6 +206,20 @@ export function Dashboard() {
         >
           <Search size={14} />
           {crawlMutation.isPending ? "Searching..." : "Search jobs"}
+        </button>
+
+        <button
+          onClick={() => rateMutation.mutate()}
+          disabled={rateMutation.isPending}
+          className="btn btn-secondary"
+        >
+          {rateMutation.isPending ? (
+            <>
+              <Loader size={14} className="animate-spin" /> Rating...
+            </>
+          ) : (
+            <>Rate now</>
+          )}
         </button>
 
         {/* search within saved jobs */}

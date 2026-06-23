@@ -65,6 +65,7 @@ export interface UserPreferences {
   work_authorization: string;
   avoid_industries: string[];
   work_mode: WorkMode;
+  about_me: string;
 }
 
 export interface CVData {
