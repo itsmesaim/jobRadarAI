@@ -10,10 +10,14 @@ import {
   Info,
   Brain,
   Trash2,
+  Download,
+  ShieldAlert,
+  Skull,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cvApi, userApi } from "../api/index";
-import type { UserPreferences } from "../types";
+import { useAuthStore } from "../hooks/useStores";
+import type { DataSummary, UserPreferences } from "../types";
 
 const DEFAULT_PREFS: UserPreferences = {
   preferred_locations: [],
@@ -57,7 +61,10 @@ const LOCATION_EXAMPLES = [
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
+  const logout = useAuthStore((s) => s.logout);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
   const [uploading, setUploading] = useState(false);
   const [localPrefs, setLocalPrefs] = useState<UserPreferences>(DEFAULT_PREFS);
   const [dirty, setDirty] = useState(false);
@@ -84,6 +91,11 @@ export function SettingsPage() {
   const { data: overridesData, refetch: refetchOverrides } = useQuery({
     queryKey: ["skill-overrides"],
     queryFn: userApi.getSkillOverrides,
+  });
+
+  const { data: dataSummary, refetch: refetchDataSummary } = useQuery({
+    queryKey: ["data-summary"],
+    queryFn: userApi.getDataSummary,
   });
 
   // sync server prefs into local state once loaded
@@ -127,6 +139,43 @@ export function SettingsPage() {
       toast.success("Override removed");
     },
   });
+
+  const deleteCvMutation = useMutation({
+    mutationFn: cvApi.delete,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cv"] });
+      refetchDataSummary();
+      toast.success("CV deleted from our servers");
+    },
+    onError: () => toast.error("Failed to delete CV"),
+  });
+
+  const deleteAccountMutation = useMutation({
+    mutationFn: userApi.deleteAccount,
+    onSuccess: () => {
+      logout();
+      window.location.href = "/login";
+    },
+    onError: () => toast.error("Failed to delete account"),
+  });
+
+  const handleExportData = async () => {
+    try {
+      const data = await userApi.exportData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `jobradar-data-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Data downloaded");
+    } catch {
+      toast.error("Export failed");
+    }
+  };
 
   const update = (updates: Partial<UserPreferences>) => {
     setLocalPrefs((p) => ({ ...p, ...updates }));
@@ -274,6 +323,22 @@ export function SettingsPage() {
               style={{ fontSize: 12 }}
             >
               <Upload size={13} /> Replace
+            </button>
+            <button
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Delete your CV from JobRadar? You can upload again later.",
+                  )
+                ) {
+                  deleteCvMutation.mutate();
+                }
+              }}
+              disabled={deleteCvMutation.isPending}
+              className="btn btn-ghost"
+              style={{ fontSize: 12, color: "var(--danger)" }}
+            >
+              <Trash2 size={13} /> Delete CV
             </button>
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
               {cv.structured?.skills?.length} skills ·{" "}
@@ -897,6 +962,117 @@ export function SettingsPage() {
         )}
       </Section>
 
+      {/* Data & privacy */}
+      <DataPrivacySection
+        summary={dataSummary}
+        onExport={handleExportData}
+        onDeleteCv={() => {
+          if (
+            window.confirm(
+              "Delete your CV from JobRadar? You can upload again later.",
+            )
+          ) {
+            deleteCvMutation.mutate();
+          }
+        }}
+        deleteCvPending={deleteCvMutation.isPending}
+        onDeleteAccount={() => setShowDeleteAccount(true)}
+      />
+
+      {showDeleteAccount && (
+        <div
+          onClick={() => {
+            setShowDeleteAccount(false);
+            setDeleteConfirm("");
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="card"
+            style={{
+              maxWidth: 420,
+              width: "100%",
+              padding: 24,
+              boxShadow: "var(--shadow-lg)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 14,
+              }}
+            >
+              <Skull size={22} style={{ color: "var(--danger)" }} />
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
+                Delete everything?
+              </h3>
+            </div>
+            <p
+              style={{
+                margin: "0 0 14px",
+                fontSize: 14,
+                color: "var(--text-secondary)",
+                lineHeight: 1.55,
+              }}
+            >
+              This permanently deletes your account, CV, preferences, skill
+              overrides, and all saved jobs. No undo. No backup. Gone.
+            </p>
+            <p
+              style={{
+                margin: "0 0 8px",
+                fontSize: 12,
+                color: "var(--text-muted)",
+              }}
+            >
+              Type <strong>DELETE</strong> to confirm
+            </p>
+            <input
+              className="input"
+              value={deleteConfirm}
+              onChange={(e) => setDeleteConfirm(e.target.value)}
+              placeholder="DELETE"
+              style={{ marginBottom: 16 }}
+            />
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                onClick={() => deleteAccountMutation.mutate()}
+                disabled={
+                  deleteConfirm !== "DELETE" || deleteAccountMutation.isPending
+                }
+                className="btn btn-danger"
+                style={{ flex: 1 }}
+              >
+                {deleteAccountMutation.isPending
+                  ? "Deleting..."
+                  : "Yes, delete my account"}
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteAccount(false);
+                  setDeleteConfirm("");
+                }}
+                className="btn btn-ghost"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Floating save bar */}
       {dirty && (
         <div
@@ -940,6 +1116,217 @@ export function SettingsPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function DataPrivacySection({
+  summary,
+  onExport,
+  onDeleteCv,
+  deleteCvPending,
+  onDeleteAccount,
+}: {
+  summary?: DataSummary;
+  onExport: () => void;
+  onDeleteCv: () => void;
+  deleteCvPending: boolean;
+  onDeleteAccount: () => void;
+}) {
+  return (
+    <Section
+      title="Your data"
+      subtitle="What we store, who sees it, and how to nuke it."
+    >
+      <div
+        style={{
+          background: "var(--warning-bg)",
+          border: "1px solid var(--warning-border)",
+          borderRadius: 10,
+          padding: "14px 16px",
+          marginBottom: 16,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "flex-start",
+          }}
+        >
+          <Skull
+            size={18}
+            style={{ color: "var(--warning)", flexShrink: 0, marginTop: 2 }}
+          />
+          <div>
+            <p
+              style={{
+                margin: "0 0 8px",
+                fontSize: 14,
+                fontWeight: 600,
+                color: "var(--text)",
+                lineHeight: 1.45,
+              }}
+            >
+              {summary?.roast ??
+                "Yes, we store your data. No, we're not pretending otherwise."}
+            </p>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                color: "var(--text-secondary)",
+                lineHeight: 1.55,
+              }}
+            >
+              {summary?.legal_note ??
+                "Job listings come from third-party APIs. Your CV may be sent to an AI for matching. Download or delete your data anytime below."}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {summary ? (
+        <>
+          <p
+            className="label"
+            style={{
+              marginBottom: 10,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <ShieldAlert size={14} /> What's on file right now
+          </p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+              gap: 8,
+              marginBottom: 14,
+            }}
+          >
+            <DataStat label="Jobs saved" value={String(summary.jobs.total)} />
+            <DataStat label="Jobs rated" value={String(summary.jobs.rated)} />
+            <DataStat label="CV uploaded" value={summary.cv ? "Yes" : "No"} />
+            <DataStat
+              label="Skill overrides"
+              value={String(summary.skill_overrides_count)}
+            />
+          </div>
+
+          {summary.cv && (
+            <p
+              style={{
+                fontSize: 12,
+                color: "var(--text-secondary)",
+                margin: "0 0 12px",
+                lineHeight: 1.5,
+              }}
+            >
+              CV: <strong>{summary.cv.filename}</strong> —{" "}
+              {summary.cv.skills_count} skills, {summary.cv.experience_count}{" "}
+              roles, {summary.cv.projects_count} projects
+            </p>
+          )}
+
+          <ul
+            style={{
+              margin: "0 0 14px",
+              padding: 0,
+              listStyle: "none",
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            {summary.stored_items.map((item) => (
+              <li
+                key={item.key}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 13,
+                  color: item.stored ? "var(--text)" : "var(--text-muted)",
+                }}
+              >
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: item.stored
+                      ? "var(--success)"
+                      : "var(--border)",
+                    flexShrink: 0,
+                  }}
+                />
+                {item.label}
+              </li>
+            ))}
+          </ul>
+
+          <p className="label" style={{ marginBottom: 8 }}>
+            Third-party services we use
+          </p>
+          <ul
+            style={{
+              margin: "0 0 16px",
+              paddingLeft: 18,
+              fontSize: 12,
+              color: "var(--text-secondary)",
+              lineHeight: 1.6,
+            }}
+          >
+            {summary.third_party_services.map((s) => (
+              <li key={s}>{s}</li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p
+          style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}
+        >
+          Loading your data summary...
+        </p>
+      )}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button onClick={onExport} className="btn btn-secondary">
+          <Download size={14} /> Download my data
+        </button>
+        {summary?.cv && (
+          <button
+            onClick={onDeleteCv}
+            disabled={deleteCvPending}
+            className="btn btn-ghost"
+            style={{ color: "var(--danger)" }}
+          >
+            <Trash2 size={14} />
+            {deleteCvPending ? "Deleting..." : "Delete CV only"}
+          </button>
+        )}
+        <button onClick={onDeleteAccount} className="btn btn-danger">
+          <Skull size={14} /> Delete account & all data
+        </button>
+      </div>
+    </Section>
+  );
+}
+
+function DataStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="admin-stat-box">
+      <div
+        style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text)" }}>
+        {value}
+      </div>
     </div>
   );
 }

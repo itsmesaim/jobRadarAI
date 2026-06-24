@@ -110,6 +110,51 @@ export interface CVData {
   };
 }
 
+export interface DataStoredItem {
+  key: string;
+  label: string;
+  stored: boolean;
+}
+
+export interface DataSummary {
+  roast: string;
+  legal_note: string;
+  account: {
+    name: string;
+    email: string;
+    created_at: string;
+  };
+  cv: {
+    filename: string;
+    uploaded_at: string;
+    skills_count: number;
+    experience_count: number;
+    projects_count: number;
+    education_count: number;
+    has_raw_text: boolean;
+  } | null;
+  preferences: {
+    has_preferences: boolean;
+    locations_count: number;
+    skills_count: number;
+    about_me_chars: number;
+    has_work_authorization: boolean;
+  };
+  skill_overrides_count: number;
+  jobs: {
+    total: number;
+    rated: number;
+    manual: number;
+    hidden: number;
+  };
+  usage: {
+    searches_used: number;
+    ratings_used: number;
+  };
+  third_party_services: string[];
+  stored_items: DataStoredItem[];
+}
+
 export interface Props {
   job: Job;
   onStatusChange?: () => void;

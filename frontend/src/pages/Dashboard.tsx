@@ -122,6 +122,7 @@ export function Dashboard() {
         }, 800);
       }
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["kanban"] });
       queryClient.invalidateQueries({ queryKey: ["crawl-status"] });
     },
     onError: (err: any) => {
@@ -175,7 +176,7 @@ export function Dashboard() {
   const showReminder = !reminderDismissed && highScoreUnaplied.length >= 2;
 
   return (
-    <div style={{ maxWidth: 1180, margin: "0 auto", padding: "28px 20px" }}>
+    <div className="page-shell">
       {/* Page header */}
       <div style={{ marginBottom: 24 }}>
         <h1
@@ -618,20 +619,15 @@ export function Dashboard() {
           </button>
         </div>
       ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
-            gap: 16,
-          }}
-        >
+        <div className="jobs-grid">
           {jobs.map((job) => (
             <JobCard
               key={job.id}
               job={job}
-              onStatusChange={() =>
-                queryClient.invalidateQueries({ queryKey: ["jobs"] })
-              }
+              onStatusChange={() => {
+                queryClient.invalidateQueries({ queryKey: ["jobs"] });
+                queryClient.invalidateQueries({ queryKey: ["kanban"] });
+              }}
               onHidden={() =>
                 queryClient.invalidateQueries({ queryKey: ["jobs"] })
               }

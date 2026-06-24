@@ -406,6 +406,7 @@ JobRadar includes a built-in freemium system:
   - Grant/revoke full access
   - Give temporary full access (12 hours or 1 day)
 - Users with full access see "Unlimited"
+- **Mobile:** card-based user list with inline edit; **desktop:** table with expandable edit row (only one layout shown at a time)
 
 Limits reset daily. The admin email is also defined in `.env`.
 
@@ -423,6 +424,21 @@ Each user has their own Kanban status per job (`status_{user_id}`):
 
 - **Dashboard:** card grid with score filters, status filters, text search, pagination, and a reminder when high-scoring jobs sit unapplied
 - **Kanban:** drag-style columns to move jobs through your pipeline
+  - `GET /jobs?kanban=true` always returns pipeline jobs (Saved, Applied, etc.) even after re-searching — older board cards are not dropped
+  - **Desktop:** horizontal board with column scroll and drag-and-drop
+  - **Mobile:** tabbed single-column view with a status dropdown per card (no awkward 8-column scroll)
+
+### 11. Privacy, Data Transparency & Deletion
+
+JobRadar stores personal data (CV, preferences, job history). Settings includes a **Your data** section that:
+
+- Shows an honest disclaimer about what is stored and which third-party services are used (Jooble, JobsAPI, AI/LLM, MongoDB)
+- Displays a live inventory: jobs saved/rated, CV details, skill overrides, usage counters
+- Lets users **download** all their data as JSON (`GET /users/data-export`)
+- Lets users **delete CV only** (`DELETE /cv/me`)
+- Lets users **delete account & all data** (`DELETE /users/account`) — wipes jobs, prefs, and the account
+
+> **Not legal advice.** For a public product you should add a proper Privacy Policy and Terms. Job listings come from third-party APIs (each has its own ToS). CV text may be sent to an AI provider for matching. EU users generally have rights to access and delete personal data — the endpoints above support that.
 
 ---
 
@@ -443,7 +459,7 @@ langchain-jobradar/
 │   │   ├── crawler.py       # Manual search, crawl status
 │   │   ├── jobs.py          # List, rate-all, manual JD, brief, status
 │   │   ├── admin.py         # Secret-path admin (users, access grants)
-│   │   └── users.py         # Preferences
+│   │   └── users.py         # Preferences, data summary/export, account deletion
 │   └── services/
 │       ├── llm.py           # Main LLM + Rating LLM split + xAI support
 │       ├── cv_parser.py     # PDF → text → structured JSON
@@ -459,8 +475,9 @@ langchain-jobradar/
         ├── pages/
         │   ├── Login.tsx
         │   ├── Dashboard.tsx    # Job list, search, filters
-        │   ├── Kanban.tsx       # Pipeline board
-        │   └── Settings.tsx     # CV + preferences
+        │   ├── Kanban.tsx       # Pipeline board (desktop DnD + mobile tabs)
+        │   ├── Admin.tsx        # User access management
+        │   └── Settings.tsx     # CV + preferences + data/privacy controls
         ├── components/
         │   ├── JobCard.tsx
         │   ├── ScoreBadge.tsx
@@ -479,10 +496,14 @@ langchain-jobradar/
 | GET | `/auth/me` | Current user profile |
 | POST | `/cv/upload` | Upload & parse PDF CV |
 | GET | `/cv/me` | Get parsed CV |
+| DELETE | `/cv/me` | Delete uploaded CV |
 | PATCH | `/users/preferences` | Update search preferences |
+| GET | `/users/data-summary` | What data JobRadar stores for the current user |
+| GET | `/users/data-export` | Download all user data as JSON |
+| DELETE | `/users/account` | Permanently delete account and all associated data |
 | POST | `/crawler/search` | Run job discovery |
 | GET | `/crawler/status` | Crawl stats & limits |
-| GET | `/jobs` | List jobs (filter by score, status, search) |
+| GET | `/jobs` | List jobs (filter by score, status, search; `kanban=true` for pipeline board) |
 | POST | `/jobs/rate-all` | Rate all unrated jobs (background, with pre-filter) |
 | POST | `/jobs/manual` | Add & rate a pasted JD |
 | GET | `/jobs/{id}/brief` | Export job brief (now includes tailoring tips) |
@@ -497,7 +518,7 @@ langchain-jobradar/
 
 - Python 3.11+
 - Node.js 18+
-- MongoDB (local or Atlas)
+- MongoDB (local, VPS with auth, or Atlas)
 - Ollama running locally (or OpenAI API key)
 - Jooble + JobsAPI API keys (for job search)
 
@@ -536,6 +557,10 @@ See `backend/.env.example`. Important variables:
 
 | Variable | Purpose |
 |----------|---------|
+| `MONGO_URI` | Full connection string (dev or Atlas). Ignored if `MONGO_USER` is set |
+| `MONGO_DB` | Database name (default: `jobradar`) |
+| `MONGO_HOST` | Mongo host for VPS auth mode (default: `localhost`) |
+| `MONGO_USER` / `MONGO_PASSWORD` | Local/VPS Mongo with `authSource=admin` — builds URI automatically |
 | `LLM_PROVIDER` | `ollama`, `openai`, or `xai` |
 | `OPENAI_MODEL` / `OLLAMA_MODEL` | Model for CV parsing, briefs, etc. |
 | `RATING_PROVIDER` | Separate provider for job rating (`xai` recommended for speed) |
@@ -568,6 +593,8 @@ See `backend/.env.example`. Important variables:
 - Freemium daily limits + powerful admin grants (incl. temporary full access)
 - Job posted date shown on cards
 - Clean usage display with "Unlimited" state
+- Mobile-friendly Kanban + Admin panel
+- User data transparency, JSON export, and account/CV deletion in Settings
 
 The system is deliberately **.env-driven** — no model names or providers are hardcoded in code.
 

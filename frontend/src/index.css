@@ -267,4 +267,223 @@
     z-index: 40;
     backdrop-filter: blur(8px);
   }
+
+  .kanban-page {
+    max-width: 100%;
+    overflow: hidden;
+    padding: 20px 16px 24px;
+  }
+
+  .kanban-board-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -16px;
+    padding: 0 16px 8px;
+  }
+
+  .kanban-board {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+    width: max-content;
+    min-height: calc(100dvh - 168px);
+  }
+
+  .kanban-column {
+    width: 240px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - 168px);
+  }
+
+  .kanban-column-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+  }
+
+  .kanban-column-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 10px;
+    border: 2px dashed transparent;
+    transition: all 0.15s;
+  }
+
+  .kanban-column-body.is-over {
+    background: var(--accent-light);
+    border-color: var(--accent);
+  }
+
+  .kanban-card {
+    padding: 12px;
+    font-size: 12px;
+    cursor: grab;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    user-select: none;
+    touch-action: none;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .kanban-card:active {
+    cursor: grabbing;
+  }
+
+  .kanban-mobile-tabs {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .kanban-mobile-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .kanban-mobile-tab {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .kanban-mobile-tab.is-active {
+    background: var(--bg-card);
+    font-weight: 600;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .kanban-mobile-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .kanban-mobile-card {
+    padding: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .page-shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 28px 20px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .jobs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+    gap: 16px;
+  }
+
+  .admin-user-card {
+    padding: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .admin-stat-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .admin-stat-box {
+    padding: 10px;
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+  }
+
+  .admin-progress {
+    height: 6px;
+    margin-top: 6px;
+    background: var(--bg-hover);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .admin-progress > span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.2s;
+  }
+
+  .admin-access-btn {
+    padding: 8px 12px;
+    font-size: 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .admin-access-btn.is-active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  @media (max-width: 640px) {
+    .kanban-page {
+      padding: 16px 12px 24px;
+    }
+
+    .page-shell {
+      padding: 20px 12px;
+    }
+
+    .nav-inner {
+      padding: 0 12px !important;
+      gap: 8px;
+    }
+
+    .nav-brand {
+      margin-right: 12px !important;
+    }
+
+    .kanban-board {
+      min-height: calc(100dvh - 152px);
+    }
+
+    .kanban-column {
+      max-height: calc(100dvh - 152px);
+    }
+  }
 }

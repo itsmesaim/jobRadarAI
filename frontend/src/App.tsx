@@ -17,9 +17,15 @@ const queryClient = new QueryClient({
 
 function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "var(--bg)",
+        overflowX: "hidden",
+      }}
+    >
       <Navbar />
-      <main>{children}</main>
+      <main style={{ overflowX: "hidden" }}>{children}</main>
     </div>
   );
 }
@@ -86,7 +92,8 @@ export default function App() {
         </Routes>
       </BrowserRouter>
       <Toaster
-        position="bottom-right"
+        position="top-center"
+        containerStyle={{ top: 72 }}
         toastOptions={{
           style: {
             background: "var(--bg-card)",

@@ -1,9 +1,12 @@
 """
 Async MongoDB connection using Motor.
-Connect on startup, close on shutdown (wired up in main.py lifespan).
+Connect on startup, close on shutdown.
 """
 
+from urllib.parse import quote_plus
+
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+
 from config import settings
 
 
@@ -14,9 +17,23 @@ class _DB:
 _db = _DB()
 
 
+def _build_mongo_uri() -> str:
+    """Authenticated local/VPS Mongo when MONGO_USER is set; else MONGO_URI."""
+    if settings.mongo_user:
+        username = quote_plus(settings.mongo_user)
+        password = quote_plus(settings.mongo_password)
+        host = settings.mongo_host or "localhost"
+        return (
+            f"mongodb://{username}:{password}@"
+            f"{host}:27017/"
+            f"{settings.mongo_db}?authSource=admin"
+        )
+    return settings.mongo_uri
+
+
 async def connect_to_mongo() -> None:
-    _db.client = AsyncIOMotorClient(settings.mongo_uri)
-    # Fail fast if Mongo is unreachable
+    mongo_uri = _build_mongo_uri()
+    _db.client = AsyncIOMotorClient(mongo_uri)
     await _db.client.admin.command("ping")
     print(f"✓ Connected to MongoDB → db: {settings.mongo_db}")
 

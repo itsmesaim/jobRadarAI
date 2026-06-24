@@ -38,6 +38,8 @@ VALID_STATUSES = [
     "HALF_APPLIED",
 ]
 
+PIPELINE_STATUSES = [s for s in VALID_STATUSES if s != "NEW"]
+
 
 class StatusUpdate(BaseModel):
     status: str
@@ -72,6 +74,93 @@ def _format_job(job: dict, user_id: str) -> dict:
     }
 
 
+def _passes_job_filters(
+    job: dict,
+    formatted: dict,
+    *,
+    score_min: int,
+    score_max: int,
+    status: str | None,
+    source: str | None,
+    q: str | None,
+) -> bool:
+    score = formatted.get("score")
+    if score is not None and (score < score_min or score > score_max):
+        return False
+    if status and formatted.get("status") != status:
+        return False
+    if source and job.get("source") != source:
+        return False
+    if q:
+        searchable = f"{job.get('title','')} {job.get('company','')}".lower()
+        if q.lower() not in searchable:
+            return False
+    return True
+
+
+async def _list_kanban_jobs(
+    db,
+    user_id: str,
+    *,
+    score_min: int,
+    score_max: int,
+    status: str | None,
+    source: str | None,
+    q: str | None,
+) -> list[dict]:
+    """Return all visible pipeline jobs plus recent NEW jobs.
+
+    Pipeline jobs are always included so re-searching for new roles does not
+    drop cards the user already moved on the board.
+    """
+    status_key = f"status_{user_id}"
+    hidden_key = f"hidden_{user_id}"
+
+    pipeline_jobs = await db.jobs.find(
+        {
+            "crawled_by": user_id,
+            status_key: {"$in": PIPELINE_STATUSES},
+            hidden_key: {"$ne": True},
+        }
+    ).to_list(length=500)
+
+    new_jobs = (
+        await db.jobs.find(
+            {
+                "crawled_by": user_id,
+                hidden_key: {"$ne": True},
+                "$or": [{status_key: {"$exists": False}}, {status_key: "NEW"}],
+            }
+        )
+        .sort("crawled_at", -1)
+        .limit(200)
+        .to_list(length=200)
+    )
+
+    seen_ids: set[str] = set()
+    results: list[dict] = []
+    for job in pipeline_jobs + new_jobs:
+        job_id = str(job["_id"])
+        if job_id in seen_ids:
+            continue
+        seen_ids.add(job_id)
+
+        formatted = _format_job(job, user_id)
+        if not _passes_job_filters(
+            job,
+            formatted,
+            score_min=score_min,
+            score_max=score_max,
+            status=status,
+            source=source,
+            q=q,
+        ):
+            continue
+        results.append(formatted)
+
+    return results
+
+
 # ── LIST ─────────────────────────────────────────────────
 @router.get("")
 async def list_jobs(
@@ -83,9 +172,29 @@ async def list_jobs(
     q: str = None,
     page: int = 1,
     limit: int = 20,
+    kanban: bool = False,
 ):
     db = get_database()
     user_id = str(user["_id"])
+
+    if kanban:
+        results = await _list_kanban_jobs(
+            db,
+            user_id,
+            score_min=score_min,
+            score_max=score_max,
+            status=status,
+            source=source,
+            q=q,
+        )
+        total = len(results)
+        return {
+            "jobs": results,
+            "page": 1,
+            "limit": total,
+            "total": total,
+            "pages": 1,
+        }
 
     skip = (page - 1) * limit
     all_jobs = (
@@ -98,22 +207,20 @@ async def list_jobs(
 
     results = []
     for job in all_jobs:
-        # skip hidden jobs first, before any other filter
         if job.get(f"hidden_{user_id}"):
             continue
 
         formatted = _format_job(job, user_id)
-        score = formatted.get("score")
-        if score is not None and (score < score_min or score > score_max):
+        if not _passes_job_filters(
+            job,
+            formatted,
+            score_min=score_min,
+            score_max=score_max,
+            status=status,
+            source=source,
+            q=q,
+        ):
             continue
-        if status and formatted.get("status") != status:
-            continue
-        if source and job.get("source") != source:
-            continue
-        if q:
-            searchable = f"{job.get('title','')} {job.get('company','')}".lower()
-            if q.lower() not in searchable:
-                continue
         results.append(formatted)
         if len(results) >= limit:
             break

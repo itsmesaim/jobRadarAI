@@ -28,6 +28,7 @@ export function Navbar() {
   return (
     <nav className="nav">
       <div
+        className="nav-inner"
         style={{
           maxWidth: 1200,
           margin: "0 auto",
@@ -35,15 +36,29 @@ export function Navbar() {
           display: "flex",
           alignItems: "center",
           height: 60,
+          minWidth: 0,
         }}
       >
-        <Link to="/" style={{ textDecoration: "none", marginRight: 36 }}>
+        <Link
+          to="/"
+          className="nav-brand"
+          style={{ textDecoration: "none", marginRight: 36, flexShrink: 0 }}
+        >
           <span style={{ fontSize: 17, fontWeight: 700, color: "var(--text)" }}>
             Job<span style={{ color: "var(--accent)" }}>Radar</span>
           </span>
         </Link>
 
-        <div style={{ display: "flex", gap: 4, flex: 1 }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 4,
+            flex: 1,
+            minWidth: 0,
+            overflowX: "auto",
+            scrollbarWidth: "none",
+          }}
+        >
           {links.map(({ to, label, icon: Icon }) => {
             const active = location.pathname === to;
             return (

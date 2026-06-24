@@ -31,6 +31,7 @@ export const jobsApi = {
     q?: string;
     page?: number;
     limit?: number;
+    kanban?: boolean;
   }) => {
     const res = await api.get("/jobs", { params });
     return res.data as JobsResponse;
@@ -96,6 +97,10 @@ export const cvApi = {
     const res = await api.get("/cv/me");
     return res.data as CVData;
   },
+
+  delete: async () => {
+    await api.delete("/cv/me");
+  },
 };
 
 export const userApi = {
@@ -120,6 +125,20 @@ export const userApi = {
       `/users/skill-overrides/${encodeURIComponent(skill)}`,
     );
     return res.data;
+  },
+
+  getDataSummary: async () => {
+    const res = await api.get("/users/data-summary");
+    return res.data;
+  },
+
+  exportData: async () => {
+    const res = await api.get("/users/data-export");
+    return res.data;
+  },
+
+  deleteAccount: async () => {
+    await api.delete("/users/account");
   },
 };
 

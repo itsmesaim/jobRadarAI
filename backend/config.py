@@ -16,8 +16,13 @@ class Settings(BaseSettings):
     debug: bool = True
 
     #  MongoDB
+    # Option A (dev): MONGO_URI=mongodb://localhost:27017
+    # Option B (VPS with auth): set MONGO_USER, MONGO_PASSWORD, MONGO_HOST — URI is built automatically
     mongo_uri: str = "mongodb://localhost:27017"
     mongo_db: str = "jobradar"
+    mongo_host: str = "localhost"
+    mongo_user: str = ""
+    mongo_password: str = ""
 
     # JWT Auth
     jwt_secret: str = "change-me-in-production"

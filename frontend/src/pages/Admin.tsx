@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { useIsMobile } from "../hooks/useIsMobile";
 import { useAuthStore } from "../hooks/useStores";
 import { adminApi } from "../api";
 import { toast } from "react-hot-toast";
@@ -16,25 +17,379 @@ interface AdminUser {
   admin_notes?: string;
 }
 
+type AccessLevel = "free" | "limited" | "full" | "temp_12h" | "temp_1d";
+
+interface EditForm {
+  access_level: AccessLevel;
+  search_limit: number;
+  rating_limit: number;
+  notes: string;
+}
+
+const ACCESS_LEVELS: { value: AccessLevel; label: string }[] = [
+  { value: "free", label: "Free tier" },
+  { value: "limited", label: "Custom limits" },
+  { value: "full", label: "Full (permanent)" },
+  { value: "temp_12h", label: "Full (12h)" },
+  { value: "temp_1d", label: "Full (1 day)" },
+];
+
+function getPct(used: number, limit: number) {
+  return limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+}
+
+function isUserFullAccess(u: AdminUser) {
+  return (
+    !!u.full_access ||
+    !!(u.full_access_until && new Date(u.full_access_until) > new Date())
+  );
+}
+
+function UsageStat({
+  label,
+  used,
+  limit,
+  unlimited,
+  color,
+}: {
+  label: string;
+  used: number;
+  limit: number;
+  unlimited: boolean;
+  color: string;
+}) {
+  const pct = getPct(used, limit);
+  return (
+    <div className="admin-stat-box">
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--text-muted)",
+          marginBottom: 4,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontFamily: "monospace",
+          fontWeight: 600,
+          fontSize: 14,
+          color: "var(--text)",
+        }}
+      >
+        {unlimited ? "Unlimited" : `${used} / ${limit}`}
+      </div>
+      {!unlimited && (
+        <div className="admin-progress">
+          <span style={{ width: `${pct}%`, background: color }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusBadge({ user }: { user: AdminUser }) {
+  const isFull = isUserFullAccess(user);
+  if (isFull) {
+    const untilText = user.full_access_until
+      ? ` until ${new Date(user.full_access_until).toLocaleDateString()}`
+      : "";
+    return (
+      <span
+        className="badge"
+        style={{
+          background: "var(--success-bg)",
+          color: "var(--success)",
+          border: "1px solid var(--success-border)",
+        }}
+      >
+        Full access{untilText}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="badge"
+      style={{
+        background: "var(--warning-bg)",
+        color: "var(--warning)",
+        border: "1px solid var(--warning-border)",
+      }}
+    >
+      Limited
+    </span>
+  );
+}
+
+function UserEditForm({
+  form,
+  setForm,
+  onSave,
+  onCancel,
+}: {
+  form: EditForm;
+  setForm: (form: EditForm) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const handleAccessLevelChange = (level: AccessLevel) => {
+    const next = { ...form, access_level: level };
+    if (level === "full" || level === "temp_12h" || level === "temp_1d") {
+      next.search_limit = 9999;
+      next.rating_limit = 9999;
+    } else if (level === "free") {
+      next.search_limit = 3;
+      next.rating_limit = 10;
+    }
+    setForm(next);
+  };
+
+  const limitsDisabled =
+    form.access_level === "full" ||
+    form.access_level === "temp_12h" ||
+    form.access_level === "temp_1d";
+
+  return (
+    <div
+      style={{
+        marginTop: 14,
+        paddingTop: 14,
+        borderTop: "1px solid var(--border)",
+      }}
+    >
+      <p className="label" style={{ marginBottom: 8 }}>
+        Access level
+      </p>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 6,
+          marginBottom: 14,
+        }}
+      >
+        {ACCESS_LEVELS.map(({ value, label }) => (
+          <button
+            key={value}
+            type="button"
+            className={`admin-access-btn${form.access_level === value ? " is-active" : ""}`}
+            onClick={() => handleAccessLevelChange(value)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {(form.access_level === "full" ||
+        form.access_level === "temp_12h" ||
+        form.access_level === "temp_1d") && (
+        <div
+          style={{
+            fontSize: 13,
+            color: "var(--success)",
+            background: "var(--success-bg)",
+            border: "1px solid var(--success-border)",
+            borderRadius: 8,
+            padding: "10px 12px",
+            marginBottom: 14,
+          }}
+        >
+          {form.access_level === "full"
+            ? "Full access grants unlimited searches and ratings."
+            : "Temporary full access for the selected period."}
+        </div>
+      )}
+
+      <div style={{ marginBottom: 14 }}>
+        <label className="label">Notes</label>
+        <input
+          value={form.notes}
+          onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          className="input"
+          placeholder="Internal notes..."
+        />
+      </div>
+
+      {form.access_level === "limited" && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+            gap: 10,
+            marginBottom: 14,
+          }}
+        >
+          <div>
+            <label className="label">Search limit</label>
+            <input
+              type="number"
+              value={form.search_limit}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  search_limit: parseInt(e.target.value) || 0,
+                })
+              }
+              className="input"
+              disabled={limitsDisabled}
+            />
+          </div>
+          <div>
+            <label className="label">Rating limit</label>
+            <input
+              type="number"
+              value={form.rating_limit}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  rating_limit: parseInt(e.target.value) || 0,
+                })
+              }
+              className="input"
+              disabled={limitsDisabled}
+            />
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button type="button" onClick={onSave} className="btn btn-primary">
+          Save changes
+        </button>
+        <button type="button" onClick={onCancel} className="btn btn-ghost">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AdminUserCard({
+  user,
+  editing,
+  form,
+  setForm,
+  onStartEdit,
+  onSave,
+  onCancel,
+}: {
+  user: AdminUser;
+  editing: boolean;
+  form: EditForm;
+  setForm: (form: EditForm) => void;
+  onStartEdit: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const isFull = isUserFullAccess(user);
+
+  return (
+    <div className="admin-user-card">
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 10,
+        }}
+      >
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            style={{
+              fontWeight: 600,
+              fontSize: 15,
+              color: "var(--text)",
+              wordBreak: "break-word",
+            }}
+          >
+            {user.name || "Unnamed"}
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              fontFamily: "monospace",
+              marginTop: 2,
+              wordBreak: "break-all",
+            }}
+          >
+            {user.email}
+          </div>
+        </div>
+        <StatusBadge user={user} />
+      </div>
+
+      {!editing && (
+        <>
+          <div className="admin-stat-row">
+            <UsageStat
+              label="Searches"
+              used={user.searches_used}
+              limit={user.search_limit}
+              unlimited={isFull}
+              color="var(--success)"
+            />
+            <UsageStat
+              label="Ratings"
+              used={user.ratings_used}
+              limit={user.rating_limit}
+              unlimited={isFull}
+              color="var(--warning)"
+            />
+          </div>
+
+          {user.admin_notes && (
+            <p
+              style={{
+                margin: "12px 0 0",
+                fontSize: 12,
+                color: "var(--text-secondary)",
+                lineHeight: 1.5,
+              }}
+            >
+              {user.admin_notes}
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={onStartEdit}
+            className="btn btn-secondary"
+            style={{ width: "100%", marginTop: 14, justifyContent: "center" }}
+          >
+            Manage access
+          </button>
+        </>
+      )}
+
+      {editing && (
+        <UserEditForm
+          form={form}
+          setForm={setForm}
+          onSave={onSave}
+          onCancel={onCancel}
+        />
+      )}
+    </div>
+  );
+}
+
 export function AdminPage() {
   const { user } = useAuthStore();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    access_level: "limited" as
-      | "free"
-      | "limited"
-      | "full"
-      | "temp_12h"
-      | "temp_1d",
+  const [form, setForm] = useState<EditForm>({
+    access_level: "limited",
     search_limit: 0,
     rating_limit: 0,
     notes: "",
   });
 
   const basePath = user?.adminBasePath || "";
+  const isMobile = useIsMobile();
 
   const loadUsers = async () => {
     if (!basePath) return;
@@ -42,7 +397,7 @@ export function AdminPage() {
     try {
       const data = await adminApi.listUsers(basePath);
       setUsers(data.users || []);
-    } catch (e: any) {
+    } catch {
       toast.error("Failed to load users");
     } finally {
       setLoading(false);
@@ -60,7 +415,7 @@ export function AdminPage() {
   );
 
   const startEdit = (u: AdminUser) => {
-    let level: any = "limited";
+    let level: AccessLevel = "limited";
     if (u.full_access) level = "full";
     else if (u.full_access_until) level = "temp_12h";
 
@@ -73,21 +428,9 @@ export function AdminPage() {
     });
   };
 
-  const handleAccessLevelChange = (level: any) => {
-    let newForm = { ...form, access_level: level };
-    if (level === "full" || level === "temp_12h" || level === "temp_1d") {
-      newForm.search_limit = 9999;
-      newForm.rating_limit = 9999;
-    } else if (level === "free") {
-      newForm.search_limit = 3;
-      newForm.rating_limit = 10;
-    }
-    setForm(newForm);
-  };
-
   const save = async (id: string) => {
     try {
-      const payload: any = { notes: form.notes };
+      const payload: Record<string, unknown> = { notes: form.notes };
       const level = form.access_level;
 
       if (level === "full") {
@@ -115,341 +458,246 @@ export function AdminPage() {
     }
   };
 
-  const cancelEdit = () => {
-    setEditing(null);
-  };
-
-  // Helper to compute used percent safely
-  const getPct = (used: number, limit: number) =>
-    limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-
   if (!user?.isAdmin) {
-    return <div className="p-10 text-center">Access denied</div>;
+    return (
+      <div
+        className="page-shell"
+        style={{ textAlign: "center", paddingTop: 60 }}
+      >
+        Access denied
+      </div>
+    );
   }
 
-  const getStatusBadge = (u: AdminUser) => {
-    const isFull =
-      u.full_access ||
-      (u.full_access_until && new Date(u.full_access_until) > new Date());
-    if (isFull) {
-      const untilText = u.full_access_until
-        ? ` until ${new Date(u.full_access_until).toLocaleDateString()}`
-        : "";
-      return (
-        <span className="px-2.5 py-0.5 text-xs font-medium bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300 rounded-full">
-          Full Access{untilText}
-        </span>
-      );
-    }
-    return (
-      <span className="px-2.5 py-0.5 text-xs font-medium bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 rounded-full">
-        Limited
-      </span>
-    );
-  };
-
   return (
-    <div className="max-w-6xl mx-auto p-8 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 min-h-screen">
-      <div className="flex justify-between items-end mb-6">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Admin Panel</h1>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-            Manage user access • Full access or temporary grants (12h/1d)
-          </p>
-        </div>
+    <div className="page-shell">
+      <div style={{ marginBottom: 20 }}>
+        <h1
+          style={{
+            fontSize: 24,
+            fontWeight: 700,
+            margin: "0 0 4px",
+            color: "var(--text)",
+          }}
+        >
+          Admin panel
+        </h1>
+        <p style={{ margin: 0, fontSize: 14, color: "var(--text-muted)" }}>
+          Manage user access — full access or temporary grants (12h / 1 day)
+        </p>
       </div>
 
-      {/* Search */}
-      <div className="mb-4">
-        <input
-          type="text"
-          placeholder="Search users by name or email..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full max-w-sm px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-gray-400"
-        />
-      </div>
+      <input
+        type="text"
+        placeholder="Search users by name or email..."
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        className="input"
+        style={{ marginBottom: 16, maxWidth: "100%" }}
+      />
 
       {loading ? (
-        <div className="py-12 text-center text-gray-400">Loading users...</div>
+        <div
+          style={{
+            padding: "48px 0",
+            textAlign: "center",
+            color: "var(--text-muted)",
+            fontSize: 14,
+          }}
+        >
+          Loading users...
+        </div>
+      ) : filteredUsers.length === 0 ? (
+        <div
+          className="card"
+          style={{
+            padding: 40,
+            textAlign: "center",
+            color: "var(--text-muted)",
+            fontSize: 14,
+          }}
+        >
+          No users found
+        </div>
+      ) : isMobile ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {filteredUsers.map((u) => (
+            <AdminUserCard
+              key={u.id}
+              user={u}
+              editing={editing === u.id}
+              form={form}
+              setForm={setForm}
+              onStartEdit={() => startEdit(u)}
+              onSave={() => save(u.id)}
+              onCancel={() => setEditing(null)}
+            />
+          ))}
+        </div>
       ) : (
-        <div className="border border-gray-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700">
-                <th className="text-left px-6 py-3.5 font-medium text-gray-600 dark:text-zinc-300">
-                  User
-                </th>
-                <th className="text-left px-6 py-3.5 font-medium text-gray-600 dark:text-zinc-300">
-                  Status
-                </th>
-                <th className="text-left px-6 py-3.5 font-medium text-gray-600 dark:text-zinc-300">
-                  Searches
-                </th>
-                <th className="text-left px-6 py-3.5 font-medium text-gray-600 dark:text-zinc-300">
-                  Ratings
-                </th>
-                <th className="text-left px-6 py-3.5 font-medium text-gray-600 dark:text-zinc-300">
-                  Notes
-                </th>
-                <th className="w-24"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredUsers.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-6 py-12 text-center text-gray-400"
-                  >
-                    No users found
-                  </td>
+        <div className="card" style={{ overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
+            <table
+              style={{
+                width: "100%",
+                fontSize: 13,
+                borderCollapse: "collapse",
+              }}
+            >
+              <thead>
+                <tr
+                  style={{
+                    background: "var(--bg-secondary)",
+                    borderBottom: "1px solid var(--border)",
+                  }}
+                >
+                  {["User", "Status", "Searches", "Ratings", "Notes", ""].map(
+                    (col) => (
+                      <th
+                        key={col}
+                        style={{
+                          textAlign: "left",
+                          padding: "12px 16px",
+                          fontWeight: 600,
+                          color: "var(--text-secondary)",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {col}
+                      </th>
+                    ),
+                  )}
                 </tr>
-              )}
-              {filteredUsers.map((u) => {
-                const isEditingThis = editing === u.id;
-                const isFull =
-                  u.full_access ||
-                  (u.full_access_until &&
-                    new Date(u.full_access_until) > new Date());
-                const searchPct =
-                  u.search_limit > 0
-                    ? Math.min(100, (u.searches_used / u.search_limit) * 100)
-                    : 0;
-                const ratingPct =
-                  u.rating_limit > 0
-                    ? Math.min(100, (u.ratings_used / u.rating_limit) * 100)
-                    : 0;
+              </thead>
+              <tbody>
+                {filteredUsers.map((u) => {
+                  const isEditingThis = editing === u.id;
+                  const isFull = isUserFullAccess(u);
+                  const searchPct = getPct(u.searches_used, u.search_limit);
+                  const ratingPct = getPct(u.ratings_used, u.rating_limit);
 
-                return (
-                  <tr
-                    key={u.id}
-                    className="border-t hover:bg-gray-50/50 dark:hover:bg-zinc-800/60 transition-colors"
-                  >
-                    <td className="px-6 py-4">
-                      <div className="font-medium">{u.name || "Unnamed"}</div>
-                      <div className="text-xs text-gray-500 dark:text-zinc-400 font-mono mt-0.5">
-                        {u.email}
-                      </div>
-                    </td>
-
-                    <td className="px-6 py-4">{getStatusBadge(u)}</td>
-
-                    <td className="px-6 py-4">
-                      {isEditingThis ? (
-                        <input
-                          type="number"
-                          value={form.search_limit}
-                          onChange={(e) =>
-                            setForm({
-                              ...form,
-                              search_limit: parseInt(e.target.value) || 0,
-                            })
-                          }
-                          className="w-20 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 rounded px-2 py-1 text-sm"
-                          disabled={form.access_level === "full"}
-                        />
-                      ) : (
-                        <div>
-                          <div className="font-mono font-semibold tabular-nums text-base">
+                  return (
+                    <Fragment key={u.id}>
+                      <tr style={{ borderTop: "1px solid var(--border)" }}>
+                        <td style={{ padding: "14px 16px", minWidth: 180 }}>
+                          <div style={{ fontWeight: 600 }}>
+                            {u.name || "Unnamed"}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "var(--text-muted)",
+                              fontFamily: "monospace",
+                              marginTop: 2,
+                            }}
+                          >
+                            {u.email}
+                          </div>
+                        </td>
+                        <td style={{ padding: "14px 16px" }}>
+                          <StatusBadge user={u} />
+                        </td>
+                        <td style={{ padding: "14px 16px", minWidth: 120 }}>
+                          <div
+                            style={{
+                              fontFamily: "monospace",
+                              fontWeight: 600,
+                            }}
+                          >
                             {isFull
                               ? "Unlimited"
                               : `${u.searches_used} / ${u.search_limit}`}
                           </div>
                           {!isFull && (
-                            <div className="h-1.5 mt-1 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                              <div
-                                className="h-1.5 bg-emerald-500 transition-all"
-                                style={{ width: `${searchPct}%` }}
+                            <div className="admin-progress">
+                              <span
+                                style={{
+                                  width: `${searchPct}%`,
+                                  background: "var(--success)",
+                                }}
                               />
                             </div>
                           )}
-                        </div>
-                      )}
-                    </td>
-
-                    <td className="px-6 py-4">
-                      {isEditingThis ? (
-                        <input
-                          type="number"
-                          value={form.rating_limit}
-                          onChange={(e) =>
-                            setForm({
-                              ...form,
-                              rating_limit: parseInt(e.target.value) || 0,
-                            })
-                          }
-                          className="w-20 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 rounded px-2 py-1 text-sm"
-                          disabled={form.access_level === "full"}
-                        />
-                      ) : (
-                        <div>
-                          <div className="font-mono font-semibold tabular-nums text-base">
+                        </td>
+                        <td style={{ padding: "14px 16px", minWidth: 120 }}>
+                          <div
+                            style={{
+                              fontFamily: "monospace",
+                              fontWeight: 600,
+                            }}
+                          >
                             {isFull
                               ? "Unlimited"
                               : `${u.ratings_used} / ${u.rating_limit}`}
                           </div>
                           {!isFull && (
-                            <div className="h-1.5 mt-1 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                              <div
-                                className="h-1.5 bg-amber-500 transition-all"
-                                style={{ width: `${ratingPct}%` }}
+                            <div className="admin-progress">
+                              <span
+                                style={{
+                                  width: `${ratingPct}%`,
+                                  background: "var(--warning)",
+                                }}
                               />
                             </div>
                           )}
-                        </div>
-                      )}
-                    </td>
-
-                    <td className="px-6 py-4 text-sm text-gray-500 dark:text-zinc-400 max-w-[220px] truncate">
-                      {isEditingThis ? (
-                        <input
-                          value={form.notes}
-                          onChange={(e) =>
-                            setForm({ ...form, notes: e.target.value })
-                          }
-                          className="w-full border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 rounded px-2 py-1 text-sm"
-                          placeholder="Internal notes..."
-                        />
-                      ) : (
-                        u.admin_notes || (
-                          <span className="text-gray-300">—</span>
-                        )
-                      )}
-                    </td>
-
-                    <td className="px-6 py-4 text-right">
-                      {isEditingThis ? (
-                        <div className="flex gap-2 justify-end">
-                          <button
-                            onClick={() => save(u.id)}
-                            className="px-3 py-1 text-xs bg-black dark:bg-white text-white dark:text-black rounded hover:opacity-90"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={cancelEdit}
-                            className="px-3 py-1 text-xs border dark:border-zinc-700 rounded hover:bg-gray-50 dark:hover:bg-zinc-800"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => startEdit(u)}
-                          className="px-3 py-1 text-xs border dark:border-zinc-700 rounded text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800"
+                        </td>
+                        <td
+                          style={{
+                            padding: "14px 16px",
+                            color: "var(--text-secondary)",
+                            maxWidth: 200,
+                          }}
                         >
-                          Manage
-                        </button>
+                          {u.admin_notes || "—"}
+                        </td>
+                        <td
+                          style={{ padding: "14px 16px", textAlign: "right" }}
+                        >
+                          {!isEditingThis && (
+                            <button
+                              type="button"
+                              onClick={() => startEdit(u)}
+                              className="btn btn-ghost"
+                              style={{ fontSize: 12, padding: "6px 10px" }}
+                            >
+                              Manage
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {isEditingThis && (
+                        <tr style={{ background: "var(--bg-secondary)" }}>
+                          <td colSpan={6} style={{ padding: "16px" }}>
+                            <UserEditForm
+                              form={form}
+                              setForm={setForm}
+                              onSave={() => save(u.id)}
+                              onCancel={() => setEditing(null)}
+                            />
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Edit panel for access level */}
-      {editing && (
-        <div className="mt-4 p-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl">
-          <div className="font-medium mb-3 text-sm">Access Level</div>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {(["free", "limited", "full", "temp_12h", "temp_1d"] as const).map(
-              (level) => (
-                <button
-                  key={level}
-                  onClick={() => handleAccessLevelChange(level)}
-                  className={`px-4 py-1.5 text-sm rounded-xl border transition-all ${
-                    form.access_level === level
-                      ? "bg-zinc-900 dark:bg-white text-white dark:text-black border-transparent"
-                      : "border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-800"
-                  }`}
-                >
-                  {level === "free" && "Free Tier"}
-                  {level === "limited" && "Custom Limits"}
-                  {level === "full" && "Full Access (permanent)"}
-                  {level === "temp_12h" && "Full Access (12h)"}
-                  {level === "temp_1d" && "Full Access (1 day)"}
-                </button>
-              ),
-            )}
-          </div>
-
-          {form.access_level === "limited" && (
-            <div className="grid grid-cols-2 gap-3 max-w-sm">
-              <div>
-                <div className="text-xs text-gray-500 dark:text-zinc-400 mb-1">
-                  Search Limit
-                </div>
-                <input
-                  type="number"
-                  value={form.search_limit}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      search_limit: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  className="border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 rounded px-3 py-1.5 w-full"
-                />
-              </div>
-              <div>
-                <div className="text-xs text-gray-500 dark:text-zinc-400 mb-1">
-                  Rating Limit
-                </div>
-                <input
-                  type="number"
-                  value={form.rating_limit}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      rating_limit: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  className="border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 rounded px-3 py-1.5 w-full"
-                />
-              </div>
-            </div>
-          )}
-
-          {form.access_level === "full" && (
-            <div className="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950 p-3 rounded">
-              Full Access grants unlimited searches and ratings.
-            </div>
-          )}
-          {(form.access_level === "temp_12h" ||
-            form.access_level === "temp_1d") && (
-            <div className="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950 p-3 rounded">
-              Temporary full access granted for this period.
-            </div>
-          )}
-
-          <div className="mt-4 flex gap-2">
-            <button
-              onClick={() => {
-                const id = editing;
-                if (id) save(id);
-              }}
-              className="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-sm font-medium rounded-xl"
-            >
-              Save Changes
-            </button>
-            <button
-              onClick={cancelEdit}
-              className="px-4 py-2 border border-gray-300 dark:border-zinc-700 rounded-xl text-sm"
-            >
-              Cancel
-            </button>
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      <div className="mt-8 text-xs text-gray-500 dark:text-zinc-400 max-w-md">
-        <strong>Lifetime limits</strong> for free users. Use Full or temporary
-        options for more access. High numbers (9999) also act as unlimited.
-      </div>
+      <p
+        style={{
+          marginTop: 24,
+          fontSize: 12,
+          color: "var(--text-muted)",
+          lineHeight: 1.6,
+          maxWidth: 480,
+        }}
+      >
+        Lifetime limits apply to free users. Use full or temporary options for
+        more access. High numbers (9999) also act as unlimited.
+      </p>
     </div>
   );
 }
