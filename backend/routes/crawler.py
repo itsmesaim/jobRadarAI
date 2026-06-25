@@ -79,12 +79,24 @@ async def crawl_status(user=Depends(get_current_user)):
         and datetime.now(timezone.utc)
         < datetime.fromisoformat(usage.get("full_access_until").replace("Z", "+00:00"))
     )
+    token_unlimited = is_full or usage.get("unlimited")
     return {
         "last_crawl_at": user.get("last_crawl_at"),
         "searches_used": usage.get("searches_used", 0),
         "search_limit": 9999 if is_full else usage.get("search_limit", 0),
         "ratings_used": usage.get("ratings_used", 0),
         "rating_limit": 9999 if is_full else usage.get("rating_limit", 0),
+        "daily_tokens_used": usage.get("daily_tokens_used", 0),
+        "monthly_tokens_used": usage.get("monthly_tokens_used", 0),
+        "daily_token_limit": (
+            0 if token_unlimited else usage.get("daily_token_limit", 0)
+        ),
+        "monthly_token_limit": (
+            0 if token_unlimited else usage.get("monthly_token_limit", 0)
+        ),
+        "daily_tokens_remaining": usage.get("daily_tokens_remaining"),
+        "monthly_tokens_remaining": usage.get("monthly_tokens_remaining"),
+        "token_quota_unlimited": token_unlimited,
         "full_access": is_full,
         "full_access_until": usage.get("full_access_until"),
         "my_jobs": total_jobs,

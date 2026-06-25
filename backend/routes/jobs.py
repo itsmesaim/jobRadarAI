@@ -20,10 +20,18 @@ from database import get_database
 from deps import get_current_user
 from services.rating import (
     generate_job_brief,
+    is_billable_rating,
     rate_all_jobs_for_user,
     rate_job_for_user,
 )
-from services.limits import check_and_increment_rating, get_user_usage
+from services.limits import (
+    check_ai_token_quota,
+    check_and_increment_rating,
+    get_remaining_ratings,
+    get_user_usage,
+    rating_limit_message,
+    refund_rating,
+)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -253,26 +261,37 @@ async def rate_all(background_tasks: BackgroundTasks, user=Depends(get_current_u
     except Exception:
         pass
 
-    # Freemium: we don't know exactly how many yet, so check a reasonable batch or let the function handle.
-    # For simplicity, allow and let internal pre-filter + limit check kick in.
-    # Better: estimate unrated count or just check for at least 1.
-    allowed, msg, remaining = await check_and_increment_rating(user, jobs_to_rate=1)
-    if not allowed:
+    token_ok, token_msg = await check_ai_token_quota(user)
+    if not token_ok:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=msg,
+            detail=token_msg,
         )
+
+    remaining = await get_remaining_ratings(user)
+    if remaining <= 0:
+        usage = await get_user_usage(user_id)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=rating_limit_message(usage.get("rating_limit", 0)),
+        )
+
+    if pending_count == 0:
+        return {
+            "message": "No unrated jobs to rate.",
+            "queued": 0,
+            "ratings_remaining": remaining,
+        }
 
     print(
         f"[rating] [route] /rate-all accepted for user={user_id}, spawning background task rate_all_jobs_for_user (real work happens async)"
     )
     background_tasks.add_task(rate_all_jobs_for_user, user)
-    usage = await get_user_usage(user_id)
     return {
         "message": "Rating started in background.",
         "queued": pending_count,
-        "ratings_remaining": usage.get("rating_limit", 0)
-        - usage.get("ratings_used", 0),
+        "ratings_remaining": remaining,
+        "will_rate_up_to": min(pending_count, remaining),
     }
 
 
@@ -307,14 +326,21 @@ async def add_manual_jd(payload: ManualJD, user=Depends(get_current_user)):
     result = await db.jobs.insert_one(doc)
     job_doc = await db.jobs.find_one({"_id": result.inserted_id})
 
-    # Freemium limit for rating
-    allowed, msg, remaining = await check_and_increment_rating(user, jobs_to_rate=1)
+    token_ok, token_msg = await check_ai_token_quota(user)
+    if not token_ok:
+        return {
+            "message": "Job added but AI token limit reached.",
+            "id": str(result.inserted_id),
+            "detail": token_msg,
+        }
+
+    allowed, quota_msg, _ = await check_and_increment_rating(user, jobs_to_rate=1)
     if not allowed:
-        # still saved the job but not rated
+        usage = await get_user_usage(user_id)
         return {
             "message": "Job added but rating limit reached.",
             "id": str(result.inserted_id),
-            "detail": msg,
+            "detail": quota_msg or rating_limit_message(usage.get("rating_limit", 0)),
         }
 
     rating = await rate_job_for_user(job_doc, user)
@@ -323,6 +349,9 @@ async def add_manual_jd(payload: ManualJD, user=Depends(get_current_user)):
     await db.jobs.update_one(
         {"_id": result.inserted_id}, {"$set": {f"ratings.{user_id}": rating}}
     )
+
+    if not is_billable_rating(rating):
+        await refund_rating(user_id, 1)
 
     return {
         "message": "Job added and rated.",

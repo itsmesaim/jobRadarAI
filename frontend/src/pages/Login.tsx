@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { authApi } from "../api/index";
 import { useAuthStore } from "../hooks/useStores";
@@ -176,6 +176,22 @@ export function LoginPage() {
                   style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}
                 >
                   {errors.password}
+                </p>
+              )}
+              {mode === "login" && (
+                <p
+                  style={{
+                    margin: "6px 0 0",
+                    fontSize: 12,
+                    textAlign: "right",
+                  }}
+                >
+                  <Link
+                    to="/forgot-password"
+                    style={{ color: "var(--accent)" }}
+                  >
+                    Forgot password?
+                  </Link>
                 </p>
               )}
             </div>

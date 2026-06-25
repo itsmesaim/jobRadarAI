@@ -52,6 +52,7 @@ class UserPreferences(BaseModel):
     avoid_industries: list[str] = []
     work_mode: WorkMode = WorkMode()
     about_me: str = ""  # free-text career context, surfaced early in rating prompt
+    email_reminders_enabled: bool = True  # daily high-score apply nudges via SMTP
 
 
 class SkillOverride(BaseModel):
@@ -82,6 +83,7 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
                 "avoid_industries": prefs["avoid_industries"],
                 "work_mode": prefs["work_mode"],
                 "about_me": prefs["about_me"],
+                "email_reminders_enabled": prefs["email_reminders_enabled"],
             }
         },
     )
@@ -104,6 +106,7 @@ async def get_preferences(user=Depends(get_current_user)):
             "work_mode", {"remote": True, "hybrid": True, "onsite": False}
         ),
         "about_me": user.get("about_me", ""),
+        "email_reminders_enabled": user.get("email_reminders_enabled", True),
     }
 
 

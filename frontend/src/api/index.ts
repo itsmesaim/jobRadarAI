@@ -20,6 +20,21 @@ export const authApi = {
     const res = await api.get("/auth/me");
     return res.data;
   },
+  forgotPassword: async (email: string) => {
+    const res = await api.post("/auth/forgot-password", { email });
+    return res.data as { message: string };
+  },
+  resetPassword: async (token: string, new_password: string) => {
+    const res = await api.post("/auth/reset-password", { token, new_password });
+    return res.data as { message: string };
+  },
+  changePassword: async (current_password: string, new_password: string) => {
+    const res = await api.post("/auth/change-password", {
+      current_password,
+      new_password,
+    });
+    return res.data as { message: string };
+  },
 };
 
 export const jobsApi = {
@@ -153,14 +168,21 @@ export const adminApi = {
     const res = await api.get(`${basePath}/users/${userId}`);
     return res.data;
   },
+  getAiSummary: async (basePath: string) => {
+    const res = await api.get(`${basePath}/ai-summary`);
+    return res.data;
+  },
   updateAccess: async (
     basePath: string,
     userId: string,
     data: {
       search_limit?: number;
       rating_limit?: number;
+      daily_token_limit?: number;
+      monthly_token_limit?: number;
       notes?: string;
       full_access?: boolean;
+      full_access_duration_hours?: number;
     },
   ) => {
     const res = await api.patch(`${basePath}/users/${userId}/access`, data);

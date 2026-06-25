@@ -14,12 +14,15 @@ from pydantic import BaseModel
 
 from deps import get_current_user
 from config import settings
+from services.ai_usage import get_platform_ai_summary
 from services.limits import admin_list_users, admin_update_user_limits, get_user_usage
 
 
 class UserAccessUpdate(BaseModel):
     search_limit: int | None = None
     rating_limit: int | None = None
+    daily_token_limit: int | None = None
+    monthly_token_limit: int | None = None
     notes: str | None = None
     full_access: bool | None = None
     full_access_duration_hours: int | None = None
@@ -74,3 +77,10 @@ async def update_user_access(
 async def get_raw_usage(user_id: str, user=Depends(get_current_user)):
     _require_admin(user)
     return await get_user_usage(user_id)
+
+
+@router.get("/ai-summary")
+async def get_ai_platform_summary(user=Depends(get_current_user)):
+    """Platform-wide AI token usage and estimated budget remaining."""
+    _require_admin(user)
+    return await get_platform_ai_summary()

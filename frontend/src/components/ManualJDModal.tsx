@@ -3,10 +3,14 @@ import { X, Link, FileText, Loader } from "lucide-react";
 import toast from "react-hot-toast";
 import { jobsApi, scrapeApi } from "../api/index";
 import { ScoreBadge } from "./ScoreBadge";
+import { parseLimitKindFromDetail, type LimitKind } from "./LimitContactModal";
 
 interface Props {
   onClose: () => void;
   onAdded: () => void;
+  onLimitReached?: (kind: LimitKind) => void;
+  canRate?: boolean;
+  ratingsRemaining?: number;
 }
 
 type RatingResult = {
@@ -16,7 +20,23 @@ type RatingResult = {
   gaps: string[];
 };
 
-export function ManualJDModal({ onClose, onAdded }: Props) {
+type ManualJDResponse = {
+  message: string;
+  id?: string;
+  detail?: string;
+  score?: number;
+  verdict?: string;
+  matched_strengths?: string[];
+  gaps?: string[];
+};
+
+export function ManualJDModal({
+  onClose,
+  onAdded,
+  onLimitReached,
+  canRate = true,
+  ratingsRemaining,
+}: Props) {
   const [tab, setTab] = useState<"url" | "paste">("paste");
   const [url, setUrl] = useState("");
   const [scraping, setScraping] = useState(false);
@@ -54,14 +74,53 @@ export function ManualJDModal({ onClose, onAdded }: Props) {
   };
 
   const handleRate = async () => {
+    if (!canRate) {
+      toast.error(
+        "Daily rating limit reached — job can be saved but not rated until your quota resets.",
+        { duration: 6000 },
+      );
+      onLimitReached?.("rating");
+      return;
+    }
     if (!form.title || !form.company || !form.jd_text) {
       toast.error("Title, company, and JD text are required");
       return;
     }
     setLoading(true);
     try {
-      const res = await jobsApi.addManual(form);
-      setResult(res);
+      const res = (await jobsApi.addManual(form)) as ManualJDResponse;
+
+      if (res.message?.toLowerCase().includes("limit reached")) {
+        const isToken = res.message.toLowerCase().includes("token");
+        const detail =
+          res.detail ||
+          (isToken
+            ? "Daily AI token limit reached. Job saved — try again tomorrow or contact support."
+            : "Daily rating limit reached. Job saved — you can rate it later from your list.");
+        toast.error(detail, { duration: 6000 });
+        onAdded();
+        onClose();
+        onLimitReached?.(isToken ? parseLimitKindFromDetail(detail) : "rating");
+        return;
+      }
+
+      if (
+        res.score == null ||
+        !res.verdict ||
+        !res.matched_strengths ||
+        !res.gaps
+      ) {
+        toast.error(res.detail || "Could not rate this job. Try again later.");
+        onAdded();
+        return;
+      }
+
+      setResult({
+        score: res.score,
+        verdict: res.verdict,
+        matched_strengths: res.matched_strengths,
+        gaps: res.gaps,
+      });
       onAdded();
     } catch (err: any) {
       const detail = err.response?.data?.detail;
@@ -267,14 +326,32 @@ export function ManualJDModal({ onClose, onAdded }: Props) {
                       rating
                     </p>
                   </div>
+                  {!canRate && (
+                    <p
+                      style={{
+                        margin: "0 0 10px",
+                        fontSize: 12,
+                        color: "#b91c1c",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Daily rating limit reached
+                      {ratingsRemaining != null
+                        ? ` (${ratingsRemaining} left)`
+                        : ""}
+                      . Your job can be saved but won&apos;t be rated until
+                      tomorrow UTC or you get more access from admin.
+                    </p>
+                  )}
                   <button
                     onClick={handleRate}
-                    disabled={loading}
+                    disabled={loading || !canRate}
                     className="btn btn-primary"
                     style={{
                       width: "100%",
                       justifyContent: "center",
                       padding: "10px",
+                      opacity: canRate ? 1 : 0.55,
                     }}
                   >
                     {loading ? (
@@ -282,8 +359,10 @@ export function ManualJDModal({ onClose, onAdded }: Props) {
                         <Loader size={13} className="animate-spin" /> Rating
                         with AI...
                       </>
-                    ) : (
+                    ) : canRate ? (
                       "Rate this job"
+                    ) : (
+                      "Rating limit reached"
                     )}
                   </button>
                 </div>

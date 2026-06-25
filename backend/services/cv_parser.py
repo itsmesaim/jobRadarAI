@@ -16,6 +16,8 @@ import fitz  # PyMuPDF
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
 
+from config import settings
+from services.ai_usage import record_from_llm_response
 from services.llm import get_llm
 
 
@@ -82,8 +84,9 @@ Rules:
 - Keep bullet points concise and exactly as written in the CV.
 """.strip()
 
+
 @traceable(name="parse_cv_with_llm", run_type="llm")
-async def parse_cv_with_llm(raw_text: str) -> dict:
+async def parse_cv_with_llm(raw_text: str, user_id: str | None = None) -> dict:
     llm = get_llm()
 
     messages = [
@@ -92,6 +95,15 @@ async def parse_cv_with_llm(raw_text: str) -> dict:
     ]
 
     response = await llm.ainvoke(messages)
+    if user_id:
+        model = getattr(llm, "model", getattr(llm, "model_name", settings.openai_model))
+        await record_from_llm_response(
+            user_id,
+            response,
+            operation="cv_parse",
+            provider=settings.llm_provider,
+            model=str(model or "unknown"),
+        )
     content = response.content.strip()
 
     # strip markdown fences if model wraps anyway
@@ -108,11 +120,11 @@ async def parse_cv_with_llm(raw_text: str) -> dict:
 
 
 # ── Combined: PDF bytes → structured dict ────────────────
-async def process_cv(pdf_bytes: bytes) -> tuple[str, dict]:
+async def process_cv(pdf_bytes: bytes, user_id: str | None = None) -> tuple[str, dict]:
     """
     Returns (raw_text, structured_json).
     We store both — raw_text for embedding later, structured for display.
     """
     raw_text = extract_text_from_pdf(pdf_bytes)
-    structured = await parse_cv_with_llm(raw_text)
+    structured = await parse_cv_with_llm(raw_text, user_id=user_id)
     return raw_text, structured

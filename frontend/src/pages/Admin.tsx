@@ -1,8 +1,41 @@
 import { Fragment, useEffect, useState } from "react";
+import { Cpu, Zap } from "lucide-react";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useAuthStore } from "../hooks/useStores";
 import { adminApi } from "../api";
 import { toast } from "react-hot-toast";
+
+interface AiUsageSnapshot {
+  total_tokens?: number;
+  llm_calls?: number;
+  embedding_calls?: number;
+  estimated_cost_usd?: number;
+}
+
+interface AiUsage {
+  cost_estimation_enabled?: boolean;
+  lifetime?: AiUsageSnapshot;
+  today?: AiUsageSnapshot;
+  this_month?: AiUsageSnapshot & { month?: string };
+}
+
+interface PlatformAiSummary {
+  providers?: {
+    main_llm?: string;
+    rating_llm?: string;
+    rating_model?: string;
+  };
+  cost_estimation_enabled?: boolean;
+  monthly_budget_usd?: number | null;
+  monthly_spent_usd?: number;
+  monthly_remaining_usd?: number | null;
+  today?: AiUsageSnapshot;
+  this_month?: AiUsageSnapshot & { month?: string };
+  lifetime?: AiUsageSnapshot;
+  note?: string;
+}
+
+const DEFAULT_DAILY_TOKEN_LIMIT = 250_000;
 
 interface AdminUser {
   id: string;
@@ -12,9 +45,43 @@ interface AdminUser {
   ratings_used: number;
   search_limit: number;
   rating_limit: number;
+  daily_tokens_used?: number;
+  monthly_tokens_used?: number;
+  daily_token_limit?: number;
+  monthly_token_limit?: number;
+  daily_tokens_remaining?: number | null;
+  monthly_tokens_remaining?: number | null;
+  unlimited?: boolean;
   full_access?: boolean;
   full_access_until?: string;
   admin_notes?: string;
+  ai_usage?: AiUsage;
+}
+
+function formatTokens(n?: number) {
+  const v = n ?? 0;
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
+  if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
+  return String(v);
+}
+
+function formatUsd(n?: number, enabled = true) {
+  if (!enabled) return "—";
+  return `$${(n ?? 0).toFixed(4)}`;
+}
+
+function formatCostLine(
+  tokens?: number,
+  llmCalls?: number,
+  cost?: number,
+  costEnabled = true,
+) {
+  const parts = [
+    `${formatTokens(tokens)} tokens`,
+    `${llmCalls ?? 0} LLM calls`,
+  ];
+  if (costEnabled) parts.push(formatUsd(cost, true));
+  return parts.join(" · ");
 }
 
 type AccessLevel = "free" | "limited" | "full" | "temp_12h" | "temp_1d";
@@ -23,6 +90,8 @@ interface EditForm {
   access_level: AccessLevel;
   search_limit: number;
   rating_limit: number;
+  daily_token_limit: number;
+  monthly_token_limit: number;
   notes: string;
 }
 
@@ -38,10 +107,33 @@ function getPct(used: number, limit: number) {
   return limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
 }
 
+function isUnlimitedTokenCap(limit?: number) {
+  return !limit || limit <= 0;
+}
+
+function formatTokenCap(limit?: number) {
+  return isUnlimitedTokenCap(limit) ? "Unlimited" : formatTokens(limit);
+}
+
 function isUserFullAccess(u: AdminUser) {
   return (
     !!u.full_access ||
     !!(u.full_access_until && new Date(u.full_access_until) > new Date())
+  );
+}
+
+function DataStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="admin-stat-box">
+      <div
+        style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text)" }}>
+        {value}
+      </div>
+    </div>
   );
 }
 
@@ -138,9 +230,13 @@ function UserEditForm({
     if (level === "full" || level === "temp_12h" || level === "temp_1d") {
       next.search_limit = 9999;
       next.rating_limit = 9999;
+      next.daily_token_limit = 0;
+      next.monthly_token_limit = 0;
     } else if (level === "free") {
       next.search_limit = 3;
       next.rating_limit = 10;
+      next.daily_token_limit = DEFAULT_DAILY_TOKEN_LIMIT;
+      next.monthly_token_limit = 0;
     }
     setForm(next);
   };
@@ -196,7 +292,7 @@ function UserEditForm({
           }}
         >
           {form.access_level === "full"
-            ? "Full access grants unlimited searches and ratings."
+            ? "Full access grants unlimited searches, ratings, and AI tokens."
             : "Temporary full access for the selected period."}
         </div>
       )}
@@ -211,7 +307,7 @@ function UserEditForm({
         />
       </div>
 
-      {form.access_level === "limited" && (
+      {(form.access_level === "limited" || form.access_level === "free") && (
         <div
           style={{
             display: "grid",
@@ -220,34 +316,70 @@ function UserEditForm({
             marginBottom: 14,
           }}
         >
+          {form.access_level === "limited" && (
+            <>
+              <div>
+                <label className="label">Search limit</label>
+                <input
+                  type="number"
+                  value={form.search_limit}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      search_limit: parseInt(e.target.value) || 0,
+                    })
+                  }
+                  className="input"
+                  disabled={limitsDisabled}
+                />
+              </div>
+              <div>
+                <label className="label">Rating limit</label>
+                <input
+                  type="number"
+                  value={form.rating_limit}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      rating_limit: parseInt(e.target.value) || 0,
+                    })
+                  }
+                  className="input"
+                  disabled={limitsDisabled}
+                />
+              </div>
+            </>
+          )}
           <div>
-            <label className="label">Search limit</label>
+            <label className="label">Daily token cap</label>
             <input
               type="number"
-              value={form.search_limit}
+              value={form.daily_token_limit}
               onChange={(e) =>
                 setForm({
                   ...form,
-                  search_limit: parseInt(e.target.value) || 0,
+                  daily_token_limit: parseInt(e.target.value) || 0,
                 })
               }
               className="input"
               disabled={limitsDisabled}
+              placeholder="0 = unlimited"
             />
           </div>
           <div>
-            <label className="label">Rating limit</label>
+            <label className="label">Monthly token cap</label>
             <input
               type="number"
-              value={form.rating_limit}
+              value={form.monthly_token_limit}
               onChange={(e) =>
                 setForm({
                   ...form,
-                  rating_limit: parseInt(e.target.value) || 0,
+                  monthly_token_limit: parseInt(e.target.value) || 0,
                 })
               }
               className="input"
               disabled={limitsDisabled}
+              placeholder="0 = unlimited"
             />
           </div>
         </div>
@@ -337,7 +469,66 @@ function AdminUserCard({
               unlimited={isFull}
               color="var(--warning)"
             />
+            <UsageStat
+              label="AI tokens (today)"
+              used={
+                user.daily_tokens_used ??
+                user.ai_usage?.today?.total_tokens ??
+                0
+              }
+              limit={user.daily_token_limit ?? DEFAULT_DAILY_TOKEN_LIMIT}
+              unlimited={isFull || isUnlimitedTokenCap(user.daily_token_limit)}
+              color="var(--accent)"
+            />
           </div>
+
+          {user.ai_usage && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 12px",
+                borderRadius: 8,
+                background: "var(--bg-secondary)",
+                border: "1px solid var(--border)",
+                fontSize: 12,
+                color: "var(--text-secondary)",
+                lineHeight: 1.55,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 4,
+                }}
+              >
+                <Cpu size={13} style={{ color: "var(--accent)" }} />
+                <span style={{ fontWeight: 600, color: "var(--text)" }}>
+                  AI usage
+                </span>
+              </div>
+              Today:{" "}
+              {formatCostLine(
+                user.ai_usage.today?.total_tokens,
+                user.ai_usage.today?.llm_calls,
+                user.ai_usage.today?.estimated_cost_usd,
+                user.ai_usage.cost_estimation_enabled,
+              )}
+              <br />
+              Month: {formatTokens(user.ai_usage.this_month?.total_tokens)}{" "}
+              tokens
+              {user.ai_usage.cost_estimation_enabled &&
+                ` · ${formatUsd(user.ai_usage.this_month?.estimated_cost_usd)}`}
+              <br />
+              Lifetime: {formatTokens(
+                user.ai_usage.lifetime?.total_tokens,
+              )}{" "}
+              tokens · {user.ai_usage.lifetime?.llm_calls ?? 0} LLM
+              {user.ai_usage.cost_estimation_enabled &&
+                ` · ${formatUsd(user.ai_usage.lifetime?.estimated_cost_usd)}`}
+            </div>
+          )}
 
           {user.admin_notes && (
             <p
@@ -385,11 +576,14 @@ export function AdminPage() {
     access_level: "limited",
     search_limit: 0,
     rating_limit: 0,
+    daily_token_limit: DEFAULT_DAILY_TOKEN_LIMIT,
+    monthly_token_limit: 0,
     notes: "",
   });
 
   const basePath = user?.adminBasePath || "";
   const isMobile = useIsMobile();
+  const [aiSummary, setAiSummary] = useState<PlatformAiSummary | null>(null);
 
   const loadUsers = async () => {
     if (!basePath) return;
@@ -404,8 +598,19 @@ export function AdminPage() {
     }
   };
 
+  const loadAiSummary = async () => {
+    if (!basePath) return;
+    try {
+      const data = await adminApi.getAiSummary(basePath);
+      setAiSummary(data);
+    } catch {
+      /* non-fatal */
+    }
+  };
+
   useEffect(() => {
     loadUsers();
+    loadAiSummary();
   }, [basePath]);
 
   const filteredUsers = users.filter(
@@ -424,6 +629,8 @@ export function AdminPage() {
       access_level: level,
       search_limit: u.search_limit,
       rating_limit: u.rating_limit,
+      daily_token_limit: u.daily_token_limit ?? DEFAULT_DAILY_TOKEN_LIMIT,
+      monthly_token_limit: u.monthly_token_limit ?? 0,
       notes: u.admin_notes || "",
     });
   };
@@ -443,16 +650,21 @@ export function AdminPage() {
         payload.full_access = false;
         payload.search_limit = 3;
         payload.rating_limit = 10;
+        payload.daily_token_limit = form.daily_token_limit;
+        payload.monthly_token_limit = form.monthly_token_limit;
       } else {
         payload.full_access = false;
         payload.search_limit = form.search_limit;
         payload.rating_limit = form.rating_limit;
+        payload.daily_token_limit = form.daily_token_limit;
+        payload.monthly_token_limit = form.monthly_token_limit;
       }
 
       await adminApi.updateAccess(basePath, id, payload);
       toast.success("Access updated");
       setEditing(null);
       await loadUsers();
+      await loadAiSummary();
     } catch {
       toast.error("Failed to update");
     }
@@ -486,6 +698,94 @@ export function AdminPage() {
           Manage user access — full access or temporary grants (12h / 1 day)
         </p>
       </div>
+
+      {aiSummary && (
+        <div
+          className="card"
+          style={{
+            padding: 16,
+            marginBottom: 16,
+            background: "var(--accent-light)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 12,
+            }}
+          >
+            <Zap size={18} style={{ color: "var(--accent)" }} />
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 15,
+                fontWeight: 600,
+                color: "var(--text)",
+              }}
+            >
+              Platform AI usage
+            </h2>
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+              gap: 10,
+              marginBottom: 10,
+            }}
+          >
+            <DataStat
+              label="Today tokens"
+              value={formatTokens(aiSummary.today?.total_tokens)}
+            />
+            <DataStat
+              label="Month tokens"
+              value={formatTokens(aiSummary.this_month?.total_tokens)}
+            />
+            <DataStat
+              label="LLM calls (lifetime)"
+              value={String(aiSummary.lifetime?.llm_calls ?? 0)}
+            />
+            {aiSummary.cost_estimation_enabled ? (
+              aiSummary.monthly_budget_usd != null &&
+              aiSummary.monthly_budget_usd > 0 ? (
+                <DataStat
+                  label="Budget left"
+                  value={formatUsd(aiSummary.monthly_remaining_usd ?? 0, true)}
+                />
+              ) : (
+                <DataStat
+                  label="Month cost (est.)"
+                  value={formatUsd(
+                    aiSummary.this_month?.estimated_cost_usd,
+                    true,
+                  )}
+                />
+              )
+            ) : (
+              <DataStat label="Cost (est.)" value="Not configured" />
+            )}
+          </div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              color: "var(--text-secondary)",
+              lineHeight: 1.5,
+            }}
+          >
+            Rating: {aiSummary.providers?.rating_llm} /{" "}
+            {aiSummary.providers?.rating_model}
+            {aiSummary.cost_estimation_enabled
+              ? aiSummary.monthly_budget_usd
+                ? ` · Monthly budget: ${formatUsd(aiSummary.monthly_budget_usd, true)}`
+                : ` · Month cost: ${formatUsd(aiSummary.this_month?.estimated_cost_usd, true)}`
+              : " · Showing tokens only — set AI_COST_PER_1K_* in .env for $ estimates"}
+          </p>
+        </div>
+      )}
 
       <input
         type="text"
@@ -551,22 +851,28 @@ export function AdminPage() {
                     borderBottom: "1px solid var(--border)",
                   }}
                 >
-                  {["User", "Status", "Searches", "Ratings", "Notes", ""].map(
-                    (col) => (
-                      <th
-                        key={col}
-                        style={{
-                          textAlign: "left",
-                          padding: "12px 16px",
-                          fontWeight: 600,
-                          color: "var(--text-secondary)",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {col}
-                      </th>
-                    ),
-                  )}
+                  {[
+                    "User",
+                    "Status",
+                    "Searches",
+                    "Ratings",
+                    "AI (month)",
+                    "Notes",
+                    "",
+                  ].map((col) => (
+                    <th
+                      key={col}
+                      style={{
+                        textAlign: "left",
+                        padding: "12px 16px",
+                        fontWeight: 600,
+                        color: "var(--text-secondary)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {col}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -641,6 +947,31 @@ export function AdminPage() {
                             </div>
                           )}
                         </td>
+                        <td style={{ padding: "14px 16px", minWidth: 130 }}>
+                          <div
+                            style={{
+                              fontFamily: "monospace",
+                              fontWeight: 600,
+                              fontSize: 12,
+                            }}
+                          >
+                            {isFull || isUnlimitedTokenCap(u.daily_token_limit)
+                              ? `${formatTokens(u.daily_tokens_used ?? u.ai_usage?.today?.total_tokens)} today`
+                              : `${formatTokens(u.daily_tokens_used ?? u.ai_usage?.today?.total_tokens)} / ${formatTokenCap(u.daily_token_limit)}`}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "var(--text-muted)",
+                              marginTop: 2,
+                            }}
+                          >
+                            {formatTokens(u.ai_usage?.this_month?.total_tokens)}{" "}
+                            this month
+                            {u.ai_usage?.cost_estimation_enabled &&
+                              ` · ${formatUsd(u.ai_usage?.this_month?.estimated_cost_usd, true)}`}
+                          </div>
+                        </td>
                         <td
                           style={{
                             padding: "14px 16px",
@@ -667,7 +998,7 @@ export function AdminPage() {
                       </tr>
                       {isEditingThis && (
                         <tr style={{ background: "var(--bg-secondary)" }}>
-                          <td colSpan={6} style={{ padding: "16px" }}>
+                          <td colSpan={7} style={{ padding: "16px" }}>
                             <UserEditForm
                               form={form}
                               setForm={setForm}

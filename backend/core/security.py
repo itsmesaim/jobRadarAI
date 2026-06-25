@@ -32,6 +32,7 @@ def create_access_token(subject: str) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": subject,  # we store the user's Mongo _id here
+        "typ": "access",
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
     }
@@ -44,6 +45,32 @@ def decode_access_token(token: str) -> str | None:
         payload = jwt.decode(
             token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
         )
+        if payload.get("typ") not in (None, "access"):
+            return None
+        return payload.get("sub")
+    except jwt.PyJWTError:
+        return None
+
+
+def create_password_reset_token(user_id: str) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": user_id,
+        "typ": "pwd_reset",
+        "iat": now,
+        "exp": now + timedelta(minutes=settings.password_reset_expire_minutes),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def decode_password_reset_token(token: str) -> str | None:
+    """Returns user id if token is a valid password-reset JWT."""
+    try:
+        payload = jwt.decode(
+            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+        )
+        if payload.get("typ") != "pwd_reset":
+            return None
         return payload.get("sub")
     except jwt.PyJWTError:
         return None

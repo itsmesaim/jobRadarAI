@@ -11,9 +11,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
+from pathlib import Path
+
 from dotenv import load_dotenv
 
-load_dotenv()
+_BACKEND_DIR = Path(__file__).resolve().parent
+load_dotenv(_BACKEND_DIR / ".env")
 
 import os
 from config import settings
@@ -26,6 +29,7 @@ from config import settings
 
 from database import close_mongo_connection, connect_to_mongo, get_database
 from routes import auth, cv, crawler, jobs, users, admin
+from services.email import gmail_from_mismatch, smtp_configured, smtp_missing_reason
 from services.scheduler import start_scheduler, shutdown_scheduler
 
 
@@ -35,6 +39,37 @@ async def lifespan(app: FastAPI):
     await connect_to_mongo()
     # enforce one account per email at the DB level
     await get_database().users.create_index("email", unique=True)
+
+    if settings.jwt_secret in ("", "change-me-in-production"):
+        print(
+            "[startup] SECURITY: JWT_SECRET is default or empty — "
+            "set a long random value in .env before production"
+        )
+    if settings.debug:
+        print(
+            "[startup] SECURITY: DEBUG=true — password reset links may print to logs; "
+            "set DEBUG=false in production"
+        )
+    if not admin_secret:
+        print(
+            "[startup] SECURITY: ADMIN_SECRET_PATH unset — admin API disabled "
+            "(set in .env for admin panel)"
+        )
+
+    if smtp_configured():
+        print(
+            f"[startup] SMTP ready (from {settings.smtp_from_name} "
+            f"<{settings.smtp_from_email}>)"
+        )
+        gmail_warn = gmail_from_mismatch()
+        if gmail_warn:
+            print(f"[startup] SMTP warning: {gmail_warn}")
+    else:
+        reason = smtp_missing_reason() or "unknown"
+        print(
+            f"[startup] SMTP not configured ({reason}) — "
+            "emails will not send; reset links print when DEBUG=true"
+        )
 
     # Start automatic crawl + rate (every 12 hours)
     start_scheduler()
@@ -46,7 +81,13 @@ async def lifespan(app: FastAPI):
     await close_mongo_connection()
 
 
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app = FastAPI(
+    title=settings.app_name,
+    lifespan=lifespan,
+    docs_url="/docs" if settings.debug else None,
+    redoc_url="/redoc" if settings.debug else None,
+    openapi_url="/openapi.json" if settings.debug else None,
+)
 
 app.add_middleware(
     CORSMiddleware,

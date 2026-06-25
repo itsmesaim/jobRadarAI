@@ -22,11 +22,19 @@ from pydantic import BaseModel, Field
 
 from database import get_database
 from config import settings
+from services.ai_usage import (
+    record_ai_usage,
+    record_embedding_usage,
+    record_from_llm_response,
+)
 from services.llm import get_embeddings, get_llm, get_rating_llm
 from services.limits import (
+    _get_fresh_user,
+    check_ai_token_quota,
     check_and_increment_rating,
     get_remaining_ratings,
     get_user_usage,
+    refund_rating,
 )
 
 
@@ -284,6 +292,23 @@ def _build_about_me_block(user: dict) -> str:
     return f"Additional candidate context (weight this alongside CV skills and overrides):\n{about_me}"
 
 
+# ── Quota helpers ─────────────────────────────────────────────────────────────
+
+_NON_BILLABLE_VERDICT_PREFIXES = (
+    "Rating failed",
+    "No CV uploaded",
+    "JD text too short",
+)
+
+
+def is_billable_rating(rating: dict) -> bool:
+    """True when a stored rating should consume daily rating quota."""
+    verdict = (rating.get("verdict") or "").strip()
+    if not verdict:
+        return False
+    return not any(verdict.startswith(p) for p in _NON_BILLABLE_VERDICT_PREFIXES)
+
+
 # ── Main rating function ──────────────────────────────────────────────────────
 
 
@@ -346,15 +371,41 @@ Education: {json.dumps(structured.get('education', []))}
     ]
 
     try:
+        user_id = str(user.get("_id", ""))
         llm = get_rating_llm()
-        structured_llm = llm.with_structured_output(JobRating)
+        provider = settings.rating_provider or settings.llm_provider
+        model = getattr(
+            llm, "model", getattr(llm, "model_name", settings.rating_model or "unknown")
+        )
+        structured_llm = llm.with_structured_output(JobRating, include_raw=True)
         print(
             "[rating] [job] about to invoke structured LLM (check the [rating] Using provider=... line above for the exact model)"
         )
         print(
             "[rating] [job] sending prompt to rating LLM (this is the expensive part)"
         )
-        result: JobRating = await structured_llm.ainvoke(messages)
+        raw_result = await structured_llm.ainvoke(messages)
+        if isinstance(raw_result, dict):
+            result: JobRating = raw_result.get("parsed")
+            raw_msg = raw_result.get("raw")
+            if user_id and raw_msg:
+                await record_from_llm_response(
+                    user_id,
+                    raw_msg,
+                    operation="job_rating",
+                    provider=provider,
+                    model=str(model),
+                )
+        else:
+            result = raw_result
+            if user_id:
+                await record_ai_usage(
+                    user_id,
+                    operation="job_rating",
+                    provider=provider,
+                    model=str(model),
+                    llm_calls=1,
+                )
         print("[rating] [job] LLM response received successfully")
         return result.model_dump()
     except Exception as e:
@@ -427,12 +478,22 @@ async def _get_cv_embedding(user: dict) -> list[float] | None:
     try:
         emb = get_embeddings()
         vecs = await emb.aembed_documents([text])
+        user_id = str(user.get("_id", ""))
+        if user_id:
+            await record_embedding_usage(
+                user_id,
+                num_documents=1,
+                total_chars=len(text),
+                operation="cv_embedding",
+            )
         return vecs[0] if vecs else None
     except Exception:
         return None
 
 
-async def _get_jd_embedding(job: dict, embeddings) -> list[float] | None:
+async def _get_jd_embedding(
+    job: dict, embeddings, user_id: str | None = None
+) -> list[float] | None:
     """Return JD embedding. Compute + store if missing."""
     existing = job.get("jd_embedding")
     if isinstance(existing, list) and existing:
@@ -446,7 +507,13 @@ async def _get_jd_embedding(job: dict, embeddings) -> list[float] | None:
         vecs = await embeddings.aembed_documents([jd_text])
         vec = vecs[0] if vecs else None
         if vec:
-            # persist so we never re-embed this job
+            if user_id:
+                await record_embedding_usage(
+                    user_id,
+                    num_documents=1,
+                    total_chars=len(jd_text),
+                    operation="jd_embedding",
+                )
             db = get_database()
             await db.jobs.update_one(
                 {"_id": ObjectId(job["_id"])},
@@ -478,12 +545,20 @@ async def _fast_low_score_rating(sim: float = 0.0) -> dict:
 async def rate_all_jobs_for_user(user: dict) -> dict:
     db = get_database()
     user_id = str(user["_id"])
+    user = await _get_fresh_user(user_id)
+    if not user:
+        return {"rated": 0, "error": "User not found"}
     user_email = user.get("email", user_id)
 
     print(f"[rating] === START rate_all for user={user_email} (id={user_id}) ===")
     print(
         f"[rating] [env] rating_provider={settings.rating_provider} rating_model={settings.rating_model} (llm_provider={settings.llm_provider})"
     )
+
+    token_ok, token_msg = await check_ai_token_quota(user)
+    if not token_ok:
+        print(f"[rating] Skipped for {user_email}: {token_msg}")
+        return {"rated": 0, "error": token_msg}
 
     # Freemium: peek first
     remaining = await get_remaining_ratings(user)
@@ -494,10 +569,10 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
         print(f"[rating] Skipped for {user_email}: {msg}")
         return {"rated": 0, "error": msg}
 
-    # This is the "rating queue": all jobs crawled by this user that have no rating yet for them
+    # Unrated queue — per-job quota is reserved inside rate_and_store
     jobs = await db.jobs.find(
         {"crawled_by": user_id, f"ratings.{user_id}": {"$exists": False}}
-    ).to_list(length=min(RATE_ALL_MAX_JOBS, remaining))
+    ).to_list(length=RATE_ALL_MAX_JOBS)
     print(
         f"[rating] [queue] Unrated jobs found in queue for user: {len(jobs)} (capped by remaining quota)"
     )
@@ -539,12 +614,28 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
     async def rate_and_store(job):
         nonlocal prefilter_count, llm_count, error_count
         async with sem:
+            fresh_user = await _get_fresh_user(user_id)
+            if not fresh_user:
+                return 0
+
+            token_ok, token_msg = await check_ai_token_quota(fresh_user)
+            if not token_ok:
+                print(f"[rating] Token cap hit mid-batch for {user_email}: {token_msg}")
+                return 0
+
+            allowed, quota_msg, _ = await check_and_increment_rating(
+                fresh_user, jobs_to_rate=1
+            )
+            if not allowed:
+                print(f"[rating] Rating quota exhausted for {user_email}: {quota_msg}")
+                return 0
+
             job_id = str(job["_id"])
             job_title = str(job.get("title", "Unknown"))[:50]
             # Embedding fast-path: skip LLM for clear non-matches
             sim: float | None = None
             if cv_embedding and embeddings:
-                jd_emb = await _get_jd_embedding(job, embeddings)
+                jd_emb = await _get_jd_embedding(job, embeddings, user_id=user_id)
                 if jd_emb:
                     sim = _cosine_similarity(cv_embedding, jd_emb)
                     if sim < EMBEDDING_SIMILARITY_CUTOFF:
@@ -558,7 +649,7 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
                         print(
                             f"[rating] [{job_id}] PRE-FILTER (cheap, no LLM) sim={sim:.3f} title='{job_title}' → score={rating.get('score')}"
                         )
-                        return 1
+                        return 1 if is_billable_rating(rating) else 0
 
             # Full LLM rating
             llm_count += 1
@@ -573,15 +664,17 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
                     {"_id": ObjectId(job["_id"])},
                     {"$set": {f"ratings.{user_id}": rating}},
                 )
-                if str(rating.get("verdict", "")).startswith("Rating failed"):
+                if not is_billable_rating(rating):
+                    await refund_rating(user_id, 1)
                     error_count += 1
-                    print(f"[rating] [{job_id}] LLM-FAILED: {rating.get('verdict')}")
+                    print(f"[rating] [{job_id}] NOT-BILLABLE: {rating.get('verdict')}")
                 else:
                     print(
                         f"[rating] [{job_id}] LLM-OK score={rating.get('score')} title='{job_title}'"
                     )
-                return 1
+                return 1 if is_billable_rating(rating) else 0
             except Exception as e:
+                await refund_rating(user_id, 1)
                 error_count += 1
                 print(f"[rating] [{job_id}] UNEXPECTED ERROR during rating: {e}")
                 return 0
@@ -597,12 +690,6 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
             print(f"[rating] GATHER-EXCEPTION: {res}")
 
     rated_count = sum(1 for r in results if r == 1)
-
-    if rated_count > 0:
-        db = get_database()
-        await db.users.update_one(
-            {"_id": ObjectId(user_id)}, {"$inc": {"usage.ratings": rated_count}}
-        )
 
     print(f"[rating] === FINISHED {user_email} ===")
     print(
@@ -632,8 +719,11 @@ Experience: {json.dumps(structured.get('experience', []))}
 
     jd_text = job.get("full_text") or job.get("snippet", "")
 
+    user_id = str(user.get("_id", ""))
     llm = get_llm()
-    structured_llm = llm.with_structured_output(RoastResult)
+    provider = settings.llm_provider
+    model = getattr(llm, "model", getattr(llm, "model_name", settings.openai_model))
+    structured_llm = llm.with_structured_output(RoastResult, include_raw=True)
 
     messages = [
         SystemMessage(content=ROAST_SYSTEM_PROMPT),
@@ -643,7 +733,20 @@ Experience: {json.dumps(structured.get('experience', []))}
     ]
 
     try:
-        result: RoastResult = await structured_llm.ainvoke(messages)
+        raw_result = await structured_llm.ainvoke(messages)
+        if isinstance(raw_result, dict):
+            result: RoastResult = raw_result.get("parsed")
+            raw_msg = raw_result.get("raw")
+            if user_id and raw_msg:
+                await record_from_llm_response(
+                    user_id,
+                    raw_msg,
+                    operation="roast",
+                    provider=provider,
+                    model=str(model or "unknown"),
+                )
+        else:
+            result = raw_result
         return result.model_dump()
     except Exception as e:
         return {"roast": f"Roast failed: {str(e)[:150]}", "savage_score": 0}

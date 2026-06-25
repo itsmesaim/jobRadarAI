@@ -77,6 +77,7 @@ export interface UserPreferences {
   avoid_industries: string[];
   work_mode: WorkMode;
   about_me: string;
+  email_reminders_enabled: boolean;
 }
 
 export interface CVData {

@@ -12,7 +12,7 @@ export function ScoreBadge({ score, size = "sm" }: Props) {
       <span
         style={{
           color: "var(--text-muted)",
-          fontFamily: "monospace",
+          fontFamily: "var(--font-mono)",
           fontSize: dims,
           padding,
           border: "1px dashed var(--border)",
@@ -63,7 +63,7 @@ export function ScoreBadge({ score, size = "sm" }: Props) {
         border: `1px solid ${border}`,
         padding,
         borderRadius: 7,
-        fontFamily: "monospace",
+        fontFamily: "var(--font-mono)",
         fontWeight: 700,
         fontSize: dims,
         whiteSpace: "nowrap",

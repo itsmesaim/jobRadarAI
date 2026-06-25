@@ -8,12 +8,17 @@ import {
   AlertCircle,
   X,
   Loader,
-  Mail,
   Zap,
+  Cpu,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { JobCard } from "../components/JobCard";
 import { ManualJDModal } from "../components/ManualJDModal";
+import {
+  LimitContactModal,
+  parseLimitKindFromDetail,
+  type LimitKind,
+} from "../components/LimitContactModal";
 import { jobsApi, crawlerApi } from "../api/index";
 import { useAuthStore } from "../hooks/useStores";
 
@@ -34,6 +39,12 @@ const STATUS_OPTS: { label: string; value: string | undefined }[] = [
   { label: "Rejected", value: "REJECTED" },
 ];
 
+function formatTokens(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
+  return String(n);
+}
+
 export function Dashboard() {
   const { user } = useAuthStore();
   const [scoreMin, setScoreMin] = useState(6);
@@ -48,7 +59,9 @@ export function Dashboard() {
   // search-within-list state
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [showContactModal, setShowContactModal] = useState(false);
+  const [limitModalKind, setLimitModalKind] = useState<LimitKind | null>(null);
+
+  const openLimitModal = (kind: LimitKind) => setLimitModalKind(kind);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 400);
@@ -60,15 +73,30 @@ export function Dashboard() {
   const rateMutation = useMutation({
     mutationFn: jobsApi.rateAll,
     onSuccess: (res: any) => {
-      const queued = res?.queued ?? 0;
-      const msg =
-        queued > 0
-          ? `Rating ${queued} jobs in background...`
-          : "Rating jobs in background...";
-      toast(msg, { icon: "⚡", duration: 4000 });
       queryClient.invalidateQueries({ queryKey: ["crawl-status"] });
 
-      // Aggressive refetch for a couple minutes so rated jobs appear live as the background task finishes
+      const queued = res?.queued ?? 0;
+      const willRate = res?.will_rate_up_to ?? queued;
+      const ratingsRemaining = res?.ratings_remaining ?? 0;
+
+      if (queued === 0 || res?.message?.includes("No unrated")) {
+        toast("No unrated jobs to rate.", { duration: 3000 });
+        return;
+      }
+
+      if (willRate <= 0 || ratingsRemaining <= 0) {
+        toast.error(
+          "Rating limit reached — unrated jobs stay in your list until your quota resets.",
+          { duration: 6000 },
+        );
+        openLimitModal("rating");
+        return;
+      }
+
+      toast(`Rating up to ${willRate} job${willRate === 1 ? "" : "s"}...`, {
+        duration: 4000,
+      });
+
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       const intervals = [2000, 4000, 7000, 10000, 15000, 20000, 30000];
       intervals.forEach((delay) => {
@@ -79,9 +107,9 @@ export function Dashboard() {
     },
     onError: (err: any) => {
       const detail = err.response?.data?.detail || "Rating failed";
-      if (detail.includes("limit")) {
+      if (detail.toLowerCase().includes("limit")) {
         toast.error(detail, { duration: 6000 });
-        setShowContactModal(true);
+        openLimitModal(parseLimitKindFromDetail(detail));
       } else {
         toast.error(detail);
       }
@@ -103,33 +131,70 @@ export function Dashboard() {
 
   const crawlMutation = useMutation({
     mutationFn: crawlerApi.search,
-    onSuccess: (res) => {
+    onSuccess: async (res) => {
       toast.success(`Found ${res.found} jobs, ${res.stored} new`);
-      if (res.stored > 0) {
-        setTimeout(() => {
-          jobsApi
-            .rateAll()
-            .then((r: any) => {
-              const q = r?.queued ?? 0;
-              toast(
-                q > 0
-                  ? `Rating ${q} new jobs in background...`
-                  : "Rating jobs in background...",
-                { icon: "⚡", duration: 3000 },
-              );
-            })
-            .catch(() => {});
-        }, 800);
-      }
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["kanban"] });
       queryClient.invalidateQueries({ queryKey: ["crawl-status"] });
+
+      if (res.stored <= 0) return;
+
+      try {
+        const status = await crawlerApi.status();
+        const isFullAccess = !!status.full_access;
+        const ratingsLeft = isFullAccess
+          ? 999
+          : Math.max(
+              0,
+              (status.rating_limit ?? 0) - (status.ratings_used ?? 0),
+            );
+        const tokensBlocked =
+          !status.token_quota_unlimited &&
+          (status.daily_token_limit ?? 0) > 0 &&
+          (status.daily_tokens_remaining ?? 1) <= 0;
+
+        if (!isFullAccess && (ratingsLeft <= 0 || tokensBlocked)) {
+          toast.error(
+            tokensBlocked
+              ? "AI token limit reached — new jobs saved but not rated. Resets at midnight UTC or contact admin."
+              : "Rating limit reached — new jobs saved but not rated. Contact admin or wait for reset.",
+            { duration: 6000 },
+          );
+          openLimitModal(tokensBlocked ? "token_daily" : "rating");
+          return;
+        }
+
+        const r = await jobsApi.rateAll();
+        const willRate = r?.will_rate_up_to ?? r?.queued ?? 0;
+        if (willRate > 0) {
+          toast(
+            `Rating up to ${willRate} new job${willRate === 1 ? "" : "s"}...`,
+            { duration: 3000 },
+          );
+          const intervals = [2000, 4000, 7000, 10000, 15000, 20000, 30000];
+          intervals.forEach((delay) => {
+            setTimeout(() => {
+              queryClient.invalidateQueries({ queryKey: ["jobs"] });
+            }, delay);
+          });
+        }
+      } catch (err: any) {
+        const detail = err.response?.data?.detail || "Could not rate new jobs";
+        if (detail.toLowerCase().includes("limit")) {
+          toast.error(`${detail} New jobs were saved but not rated.`, {
+            duration: 6000,
+          });
+          openLimitModal(parseLimitKindFromDetail(detail));
+        } else {
+          toast.error(detail);
+        }
+      }
     },
     onError: (err: any) => {
       const detail = err.response?.data?.detail || "Search failed";
-      if (detail.includes("limit")) {
+      if (detail.toLowerCase().includes("limit")) {
         toast.error(detail, { duration: 6000 });
-        setShowContactModal(true);
+        openLimitModal(parseLimitKindFromDetail(detail));
       } else {
         toast.error(detail);
       }
@@ -155,17 +220,38 @@ export function Dashboard() {
     : Math.max(0, ratingsLimit - ratingsUsed);
   const isRatingsLimited = !isFull && ratingsUsed >= ratingsLimit;
 
+  const dailyTokensUsed = usage?.daily_tokens_used ?? 0;
+  const dailyTokenLimit = usage?.daily_token_limit ?? 0;
+  const monthlyTokensUsed = usage?.monthly_tokens_used ?? 0;
+  const monthlyTokenLimit = usage?.monthly_token_limit ?? 0;
+  const tokensUnlimited =
+    isFull ||
+    usage?.token_quota_unlimited ||
+    (dailyTokenLimit <= 0 && monthlyTokenLimit <= 0);
+  const dailyTokensRemaining =
+    dailyTokenLimit > 0 ? Math.max(0, dailyTokenLimit - dailyTokensUsed) : null;
+  const monthlyTokensRemaining =
+    monthlyTokenLimit > 0
+      ? Math.max(0, monthlyTokenLimit - monthlyTokensUsed)
+      : null;
+  const isDailyTokensLimited =
+    !tokensUnlimited && dailyTokenLimit > 0 && dailyTokensRemaining === 0;
+  const isMonthlyTokensLimited =
+    !tokensUnlimited && monthlyTokenLimit > 0 && monthlyTokensRemaining === 0;
+  const isTokensLimited = isDailyTokensLimited || isMonthlyTokensLimited;
+  const tokenLimitKind: LimitKind = isMonthlyTokensLimited
+    ? "token_monthly"
+    : "token_daily";
+
   const searchesUsed = usage?.searches_used ?? 0;
   const searchesLimit = usage?.search_limit ?? 5;
   const searchesRemaining = isFull
     ? 999
     : Math.max(0, searchesLimit - searchesUsed);
 
-  const showLimitWarning =
-    usage &&
-    (ratingsUsed >= ratingsLimit * 0.7 || searchesUsed >= searchesLimit * 0.7);
-
-  const canRate = user?.isAdmin || ratingsRemaining > 0;
+  const canRate = user?.isAdmin || (ratingsRemaining > 0 && !isTokensLimited);
+  const canSearch =
+    user?.isAdmin || (searchesRemaining > 0 && !isTokensLimited);
 
   const jobs = data?.jobs ?? [];
   const totalPages = data?.pages ?? 1;
@@ -175,176 +261,193 @@ export function Dashboard() {
   );
   const showReminder = !reminderDismissed && highScoreUnaplied.length >= 2;
 
+  const strongOnPage = jobs.filter((j) => (j.score ?? 0) >= 7).length;
+  const appliedOnPage = jobs.filter((j) => j.status === "APPLIED").length;
+  const searchUsedPct = isFull
+    ? 0
+    : Math.round((searchesUsed / Math.max(searchesLimit, 1)) * 100);
+  const ratingUsedPct = isFull
+    ? 0
+    : Math.round((ratingsUsed / Math.max(ratingsLimit, 1)) * 100);
+  const tokenUsedPct =
+    dailyTokenLimit > 0
+      ? Math.round((dailyTokensUsed / dailyTokenLimit) * 100)
+      : 0;
+
   return (
     <div className="page-shell">
-      {/* Page header */}
-      <div style={{ marginBottom: 24 }}>
-        <h1
-          style={{
-            fontSize: 24,
-            fontWeight: 700,
-            margin: "0 0 4px",
-            color: "var(--text)",
-          }}
-        >
-          Jobs
-        </h1>
-        {data && (
-          <p style={{ margin: 0, fontSize: 14, color: "var(--text-muted)" }}>
-            <strong style={{ color: "var(--text)" }}>{data.total}</strong> total
-            {" · "}
-            <strong style={{ color: "var(--success)" }}>
-              {jobs.filter((j) => (j.score ?? 0) >= 7).length}
-            </strong>{" "}
-            strong matches
-            {" · "}
-            {jobs.filter((j) => j.status === "APPLIED").length} applied
-          </p>
-        )}
+      <div style={{ marginBottom: 20 }}>
+        <h1 className="page-title">Jobs</h1>
+        <p className="page-subtitle">
+          Ranked listings from your searches — filter by score, status, or
+          keyword.
+        </p>
       </div>
 
-      {/* Cleaner usage display (UX improved) */}
-      {usage && !user?.isAdmin && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {/* Searches */}
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "5px 11px",
-                background: "var(--bg-card)",
-                border: "1px solid var(--border)",
-                borderRadius: 999,
-                fontSize: 12,
-                fontWeight: 500,
-              }}
+      {data && (
+        <div className="dash-metrics">
+          <div className="dash-metric">
+            <span className="dash-metric-label">Total saved</span>
+            <span className="dash-metric-value">{data.total}</span>
+            <span className="dash-metric-hint">All time in your account</span>
+          </div>
+          <div className="dash-metric">
+            <span className="dash-metric-label">Strong on page</span>
+            <span className="dash-metric-value is-success">{strongOnPage}</span>
+            <span className="dash-metric-hint">Score 7+ in current view</span>
+          </div>
+          <div className="dash-metric">
+            <span className="dash-metric-label">Apply soon</span>
+            <span
+              className={`dash-metric-value${highScoreUnaplied.length > 0 ? " is-warning" : ""}`}
             >
-              <Search size={13} style={{ color: "var(--text-muted)" }} />
-              {isFull ? (
-                <span style={{ color: "var(--success)" }}>
-                  Unlimited searches
-                </span>
-              ) : (
-                <>
-                  <span
-                    style={{
-                      color:
-                        searchesRemaining <= 1
-                          ? "var(--danger)"
-                          : "var(--text)",
-                    }}
-                  >
-                    {searchesRemaining} search
-                    {searchesRemaining === 1 ? "" : "es"} left
-                  </span>
-                  <span
-                    style={{
-                      color: "var(--text-muted)",
-                      fontSize: 11,
-                      fontWeight: 400,
-                    }}
-                  >
-                    / {searchesLimit}
-                  </span>
-                </>
+              {highScoreUnaplied.length}
+            </span>
+            <span className="dash-metric-hint">8+ still marked New</span>
+          </div>
+          <div className="dash-metric">
+            <span className="dash-metric-label">Applied on page</span>
+            <span className="dash-metric-value">{appliedOnPage}</span>
+            <span className="dash-metric-hint">In your active pipeline</span>
+          </div>
+        </div>
+      )}
+
+      {usage && !user?.isAdmin && (
+        <div className="dash-usage">
+          <div className="dash-usage-grid">
+            <div
+              className={`dash-usage-item${searchesRemaining <= 1 && !isFull ? " is-warn" : ""}`}
+            >
+              <div className="dash-usage-label">
+                <Search size={12} /> Searches
+              </div>
+              <div className="dash-usage-value">
+                {isFull ? "Unlimited" : `${searchesRemaining} left`}
+              </div>
+              {!isFull && (
+                <div className="dash-usage-bar">
+                  <span style={{ width: `${Math.min(100, searchUsedPct)}%` }} />
+                </div>
               )}
             </div>
 
-            {/* Ratings — the more important quota */}
             <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "5px 11px",
-                background: isRatingsLimited ? "#fef2f2" : "var(--bg-card)",
-                border: isRatingsLimited
-                  ? "1px solid #fecaca"
-                  : "1px solid var(--border)",
-                borderRadius: 999,
-                fontSize: 12,
-                fontWeight: 500,
-              }}
+              className={`dash-usage-item${
+                isRatingsLimited
+                  ? " is-limit"
+                  : ratingsRemaining <= 2 && !isFull
+                    ? " is-warn"
+                    : ""
+              }`}
             >
-              <Zap
-                size={13}
-                style={{
-                  color: isRatingsLimited ? "#ef4444" : "var(--text-muted)",
-                }}
-              />
-              {isFull ? (
-                <span style={{ color: "var(--success)" }}>
-                  Unlimited ratings
-                </span>
-              ) : (
-                <>
-                  <span
-                    style={{
-                      color: isRatingsLimited
-                        ? "#b91c1c"
-                        : ratingsRemaining <= 2
-                          ? "#f59e0b"
-                          : "var(--text)",
-                    }}
-                  >
-                    {ratingsRemaining} rating{ratingsRemaining === 1 ? "" : "s"}{" "}
-                    left
-                  </span>
-                  <span
-                    style={{
-                      color: "var(--text-muted)",
-                      fontSize: 11,
-                      fontWeight: 400,
-                    }}
-                  >
-                    / {ratingsLimit}
-                  </span>
-                </>
+              <div className="dash-usage-label">
+                <Zap size={12} /> Ratings
+              </div>
+              <div className="dash-usage-value">
+                {isFull ? "Unlimited" : `${ratingsRemaining} left`}
+              </div>
+              {!isFull && (
+                <div className="dash-usage-bar">
+                  <span style={{ width: `${Math.min(100, ratingUsedPct)}%` }} />
+                </div>
               )}
               {isRatingsLimited && (
                 <button
-                  onClick={() => setShowContactModal(true)}
+                  onClick={() => openLimitModal("rating")}
+                  className="btn btn-danger"
                   style={{
-                    marginLeft: 4,
-                    fontSize: 10,
-                    padding: "1px 6px",
-                    borderRadius: 4,
-                    background: "#fee2e2",
-                    color: "#b91c1c",
-                    border: "none",
-                    cursor: "pointer",
-                    fontWeight: 600,
+                    marginTop: 8,
+                    width: "100%",
+                    justifyContent: "center",
+                    fontSize: 11,
+                    padding: "4px 8px",
                   }}
                 >
-                  upgrade
+                  Request more
                 </button>
               )}
             </div>
+
+            {!tokensUnlimited && dailyTokenLimit > 0 && (
+              <div
+                className={`dash-usage-item${
+                  isTokensLimited
+                    ? " is-limit"
+                    : (dailyTokensRemaining ?? 0) <= dailyTokenLimit * 0.2
+                      ? " is-warn"
+                      : ""
+                }`}
+              >
+                <div className="dash-usage-label">
+                  <Cpu size={12} /> AI tokens today
+                </div>
+                <div className="dash-usage-value">
+                  {formatTokens(dailyTokensUsed)} /{" "}
+                  {formatTokens(dailyTokenLimit)}
+                </div>
+                <div className="dash-usage-bar">
+                  <span style={{ width: `${Math.min(100, tokenUsedPct)}%` }} />
+                </div>
+                {isTokensLimited && (
+                  <button
+                    onClick={() => openLimitModal(tokenLimitKind)}
+                    className="btn btn-danger"
+                    style={{
+                      marginTop: 8,
+                      width: "100%",
+                      justifyContent: "center",
+                      fontSize: 11,
+                      padding: "4px 8px",
+                    }}
+                  >
+                    Request more
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
-          {isRatingsLimited && !isFull && (
+          {isRatingsLimited && !isFull && !isTokensLimited && (
             <div
-              onClick={() => setShowContactModal(true)}
+              onClick={() => openLimitModal("rating")}
               style={{
-                marginTop: 6,
+                marginTop: 10,
                 fontSize: 11,
-                color: "#b91c1c",
+                color: "var(--danger)",
                 display: "flex",
                 alignItems: "center",
                 gap: 5,
                 cursor: "pointer",
               }}
             >
-              <AlertCircle size={12} /> Limit reached — click to request more
-              access
+              <AlertCircle size={12} /> Rating limit reached — click to request
+              more access
+            </div>
+          )}
+
+          {isTokensLimited && !isFull && (
+            <div
+              onClick={() => openLimitModal(tokenLimitKind)}
+              style={{
+                marginTop: 10,
+                fontSize: 11,
+                color: "var(--danger)",
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                cursor: "pointer",
+              }}
+            >
+              <AlertCircle size={12} />
+              {isMonthlyTokensLimited
+                ? "Monthly AI limit reached — resets on the 1st, or contact admin for credits"
+                : "Daily AI limit reached — resets at midnight UTC, or contact admin for credits"}
             </div>
           )}
         </div>
       )}
 
-      {/* Reminder banner */}
       {showReminder && (
         <div
           style={{
@@ -372,12 +475,13 @@ export function Dashboard() {
             }}
           >
             <strong>Hey!</strong> {highScoreUnaplied.length} jobs scoring 8+/10
-            are sitting unapplied. Don't let good opportunities slip by
+            are sitting unapplied. Don&apos;t let good opportunities slip by.
           </p>
           <button
             onClick={() => {
               setScoreMin(8);
               setStatusFilter("NEW");
+              setPage(1);
             }}
             className="btn btn-secondary"
             style={{ fontSize: 13, padding: "6px 12px", flexShrink: 0 }}
@@ -399,24 +503,15 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Action bar */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          marginBottom: 18,
-          flexWrap: "wrap",
-        }}
-      >
+      <div className="dash-toolbar">
         <button onClick={() => setShowManual(true)} className="btn btn-ghost">
           <Plus size={14} /> Paste JD
         </button>
 
         <button
           onClick={() => {
-            if (searchesRemaining <= 0 && !user?.isAdmin) {
-              setShowContactModal(true);
+            if (!canSearch) {
+              openLimitModal(isTokensLimited ? tokenLimitKind : "search");
               return;
             }
             crawlMutation.mutate();
@@ -435,7 +530,7 @@ export function Dashboard() {
         <button
           onClick={() => {
             if (!canRate) {
-              setShowContactModal(true);
+              openLimitModal(isTokensLimited ? tokenLimitKind : "rating");
               return;
             }
             rateMutation.mutate();
@@ -454,17 +549,21 @@ export function Dashboard() {
                 ? "Rate now (unlimited)"
                 : `Rate now (${ratingsRemaining} left)`}
             </>
+          ) : isTokensLimited ? (
+            <>AI limit reached</>
           ) : (
             <>Rate limit reached</>
           )}
         </button>
 
-        {/* search within saved jobs */}
         <input
           type="text"
           placeholder="Search saved jobs..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setPage(1);
+          }}
           className="input"
           style={{ maxWidth: 220 }}
         />
@@ -588,7 +687,6 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Job grid */}
       {isLoading ? (
         <div
           style={{
@@ -636,7 +734,6 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div
           style={{
@@ -675,124 +772,22 @@ export function Dashboard() {
 
       {showManual && (
         <ManualJDModal
+          canRate={canRate}
+          ratingsRemaining={ratingsRemaining}
+          onLimitReached={openLimitModal}
           onClose={() => setShowManual(false)}
-          onAdded={() => queryClient.invalidateQueries({ queryKey: ["jobs"] })}
+          onAdded={() => {
+            queryClient.invalidateQueries({ queryKey: ["jobs"] });
+            queryClient.invalidateQueries({ queryKey: ["crawl-status"] });
+          }}
         />
       )}
 
-      {/* Contact Modal - Better UX for limit reached */}
-      {showContactModal && (
-        <div
-          onClick={() => setShowContactModal(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "var(--bg-card)",
-              borderRadius: 16,
-              padding: 28,
-              maxWidth: 420,
-              width: "90%",
-              boxShadow: "var(--shadow-lg)",
-              border: "1px solid var(--border)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                marginBottom: 16,
-              }}
-            >
-              <div
-                style={{
-                  width: 42,
-                  height: 42,
-                  background: "#fee2e2",
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <AlertCircle size={22} color="#ef4444" />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 19, fontWeight: 600 }}>
-                  Free limit reached
-                </h3>
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: 13,
-                    color: "var(--text-muted)",
-                  }}
-                >
-                  You've used all your free ratings.
-                </p>
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: "#fef2f2",
-                padding: 14,
-                borderRadius: 10,
-                marginBottom: 20,
-                fontSize: 14,
-              }}
-            >
-              <strong>You can rate up to 10 jobs for free.</strong>
-              <br />
-              To continue rating more jobs and unlock full access, please
-              contact me directly.
-            </div>
-
-            <div style={{ display: "flex", gap: 10 }}>
-              <a
-                href="mailto:saimkaskar1@gmail.com?subject=JobRadar%20-%20Request%20more%20rating%20access&body=Hi%20Saim,%0A%0AI%27ve%20reached%20my%20free%20rating%20limit%20and%20would%20like%20more%20access.%0A%0AThank%20you!"
-                className="btn btn-primary"
-                style={{
-                  flex: 1,
-                  textDecoration: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                }}
-              >
-                <Mail size={16} /> Email Saim now
-              </a>
-              <button
-                onClick={() => setShowContactModal(false)}
-                className="btn btn-ghost"
-              >
-                Maybe later
-              </button>
-            </div>
-
-            <div
-              style={{
-                fontSize: 12,
-                color: "var(--text-muted)",
-                textAlign: "center",
-                marginTop: 16,
-              }}
-            >
-              Email: <strong>saimkaskar1@gmail.com</strong>
-            </div>
-          </div>
-        </div>
+      {limitModalKind && (
+        <LimitContactModal
+          kind={limitModalKind}
+          onClose={() => setLimitModalKind(null)}
+        />
       )}
     </div>
   );

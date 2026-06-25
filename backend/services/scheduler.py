@@ -8,12 +8,14 @@ who have uploaded a CV. This does **not** count against the manual daily limit.
 from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from config import settings
 from bson import ObjectId
 
 from database import get_database
+from services.job_reminders import send_job_apply_reminders
 from services.jooble_crawler import crawl_jobs_for_user_jooble
 from services.jobsapi_indeed_crawler import crawl_jobs_for_user_jobsapi
 from services.rating import rate_all_jobs_for_user
@@ -66,6 +68,22 @@ async def _auto_crawl_and_rate():
     print("[scheduler] === AUTO CYCLE FINISHED ===")
 
 
+def _parse_reminder_hours() -> list[int]:
+    raw = (settings.job_reminder_hours_utc or "8,18").strip()
+    hours: list[int] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            hour = int(part)
+        except ValueError:
+            continue
+        if 0 <= hour <= 23:
+            hours.append(hour)
+    return hours or [8, 18]
+
+
 def start_scheduler():
     """Start APScheduler. First run ~2 minutes after startup, then every N hours (from config)."""
     interval = settings.auto_crawl_interval_hours
@@ -86,6 +104,23 @@ def start_scheduler():
         id="first_auto_run",
         replace_existing=True,
     )
+
+    if settings.job_reminder_enabled:
+        reminder_hours = _parse_reminder_hours()
+        for hour in reminder_hours:
+            scheduler.add_job(
+                send_job_apply_reminders,
+                trigger=CronTrigger(hour=hour, minute=0, timezone="UTC"),
+                id=f"job_reminder_{hour:02d}utc",
+                replace_existing=True,
+                max_instances=1,
+            )
+        hours_label = ", ".join(f"{h:02d}:00" for h in reminder_hours)
+        print(
+            f"[scheduler] Job apply reminders scheduled at {hours_label} UTC "
+            f"(max {settings.job_reminder_max_per_day}/user/day, score ≥ "
+            f"{settings.job_reminder_min_score})"
+        )
 
     scheduler.start()
     print(

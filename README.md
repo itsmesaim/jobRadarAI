@@ -211,7 +211,7 @@ sequenceDiagram
 
     User->>FE: Click "Search jobs"
     FE->>API: POST /crawler/search (JWT)
-    API->>API: Check 20/day rate limit
+    API->>API: Check search + token quota
 
     par Parallel crawl
         API->>Crawler: crawl_jobs_for_user_jooble()
@@ -352,7 +352,7 @@ Manual search (`POST /crawler/search`) runs **two APIs in parallel**:
 
 There is also a **Tavily-based crawler** (`services/crawler.py`) that uses web search with personalised dork-style queries. It is implemented but the live search endpoint currently uses Jooble + Adzuna.
 
-**Rate limit:** 20 manual searches per user per day.
+**Rate limit:** Free users get `FREE_SEARCH_LIMIT` manual searches per day (default **3**). Enforced in `services/limits.py` together with AI token caps.
 
 ### 5. AI Job Rating (LangChain + Performance)
 
@@ -385,7 +385,14 @@ Ratings are stored per user (`ratings.{user_id}`).
 
 ### 6. Manual Job Entry
 
-You can paste a job description directly (**Paste JD** on the dashboard). It is stored with `source: manual`, rated immediately, and appears in your list like any other job.
+You can paste a job description directly (**Paste JD** on the dashboard):
+
+1. Job is saved with `source: manual`
+2. **Rating quota is reserved atomically** before the AI runs (`check_and_increment_rating`)
+3. If daily rating or AI token limit is hit → job is saved **unrated**, user sees `LimitContactModal`
+4. If rating fails (no CV, short JD, LLM error) → quota slot is **refunded**
+
+The modal and rate button are disabled when the dashboard shows limit reached. Manual JD always uses the **full LLM path** (no embedding pre-filter).
 
 ### 7. Job Brief Export
 
@@ -397,18 +404,32 @@ For rated jobs, **Copy details** generates a formatted brief including:
 
 ### 8. Admin Panel & Freemium Limits
 
-JobRadar includes a built-in freemium system:
+JobRadar has a three-layer quota system to control API cost:
 
-- Daily limits on searches and ratings (configurable via `FREE_SEARCH_LIMIT` / `FREE_RATING_LIMIT`)
-- Full admin panel available at a secret URL path (`ADMIN_SECRET_PATH`)
-- Admins can:
-  - View all users and their usage
-  - Grant/revoke full access
-  - Give temporary full access (12 hours or 1 day)
-- Users with full access see "Unlimited"
-- **Mobile:** card-based user list with inline edit; **desktop:** table with expandable edit row (only one layout shown at a time)
+| Layer | Default (free) | Resets | Enforced on |
+|-------|----------------|--------|-------------|
+| **Searches** | 3/day | Midnight UTC | `POST /crawler/search` |
+| **Ratings** | 10/day | Midnight UTC | `POST /jobs/rate-all`, `POST /jobs/manual`, bulk background |
+| **AI tokens** | 250k/day | Midnight UTC | All LLM + embedding calls (search, rate, CV parse) |
 
-Limits reset daily. The admin email is also defined in `.env`.
+**Rating enforcement details:**
+- Quota uses **max(stored counter, actual rated jobs today)** — fixes drift when counter falls behind DB
+- Bulk rating **reserves 1 slot per job** before rating; stops mid-batch when exhausted
+- Non-billable ratings (no CV, short JD, LLM failure) **refund** the reserved slot
+- Admin email and `full_access` users bypass all limits
+
+**User-facing UI (Dashboard):**
+- Pills: searches left, ratings left, AI tokens used today
+- `LimitContactModal` — dark-theme-safe; explains reset time + email admin (works for rating, search, token limits)
+- Search no longer auto-rates in background when quota is exhausted
+
+**Admin panel** (`/{ADMIN_SECRET_PATH}/…`, admin email only):
+- User list with search/rating/token usage
+- Per-user overrides: `search_limit`, `rating_limit`, `daily_token_limit`, `monthly_token_limit`
+- Full access (permanent or 12h / 24h temporary)
+- Platform AI summary (`GET /ai-summary`) — token totals + optional cost estimates via `AI_COST_PER_1K_*`
+
+Limits reset daily at **midnight UTC**. See `handoff.md` for implementation notes and troubleshooting.
 
 ### 9. Job Freshness
 
@@ -445,44 +466,48 @@ JobRadar stores personal data (CV, preferences, job history). Settings includes 
 ## Project Structure
 
 ```
-langchain-jobradar/
+JobRadar/
 ├── backend/
-│   ├── main.py              # FastAPI app entry point
-│   ├── config.py            # Env-based settings (LLM, Mongo, JWT, APIs)
+│   ├── main.py              # FastAPI app + scheduler + secret admin mount
+│   ├── config.py            # Env settings (LLM, Mongo, JWT, freemium, AI cost)
 │   ├── database.py          # MongoDB connection
 │   ├── deps.py              # JWT auth dependency
 │   ├── core/security.py     # Password hashing, JWT create/decode
 │   ├── models/user.py       # Pydantic request/response schemas
 │   ├── routes/
-│   │   ├── auth.py          # Register, login, me
-│   │   ├── cv.py            # Upload, get, delete CV
-│   │   ├── crawler.py       # Manual search, crawl status
+│   │   ├── auth.py          # Register, login, me (adminBasePath for admins)
+│   │   ├── cv.py            # Upload, get, delete CV (token quota check)
+│   │   ├── crawler.py       # Manual search, crawl status + quota fields
 │   │   ├── jobs.py          # List, rate-all, manual JD, brief, status
-│   │   ├── admin.py         # Secret-path admin (users, access grants)
+│   │   ├── admin.py         # Secret-path admin (users, access, AI summary)
 │   │   └── users.py         # Preferences, data summary/export, account deletion
 │   └── services/
 │       ├── llm.py           # Main LLM + Rating LLM split + xAI support
 │       ├── cv_parser.py     # PDF → text → structured JSON
-│       ├── rating.py        # CV vs JD scoring + pre-filter + briefs + tailoring tips
-│       ├── limits.py        # Freemium limits + admin overrides
-│       ├── scheduler.py     # Auto crawl + rate
+│       ├── rating.py        # CV vs JD scoring + pre-filter + briefs
+│       ├── limits.py        # Search/rating/token quotas + admin overrides
+│       ├── ai_usage.py      # Per-user token tracking + platform summary
+│       ├── scheduler.py     # Auto crawl + rate (respects limits)
 │       ├── adzuna_crawler.py
 │       ├── jooble_crawler.py
 │       ├── jobsapi_indeed_crawler.py
 │       └── crawler.py       # Tavily-based discovery (alternate)
-└── frontend/
-    └── src/
-        ├── pages/
-        │   ├── Login.tsx
-        │   ├── Dashboard.tsx    # Job list, search, filters
-        │   ├── Kanban.tsx       # Pipeline board (desktop DnD + mobile tabs)
-        │   ├── Admin.tsx        # User access management
-        │   └── Settings.tsx     # CV + preferences + data/privacy controls
-        ├── components/
-        │   ├── JobCard.tsx
-        │   ├── ScoreBadge.tsx
-        │   └── ManualJDModal.tsx
-        └── api/                 # Axios client + API helpers
+├── frontend/
+│   └── src/
+│       ├── pages/
+│       │   ├── Login.tsx
+│       │   ├── Dashboard.tsx    # Jobs, quotas, search, rate, Paste JD
+│       │   ├── Kanban.tsx
+│       │   ├── Admin.tsx        # Users, limits, AI usage
+│       │   └── Settings.tsx     # CV, prefs, privacy (limit modal on CV upload)
+│       ├── components/
+│       │   ├── JobCard.tsx
+│       │   ├── ScoreBadge.tsx
+│       │   ├── ManualJDModal.tsx
+│       │   └── LimitContactModal.tsx  # Limit-reached UX (dark theme safe)
+│       └── api/                 # Axios client + API helpers
+├── README.md
+└── handoff.md               # Dev handoff — limits, recent fixes, ops notes
 ```
 
 ---
@@ -493,6 +518,9 @@ langchain-jobradar/
 |--------|----------|---------|
 | POST | `/auth/register` | Create account, get JWT |
 | POST | `/auth/login` | Login, get JWT |
+| POST | `/auth/forgot-password` | Request password reset email (no email enumeration) |
+| POST | `/auth/reset-password` | Set new password with reset token |
+| POST | `/auth/change-password` | Change password (logged in) |
 | GET | `/auth/me` | Current user profile |
 | POST | `/cv/upload` | Upload & parse PDF CV |
 | GET | `/cv/me` | Get parsed CV |
@@ -502,13 +530,15 @@ langchain-jobradar/
 | GET | `/users/data-export` | Download all user data as JSON |
 | DELETE | `/users/account` | Permanently delete account and all associated data |
 | POST | `/crawler/search` | Run job discovery |
-| GET | `/crawler/status` | Crawl stats & limits |
+| GET | `/crawler/status` | Crawl stats, search/rating usage, **token quota** fields |
 | GET | `/jobs` | List jobs (filter by score, status, search; `kanban=true` for pipeline board) |
 | POST | `/jobs/rate-all` | Rate all unrated jobs (background, with pre-filter) |
 | POST | `/jobs/manual` | Add & rate a pasted JD |
 | GET | `/jobs/{id}/brief` | Export job brief (now includes tailoring tips) |
 | PATCH | `/jobs/{id}/status` | Update Kanban status |
-| GET | `/{ADMIN_SECRET_PATH}/admin` | Admin panel (users, usage, grants) |
+| GET | `/{ADMIN_SECRET_PATH}/users` | List users + usage (admin only) |
+| PATCH | `/{ADMIN_SECRET_PATH}/users/{id}/access` | Set limits, full access, token caps |
+| GET | `/{ADMIN_SECRET_PATH}/ai-summary` | Platform-wide AI token/cost summary |
 
 ---
 
@@ -567,12 +597,64 @@ See `backend/.env.example`. Important variables:
 | `RATING_MODEL` | Model used only for rating (e.g. fast Grok model) |
 | `XAI_API_KEY` / `GROK_API_KEY` | For xAI rating |
 | `OPENAI_API_KEY` | For main LLM + embeddings |
-| `ADMIN_EMAIL` | Admin account email |
+| `JWT_SECRET` | **Required in production** — long random string (`secrets.token_urlsafe(48)`) |
+| `DEBUG` | `false` in production (avoids logging password-reset links) |
+| `FRONTEND_URL` | Public app URL for reset + reminder emails |
+| `SMTP_*` | Optional SMTP for password reset and job reminder emails |
+| `ADMIN_EMAIL` | Admin account email (set in `.env` only — never commit real value) |
 | `ADMIN_SECRET_PATH` | Random string for admin URL (e.g. `k9x7p2mQvL4r`) |
-| `FREE_SEARCH_LIMIT` / `FREE_RATING_LIMIT` | Daily limits for free users |
+| `JOB_REMINDER_*` | Optional daily high-score apply reminder emails (see `.env.example`) |
+| `FREE_SEARCH_LIMIT` / `FREE_RATING_LIMIT` | Daily search/rating caps (default 3 / 10) |
+| `FREE_DAILY_TOKEN_LIMIT` / `FREE_MONTHLY_TOKEN_LIMIT` | AI token caps per user (0 = unlimited) |
+| `AI_MONTHLY_BUDGET_USD` | Optional platform budget for admin dashboard |
+| `AI_COST_PER_1K_*` | Optional cost estimates in admin |
 | `JOOBLE_API_KEY`, `JOBSAPI_KEY`, etc. | Job sources |
 
 **Key principle**: Change providers/models only in `.env`. The code stays the same.
+
+---
+
+## Security
+
+JobRadar is a **personal/small-team tool**, not a hardened enterprise product. The codebase has intentional protections, but **production requires correct configuration** and awareness of data flows.
+
+### What is already protected
+
+| Area | How |
+|------|-----|
+| **Passwords** | bcrypt hashing; hash never returned in API |
+| **JWT** | Separate access vs password-reset token types (`typ` claim) |
+| **Jobs (IDOR)** | All job routes scoped to `crawled_by == current user` |
+| **Admin** | Server-side email check on every `/{ADMIN_SECRET_PATH}/` route; 403 if not admin |
+| **Forgot password** | Same response whether email exists (no enumeration) |
+| **Quotas** | Server-enforced atomic Mongo increments; not client-trustable |
+| **Secrets in git** | `.env` gitignored; only `.env.example` with placeholders |
+
+### Main risks (read before going public)
+
+| Severity | Risk | Mitigation |
+|----------|------|------------|
+| **Critical** | Default `JWT_SECRET` (`change-me-in-production`) | Set 48+ char secret; backend logs a startup warning if unset |
+| **Critical** | `DEBUG=true` logs password-reset links | `DEBUG=false` in production |
+| **Critical** | CV + preferences sent to **external LLMs** (OpenAI/xAI) | Use local Ollama for PII, or disclose + get consent; disable LangSmith tracing |
+| **High** | JWT in `localStorage` (XSS → account takeover) | Keep dependencies updated; consider httpOnly cookies later |
+| **High** | No rate limits on login/register/forgot-password | Add reverse-proxy or app-level rate limiting before public launch |
+| **High** | Password change does **not** revoke old JWTs (7-day tokens) | Shorten `ACCESS_TOKEN_EXPIRE_MINUTES` or add token versioning |
+| **High** | **Scheduler auto-crawl** bypasses manual search daily limit | By design today — cap in scheduler or document for users |
+| **Medium** | Admin = email match + secret URL (not DB role) | Rotate `ADMIN_SECRET_PATH`; use strong admin password |
+| **Medium** | FastAPI `/docs` exposed | Disabled automatically when `DEBUG=false` |
+| **Medium** | **Paste JD** fetches URLs via `allorigins.win` in the browser | Third party sees job URLs; prefer pasting text only; move fetch server-side later |
+| **Medium** | `DELETE /users/account` with JWT only (no password re-entry) | Acceptable for MVP; add password confirm for stricter apps |
+| **Medium** | Registration returns 409 if email exists | Minor enumeration; forgot-password does not leak |
+| **Medium** | MongoDB without auth on localhost | Use `MONGO_USER`/`MONGO_PASSWORD` on VPS; TLS for Atlas |
+
+### Data privacy
+
+- Uploading a CV sends parsed text to your configured **LLM provider** for matching.
+- Settings → data summary / export describes stored fields; account deletion removes user + jobs.
+- Job reminder and password-reset emails require **SMTP**; links use `FRONTEND_URL`.
+
+**Full checklist, file references, and ops notes:** [`handoff.md` § Security](handoff.md#14-security--threats)
 
 ---
 
@@ -590,11 +672,14 @@ See `backend/.env.example`. Important variables:
 **Major current capabilities**:
 - Separate main LLM vs Rating LLM (configurable in `.env` only)
 - Fast bulk rating via cosine pre-filter + concurrency
-- Freemium daily limits + powerful admin grants (incl. temporary full access)
-- Job posted date shown on cards
-- Clean usage display with "Unlimited" state
-- Mobile-friendly Kanban + Admin panel
-- User data transparency, JSON export, and account/CV deletion in Settings
+- **Three-layer freemium**: searches, ratings, AI tokens — admin-overridable per user
+- Accurate quota enforcement (atomic reserve, DB sync, refund on failed ratings)
+- `LimitContactModal` when limits hit (rating / search / token)
+- Platform + per-user AI token tracking in admin
+- Job posted date on cards, Kanban (desktop DnD + mobile tabs)
+- User data export and account/CV deletion in Settings
+
+**Ops + security:** see [`handoff.md`](handoff.md) for limits, admin access, SMTP/email, and production security checklist.
 
 The system is deliberately **.env-driven** — no model names or providers are hardcoded in code.
 

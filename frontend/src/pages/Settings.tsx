@@ -13,10 +13,16 @@ import {
   Download,
   ShieldAlert,
   Skull,
+  Mail,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { cvApi, userApi } from "../api/index";
+import { authApi, cvApi, userApi } from "../api/index";
 import { useAuthStore } from "../hooks/useStores";
+import {
+  LimitContactModal,
+  parseLimitKindFromDetail,
+  type LimitKind,
+} from "../components/LimitContactModal";
 import type { DataSummary, UserPreferences } from "../types";
 
 const DEFAULT_PREFS: UserPreferences = {
@@ -36,6 +42,7 @@ const DEFAULT_PREFS: UserPreferences = {
   avoid_industries: [],
   work_mode: { remote: true, hybrid: true, onsite: false },
   about_me: "",
+  email_reminders_enabled: true,
 };
 
 const EXPERIENCE_LEVELS: {
@@ -66,6 +73,13 @@ export function SettingsPage() {
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [limitModalKind, setLimitModalKind] = useState<LimitKind | null>(null);
+  const [pwForm, setPwForm] = useState({
+    current: "",
+    next: "",
+    confirm: "",
+  });
+  const [changingPassword, setChangingPassword] = useState(false);
   const [localPrefs, setLocalPrefs] = useState<UserPreferences>(DEFAULT_PREFS);
   const [dirty, setDirty] = useState(false);
   const [newLocation, setNewLocation] = useState("");
@@ -199,7 +213,13 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ["cv"] });
       toast.success("CV uploaded and parsed");
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Upload failed");
+      const detail = err.response?.data?.detail || "Upload failed";
+      if (detail.toLowerCase().includes("limit")) {
+        toast.error(detail, { duration: 6000 });
+        setLimitModalKind(parseLimitKindFromDetail(detail));
+      } else {
+        toast.error(detail);
+      }
     } finally {
       setUploading(false);
     }
@@ -394,6 +414,60 @@ export function SettingsPage() {
           style={{ display: "none" }}
           onChange={handleUpload}
         />
+      </Section>
+
+      {/* Email reminders */}
+      <Section
+        title="Email reminders"
+        subtitle="Get up to 2 emails per day when you have unapplied jobs scoring 8+/10 — same nudge as the dashboard banner."
+      >
+        <label
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 12,
+            cursor: "pointer",
+            padding: "12px 14px",
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            background: "var(--bg-secondary)",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={localPrefs.email_reminders_enabled}
+            onChange={(e) =>
+              update({ email_reminders_enabled: e.target.checked })
+            }
+            style={{ marginTop: 3, accentColor: "var(--accent)" }}
+          />
+          <span>
+            <span
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 14,
+                fontWeight: 600,
+                color: "var(--text)",
+                marginBottom: 4,
+              }}
+            >
+              <Mail size={15} />
+              Remind me to apply to high-scoring jobs
+            </span>
+            <span
+              style={{
+                fontSize: 13,
+                color: "var(--text-muted)",
+                lineHeight: 1.5,
+              }}
+            >
+              Requires SMTP on the server. Lists your top matches with scores
+              and links. Disable anytime here.
+            </span>
+          </span>
+        </label>
       </Section>
 
       {/* About you — NEW */}
@@ -962,6 +1036,82 @@ export function SettingsPage() {
         )}
       </Section>
 
+      <Section title="Password" subtitle="Change your sign-in password">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div>
+            <label className="label">Current password</label>
+            <input
+              className="input"
+              type="password"
+              value={pwForm.current}
+              onChange={(e) =>
+                setPwForm({ ...pwForm, current: e.target.value })
+              }
+            />
+          </div>
+          <div>
+            <label className="label">New password</label>
+            <input
+              className="input"
+              type="password"
+              placeholder="Min. 8 characters"
+              value={pwForm.next}
+              onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="label">Confirm new password</label>
+            <input
+              className="input"
+              type="password"
+              value={pwForm.confirm}
+              onChange={(e) =>
+                setPwForm({ ...pwForm, confirm: e.target.value })
+              }
+            />
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={changingPassword}
+            style={{ alignSelf: "flex-start" }}
+            onClick={async () => {
+              if (pwForm.next.length < 8) {
+                toast.error("New password must be at least 8 characters");
+                return;
+              }
+              if (pwForm.next !== pwForm.confirm) {
+                toast.error("New passwords do not match");
+                return;
+              }
+              setChangingPassword(true);
+              try {
+                const res = await authApi.changePassword(
+                  pwForm.current,
+                  pwForm.next,
+                );
+                toast.success(res.message);
+                setPwForm({ current: "", next: "", confirm: "" });
+              } catch (err: any) {
+                toast.error(
+                  err.response?.data?.detail || "Could not change password",
+                );
+              } finally {
+                setChangingPassword(false);
+              }
+            }}
+          >
+            {changingPassword ? "Updating..." : "Change password"}
+          </button>
+          <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>
+            Forgot your password?{" "}
+            <a href="/forgot-password" style={{ color: "var(--accent)" }}>
+              Reset via email
+            </a>
+          </p>
+        </div>
+      </Section>
+
       {/* Data & privacy */}
       <DataPrivacySection
         summary={dataSummary}
@@ -1115,6 +1265,13 @@ export function SettingsPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {limitModalKind && (
+        <LimitContactModal
+          kind={limitModalKind}
+          onClose={() => setLimitModalKind(null)}
+        />
       )}
     </div>
   );

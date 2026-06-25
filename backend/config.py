@@ -4,12 +4,17 @@ Central configuration. Everything reads from environment variables
 for later phases — change LLM_PROVIDER and nothing else breaks.
 """
 
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_BACKEND_DIR = Path(__file__).resolve().parent
+_ENV_FILE = _BACKEND_DIR / ".env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=str(_ENV_FILE), extra="ignore")
 
     #  App
     app_name: str = "JobRadar AI"
@@ -28,6 +33,18 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
+    password_reset_expire_minutes: int = 60  # reset link validity
+    frontend_url: str = "http://localhost:5173"
+
+    # Optional SMTP — required to email reset links in production
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_from_name: str = "JobRadar"
+    smtp_reply_to: str = ""  # optional; e.g. support@saimjs.com
+    smtp_use_tls: bool = True
 
     #  CORS (frontend origins)
     cors_origins: list[str] = [
@@ -89,6 +106,15 @@ class Settings(BaseSettings):
     # Auto scheduler (search + rate every N hours in background)
     auto_crawl_interval_hours: int = 12
 
+    # High-score job apply reminders (SMTP required in production)
+    job_reminder_enabled: bool = True
+    job_reminder_min_score: int = 8
+    job_reminder_min_jobs: int = 2  # same threshold as dashboard banner
+    job_reminder_max_per_day: int = 2
+    job_reminder_email_job_limit: int = 8  # max jobs listed in one email
+    # Comma-separated UTC hours, e.g. "8,18" → 08:00 and 18:00 UTC daily
+    job_reminder_hours_utc: str = "8,18"
+
     # Admin / Freemium
     # IMPORTANT: Put real values in .env only. These defaults are safe for git.
     # Do NOT commit your real admin email or secret path.
@@ -100,6 +126,15 @@ class Settings(BaseSettings):
     # Free tier defaults (per day, reset daily)
     free_search_limit: int = 3
     free_rating_limit: int = 10  # number of jobs that can be rated per period
+    # AI token caps for free users (0 = unlimited). Resets daily / monthly via usage.ai_daily / usage.ai_month.
+    free_daily_token_limit: int = 250_000
+    free_monthly_token_limit: int = 0  # 0 = no monthly cap by default
+
+    # AI usage tracking — optional; set rates in .env to enable cost estimates in admin
+    ai_monthly_budget_usd: float = 0
+    ai_cost_per_1k_prompt_tokens: float = 0
+    ai_cost_per_1k_completion_tokens: float = 0
+    ai_cost_per_1k_embedding_tokens: float = 0
 
 
 settings = Settings()

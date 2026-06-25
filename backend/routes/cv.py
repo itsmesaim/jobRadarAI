@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from database import get_database
 from deps import get_current_user
 from services.cv_parser import process_cv
+from services.limits import check_ai_token_quota
 
 router = APIRouter(prefix="/cv", tags=["cv"])
 
@@ -40,9 +41,16 @@ async def upload_cv(
             detail="PDF must be under 5MB.",
         )
 
+    token_ok, token_msg = await check_ai_token_quota(user)
+    if not token_ok:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=token_msg,
+        )
+
     # ── parse ─────────────────────────────────────────────
     try:
-        raw_text, structured = await process_cv(pdf_bytes)
+        raw_text, structured = await process_cv(pdf_bytes, user_id=str(user["_id"]))
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
