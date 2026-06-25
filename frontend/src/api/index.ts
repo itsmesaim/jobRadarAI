@@ -72,6 +72,11 @@ export const jobsApi = {
     return res.data;
   },
 
+  fetchUrl: async (url: string) => {
+    const res = await api.post("/jobs/fetch-url", { url });
+    return res.data as { title: string; text: string };
+  },
+
   updateStatus: async (id: string, status: JobStatus) => {
     const res = await api.patch(`/jobs/${id}/status`, { status });
     return res.data;
@@ -152,8 +157,8 @@ export const userApi = {
     return res.data;
   },
 
-  deleteAccount: async () => {
-    await api.delete("/users/account");
+  deleteAccount: async (password: string) => {
+    await api.delete("/users/account", { data: { password } });
   },
 };
 
@@ -190,23 +195,7 @@ export const adminApi = {
   },
 };
 
+/** @deprecated use jobsApi.fetchUrl — kept as alias for ManualJDModal */
 export const scrapeApi = {
-  fetchJobFromUrl: async (
-    url: string,
-  ): Promise<{ title: string; text: string }> => {
-    const res = await fetch(
-      `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-    );
-    const data = await res.json();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(data.contents, "text/html");
-    const scripts = doc.querySelectorAll("script, style, nav, footer, header");
-    scripts.forEach((el) => el.remove());
-    const text = doc.body?.innerText || doc.body?.textContent || "";
-    const title = doc.title || "";
-    return {
-      title: title.trim(),
-      text: text.replace(/\s+/g, " ").trim().slice(0, 6000),
-    };
-  },
+  fetchJobFromUrl: (url: string) => jobsApi.fetchUrl(url),
 };

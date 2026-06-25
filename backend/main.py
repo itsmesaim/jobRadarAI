@@ -27,10 +27,17 @@ from config import settings
 #     os.environ["LANGCHAIN_API_KEY"] = settings.langsmith_api_key
 #     os.environ["LANGCHAIN_PROJECT"] = settings.langsmith_project
 
+from core.security import is_weak_jwt_secret
 from database import close_mongo_connection, connect_to_mongo, get_database
 from routes import auth, cv, crawler, jobs, users, admin
 from services.email import gmail_from_mismatch, smtp_configured, smtp_missing_reason
 from services.scheduler import start_scheduler, shutdown_scheduler
+
+if not settings.debug and is_weak_jwt_secret(settings.jwt_secret):
+    raise RuntimeError(
+        "JWT_SECRET is missing, default, or shorter than 48 characters. "
+        "Set a strong secret in .env before running with DEBUG=false."
+    )
 
 
 @asynccontextmanager
@@ -40,10 +47,10 @@ async def lifespan(app: FastAPI):
     # enforce one account per email at the DB level
     await get_database().users.create_index("email", unique=True)
 
-    if settings.jwt_secret in ("", "change-me-in-production"):
+    if is_weak_jwt_secret(settings.jwt_secret):
         print(
-            "[startup] SECURITY: JWT_SECRET is default or empty — "
-            "set a long random value in .env before production"
+            "[startup] SECURITY: JWT_SECRET is default, empty, or too short — "
+            "set a 48+ character random value in .env before production"
         )
     if settings.debug:
         print(

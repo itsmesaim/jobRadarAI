@@ -7,8 +7,9 @@ immediately start making authenticated calls.
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from core.rate_limit import enforce_rate_limit
 from core.security import (
     create_access_token,
     create_password_reset_token,
@@ -40,30 +41,36 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
-async def register(payload: UserRegister):
+async def register(payload: UserRegister, request: Request):
+    enforce_rate_limit(request, "register")
     db = get_database()
 
     existing = await db.users.find_one({"email": payload.email.lower()})
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered. Use “Forgot password” on the login page to reset it.",
+            detail=(
+                "Unable to create an account with these details. "
+                "If you already have an account, use Forgot password on the login page."
+            ),
         )
 
     doc = {
         "name": payload.name,
         "email": payload.email.lower(),
         "password_hash": hash_password(payload.password),
+        "token_version": 1,
         "created_at": datetime.now(timezone.utc),
     }
     result = await db.users.insert_one(doc)
 
-    token = create_access_token(str(result.inserted_id))
+    token = create_access_token(str(result.inserted_id), token_version=1)
     return Token(access_token=token)
 
 
 @router.post("/login", response_model=Token)
-async def login(payload: UserLogin):
+async def login(payload: UserLogin, request: Request):
+    enforce_rate_limit(request, "login")
     db = get_database()
 
     user = await db.users.find_one({"email": payload.email.lower()})
@@ -73,12 +80,14 @@ async def login(payload: UserLogin):
             detail="Invalid email or password",
         )
 
-    token = create_access_token(str(user["_id"]))
+    token_version = int(user.get("token_version", 1) or 1)
+    token = create_access_token(str(user["_id"]), token_version=token_version)
     return Token(access_token=token)
 
 
 @router.post("/forgot-password", response_model=MessageResponse)
-async def forgot_password(payload: ForgotPasswordRequest):
+async def forgot_password(payload: ForgotPasswordRequest, request: Request):
+    enforce_rate_limit(request, "forgot_password")
     """
     Request a password reset link. Always returns the same message (no email enumeration).
     Sends email when SMTP is configured; logs link in DEBUG when not.
@@ -134,15 +143,23 @@ async def reset_password(payload: ResetPasswordRequest):
             detail="Invalid or expired reset link. Request a new one.",
         )
 
-    result = await db.users.update_one(
-        {"_id": oid},
-        {"$set": {"password_hash": hash_password(payload.new_password)}},
-    )
-    if result.matched_count == 0:
+    user_doc = await db.users.find_one({"_id": oid}, {"token_version": 1})
+    if not user_doc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset link. Request a new one.",
         )
+
+    current_version = int(user_doc.get("token_version", 1) or 1)
+    await db.users.update_one(
+        {"_id": oid},
+        {
+            "$set": {
+                "password_hash": hash_password(payload.new_password),
+                "token_version": current_version + 1,
+            }
+        },
+    )
 
     return MessageResponse(message="Password updated. You can sign in now.")
 
@@ -165,11 +182,19 @@ async def change_password(
     db = get_database()
     from bson import ObjectId
 
+    current_version = int(user.get("token_version", 1) or 1)
     await db.users.update_one(
         {"_id": ObjectId(user["_id"])},
-        {"$set": {"password_hash": hash_password(payload.new_password)}},
+        {
+            "$set": {
+                "password_hash": hash_password(payload.new_password),
+                "token_version": current_version + 1,
+            }
+        },
     )
-    return MessageResponse(message="Password changed successfully.")
+    return MessageResponse(
+        message="Password changed successfully. Other sessions have been signed out."
+    )
 
 
 @router.get("/me", response_model=UserPublic)

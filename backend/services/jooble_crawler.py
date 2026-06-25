@@ -72,7 +72,7 @@ def _clean_html(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-async def crawl_jobs_for_user_jooble(user: dict) -> dict:
+async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) -> dict:
     db = get_database()
 
     # always fetch fresh preferences
@@ -97,9 +97,16 @@ async def crawl_jobs_for_user_jooble(user: dict) -> dict:
     stored = 0
     skipped = 0
 
+    def _at_cap() -> bool:
+        return max_stored is not None and stored >= max_stored
+
     async with httpx.AsyncClient(timeout=15) as client:
         for term in search_terms:
+            if _at_cap():
+                break
             for raw_location in locations:
+                if _at_cap():
+                    break
                 jooble_loc = _jooble_location(raw_location)
                 await asyncio.sleep(1.5)
 
@@ -119,6 +126,8 @@ async def crawl_jobs_for_user_jooble(user: dict) -> dict:
                     continue
 
                 for job in data.get("jobs", []):
+                    if _at_cap():
+                        break
                     found += 1
                     url = job.get("link", "")
                     url_hash = _hash_url(url)

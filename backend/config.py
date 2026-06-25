@@ -105,6 +105,8 @@ class Settings(BaseSettings):
 
     # Auto scheduler (search + rate every N hours in background)
     auto_crawl_interval_hours: int = 12
+    # Cap new jobs stored per user per auto-crawl cycle (does not consume manual search quota)
+    auto_crawl_max_stored_per_cycle: int = 25
 
     # High-score job apply reminders (SMTP required in production)
     job_reminder_enabled: bool = True

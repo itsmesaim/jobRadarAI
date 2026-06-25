@@ -20,8 +20,10 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
+from core.security import verify_password
 from database import get_database
 from deps import get_current_user
+from models.user import DeleteAccountRequest
 from services.limits import get_user_usage
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -328,8 +330,14 @@ async def export_my_data(user=Depends(get_current_user)):
 
 
 @router.delete("/account", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_account(user=Depends(get_current_user)):
+async def delete_account(payload: DeleteAccountRequest, user=Depends(get_current_user)):
     """Permanently delete the user account and all associated data."""
+    if not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect password.",
+        )
+
     db = get_database()
     user_id = str(user["_id"])
 

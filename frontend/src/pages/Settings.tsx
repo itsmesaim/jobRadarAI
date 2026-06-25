@@ -72,6 +72,7 @@ export function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
   const [uploading, setUploading] = useState(false);
   const [limitModalKind, setLimitModalKind] = useState<LimitKind | null>(null);
   const [pwForm, setPwForm] = useState({
@@ -165,12 +166,19 @@ export function SettingsPage() {
   });
 
   const deleteAccountMutation = useMutation({
-    mutationFn: userApi.deleteAccount,
+    mutationFn: () => userApi.deleteAccount(deletePassword),
     onSuccess: () => {
       logout();
       window.location.href = "/login";
     },
-    onError: () => toast.error("Failed to delete account"),
+    onError: (err: any) => {
+      const detail = err.response?.data?.detail;
+      toast.error(
+        detail === "Incorrect password."
+          ? "Incorrect password."
+          : "Failed to delete account",
+      );
+    },
   });
 
   const handleExportData = async () => {
@@ -1187,8 +1195,17 @@ export function SettingsPage() {
                 color: "var(--text-muted)",
               }}
             >
-              Type <strong>DELETE</strong> to confirm
+              Enter your password and type <strong>DELETE</strong> to confirm
             </p>
+            <input
+              className="input"
+              type="password"
+              value={deletePassword}
+              onChange={(e) => setDeletePassword(e.target.value)}
+              placeholder="Your password"
+              autoComplete="current-password"
+              style={{ marginBottom: 10 }}
+            />
             <input
               className="input"
               value={deleteConfirm}
@@ -1200,7 +1217,9 @@ export function SettingsPage() {
               <button
                 onClick={() => deleteAccountMutation.mutate()}
                 disabled={
-                  deleteConfirm !== "DELETE" || deleteAccountMutation.isPending
+                  deleteConfirm !== "DELETE" ||
+                  !deletePassword ||
+                  deleteAccountMutation.isPending
                 }
                 className="btn btn-danger"
                 style={{ flex: 1 }}
@@ -1213,6 +1232,7 @@ export function SettingsPage() {
                 onClick={() => {
                   setShowDeleteAccount(false);
                   setDeleteConfirm("");
+                  setDeletePassword("");
                 }}
                 className="btn btn-ghost"
               >

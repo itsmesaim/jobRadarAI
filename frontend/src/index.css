@@ -419,11 +419,41 @@
     line-height: 1.5;
   }
 
+  .dash-header {
+    margin-bottom: 20px;
+  }
+
   .dash-metrics {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
     margin-bottom: 16px;
+  }
+
+  .dash-reminder {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+  }
+
+  .dash-reminder-text {
+    font-size: 14px;
+    color: var(--text);
+    margin: 0;
+    flex: 1;
+    line-height: 1.5;
+  }
+
+  .dash-reminder-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
   }
 
   .dash-metric {
@@ -566,15 +596,85 @@
     }
   }
 
-  @media (max-width: 800px) {
+  @media (max-width: 768px) {
+    .page-shell {
+      padding: 16px 14px 32px;
+    }
+
+    .page-title {
+      font-size: 22px;
+    }
+
+    .page-subtitle {
+      font-size: 13px;
+    }
+
+    .dash-header {
+      margin-bottom: 12px;
+    }
+
     .dash-metrics {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
     }
-  }
 
-  @media (max-width: 480px) {
-    .dash-metrics {
-      grid-template-columns: 1fr;
+    .dash-metric {
+      padding: 8px 10px;
+    }
+
+    .dash-metric-label {
+      font-size: 10px;
+      margin-bottom: 2px;
+      line-height: 1.2;
+    }
+
+    .dash-metric-value {
+      font-size: 17px;
+    }
+
+    .dash-metric-hint {
+      display: none;
+    }
+
+    .dash-usage {
+      padding: 10px 12px;
+      margin-bottom: 12px;
+    }
+
+    .dash-usage-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .dash-usage-item {
+      padding: 8px 10px;
+    }
+
+    .dash-toolbar {
+      gap: 8px;
+      padding-bottom: 12px;
+      margin-bottom: 12px;
+    }
+
+    .dash-reminder {
+      flex-wrap: wrap;
+      gap: 10px !important;
+      padding: 10px 12px !important;
+      margin-bottom: 12px !important;
+    }
+
+    .dash-reminder-text {
+      font-size: 13px !important;
+      flex: 1 1 100% !important;
+    }
+
+    .dash-reminder-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      justify-content: flex-end;
     }
   }
 

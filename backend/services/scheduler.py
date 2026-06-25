@@ -2,7 +2,8 @@
 Background scheduler for automatic job discovery + rating.
 
 Runs crawl (Jooble + JobsAPI) + rate-all every N hours (default 12) for users
-who have uploaded a CV. This does **not** count against the manual daily limit.
+who have uploaded a CV. Auto-crawl does not consume manual search quota but
+caps new jobs stored per cycle (see AUTO_CRAWL_MAX_STORED_PER_CYCLE).
 """
 
 from datetime import datetime, timedelta, timezone
@@ -40,10 +41,15 @@ async def _auto_crawl_and_rate():
         email = user.get("email", user_id)
 
         try:
-            print(f"[scheduler] [{email}] → Starting crawl...")
-            res_j = await crawl_jobs_for_user_jooble(user)
-            res_i = await crawl_jobs_for_user_jobsapi(user)
-            stored = (res_j or {}).get("stored", 0) + (res_i or {}).get("stored", 0)
+            max_stored = settings.auto_crawl_max_stored_per_cycle
+            print(f"[scheduler] [{email}] → Starting crawl (cap {max_stored}/cycle)...")
+            res_j = await crawl_jobs_for_user_jooble(user, max_stored=max_stored)
+            jooble_stored = (res_j or {}).get("stored", 0)
+            remaining = max(0, max_stored - jooble_stored)
+            res_i = await crawl_jobs_for_user_jobsapi(
+                user, max_stored=remaining if remaining else 0
+            )
+            stored = jooble_stored + (res_i or {}).get("stored", 0)
             print(f"[scheduler] [{email}] Crawl done: stored={stored} new jobs")
 
             await db.users.update_one(

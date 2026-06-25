@@ -28,28 +28,40 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 # ── JWT ──────────────────────────────────────────────────
-def create_access_token(subject: str) -> str:
+def create_access_token(subject: str, token_version: int = 1) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": subject,  # we store the user's Mongo _id here
         "typ": "access",
+        "tv": int(token_version),
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def decode_access_token(token: str) -> str | None:
-    """Returns the subject (user id) if valid, else None."""
+def decode_access_token(token: str) -> tuple[str, int] | None:
+    """Returns (user id, token_version) if valid, else None."""
     try:
         payload = jwt.decode(
             token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
         )
         if payload.get("typ") not in (None, "access"):
             return None
-        return payload.get("sub")
+        sub = payload.get("sub")
+        if not sub:
+            return None
+        tv = payload.get("tv", 1)
+        return sub, int(tv)
     except jwt.PyJWTError:
         return None
+
+
+def is_weak_jwt_secret(secret: str) -> bool:
+    s = (secret or "").strip()
+    if not s or s == "change-me-in-production":
+        return True
+    return len(s) < 48
 
 
 def create_password_reset_token(user_id: str) -> str:

@@ -276,7 +276,7 @@ export function Dashboard() {
 
   return (
     <div className="page-shell">
-      <div style={{ marginBottom: 20 }}>
+      <div className="dash-header">
         <h1 className="page-title">Jobs</h1>
         <p className="page-subtitle">
           Ranked listings from your searches — filter by score, status, or
@@ -449,57 +449,40 @@ export function Dashboard() {
       )}
 
       {showReminder && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 14,
-            background: "var(--warning-bg)",
-            border: "1px solid var(--warning-border)",
-            borderRadius: 12,
-            padding: "14px 18px",
-            marginBottom: 20,
-          }}
-        >
+        <div className="dash-reminder">
           <AlertCircle
             size={18}
             style={{ color: "var(--warning)", flexShrink: 0 }}
           />
-          <p
-            style={{
-              fontSize: 14,
-              color: "var(--text)",
-              margin: 0,
-              flex: 1,
-              lineHeight: 1.5,
-            }}
-          >
+          <p className="dash-reminder-text">
             <strong>Hey!</strong> {highScoreUnaplied.length} jobs scoring 8+/10
             are sitting unapplied. Don&apos;t let good opportunities slip by.
           </p>
-          <button
-            onClick={() => {
-              setScoreMin(8);
-              setStatusFilter("NEW");
-              setPage(1);
-            }}
-            className="btn btn-secondary"
-            style={{ fontSize: 13, padding: "6px 12px", flexShrink: 0 }}
-          >
-            View them
-          </button>
-          <button
-            onClick={() => setReminderDismissed(true)}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "var(--text-muted)",
-              display: "flex",
-            }}
-          >
-            <X size={15} />
-          </button>
+          <div className="dash-reminder-actions">
+            <button
+              onClick={() => {
+                setScoreMin(8);
+                setStatusFilter("NEW");
+                setPage(1);
+              }}
+              className="btn btn-secondary"
+              style={{ fontSize: 13, padding: "6px 12px", flexShrink: 0 }}
+            >
+              View them
+            </button>
+            <button
+              onClick={() => setReminderDismissed(true)}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "var(--text-muted)",
+                display: "flex",
+              }}
+            >
+              <X size={15} />
+            </button>
+          </div>
         </div>
       )}
 

@@ -130,7 +130,9 @@ def _detect_location_string(location: str) -> str:
     return location
 
 
-async def crawl_jobs_for_user_jobsapi(user: dict) -> dict:
+async def crawl_jobs_for_user_jobsapi(
+    user: dict, max_stored: int | None = None
+) -> dict:
     db = get_database()
 
     # always fetch fresh preferences
@@ -150,9 +152,16 @@ async def crawl_jobs_for_user_jobsapi(user: dict) -> dict:
     stored = 0
     skipped = 0
 
+    def _at_cap() -> bool:
+        return max_stored is not None and stored >= max_stored
+
     async with httpx.AsyncClient(timeout=15) as client:
         for term in search_terms:
+            if _at_cap():
+                break
             for raw_location in locations:
+                if _at_cap():
+                    break
                 country_code = _detect_country_code(raw_location)
                 location_str = _detect_location_string(raw_location)
                 await asyncio.sleep(1.5)
@@ -184,6 +193,8 @@ async def crawl_jobs_for_user_jobsapi(user: dict) -> dict:
                 )
 
                 for job in jobs:
+                    if _at_cap():
+                        break
                     found += 1
                     url = job.get("applyUrl", "")
                     if not url:

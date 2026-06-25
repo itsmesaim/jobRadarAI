@@ -623,29 +623,29 @@ JobRadar is a **personal/small-team tool**, not a hardened enterprise product. T
 | Area | How |
 |------|-----|
 | **Passwords** | bcrypt hashing; hash never returned in API |
-| **JWT** | Separate access vs password-reset token types (`typ` claim) |
+| **JWT** | Access vs reset token types (`typ`); `token_version` invalidates sessions after password change/reset |
+| **JWT secret** | App refuses to start with `DEBUG=false` if secret is default or &lt; 48 chars |
+| **Auth brute-force** | In-memory rate limits on login, register, forgot-password (`core/rate_limit.py`) |
 | **Jobs (IDOR)** | All job routes scoped to `crawled_by == current user` |
 | **Admin** | Server-side email check on every `/{ADMIN_SECRET_PATH}/` route; 403 if not admin |
 | **Forgot password** | Same response whether email exists (no enumeration) |
-| **Quotas** | Server-enforced atomic Mongo increments; not client-trustable |
+| **Register conflict** | Generic 409 message (no “email already registered” leak) |
+| **Account deletion** | Requires password re-entry, not JWT alone |
+| **Paste JD URL fetch** | Server-side `POST /jobs/fetch-url` with SSRF checks (no third-party proxy) |
+| **Quotas** | Server-enforced atomic Mongo increments; auto-crawl capped per cycle (`AUTO_CRAWL_MAX_STORED_PER_CYCLE`) |
+| **OpenAPI** | `/docs` disabled when `DEBUG=false` |
 | **Secrets in git** | `.env` gitignored; only `.env.example` with placeholders |
 
-### Main risks (read before going public)
+### Remaining risks (read before going public)
 
 | Severity | Risk | Mitigation |
 |----------|------|------------|
-| **Critical** | Default `JWT_SECRET` (`change-me-in-production`) | Set 48+ char secret; backend logs a startup warning if unset |
-| **Critical** | `DEBUG=true` logs password-reset links | `DEBUG=false` in production |
+| **Critical** | `DEBUG=true` logs password-reset links | Set `DEBUG=false` in production |
 | **Critical** | CV + preferences sent to **external LLMs** (OpenAI/xAI) | Use local Ollama for PII, or disclose + get consent; disable LangSmith tracing |
 | **High** | JWT in `localStorage` (XSS → account takeover) | Keep dependencies updated; consider httpOnly cookies later |
-| **High** | No rate limits on login/register/forgot-password | Add reverse-proxy or app-level rate limiting before public launch |
-| **High** | Password change does **not** revoke old JWTs (7-day tokens) | Shorten `ACCESS_TOKEN_EXPIRE_MINUTES` or add token versioning |
-| **High** | **Scheduler auto-crawl** bypasses manual search daily limit | By design today — cap in scheduler or document for users |
+| **High** | In-memory rate limits reset on process restart / don’t span workers | Also rate-limit at nginx/Cloudflare in production |
 | **Medium** | Admin = email match + secret URL (not DB role) | Rotate `ADMIN_SECRET_PATH`; use strong admin password |
-| **Medium** | FastAPI `/docs` exposed | Disabled automatically when `DEBUG=false` |
-| **Medium** | **Paste JD** fetches URLs via `allorigins.win` in the browser | Third party sees job URLs; prefer pasting text only; move fetch server-side later |
-| **Medium** | `DELETE /users/account` with JWT only (no password re-entry) | Acceptable for MVP; add password confirm for stricter apps |
-| **Medium** | Registration returns 409 if email exists | Minor enumeration; forgot-password does not leak |
+| **Medium** | Auto-crawl does not consume manual search quota | Capped per cycle; manual searches still limited separately |
 | **Medium** | MongoDB without auth on localhost | Use `MONGO_USER`/`MONGO_PASSWORD` on VPS; TLS for Atlas |
 
 ### Data privacy
@@ -653,8 +653,6 @@ JobRadar is a **personal/small-team tool**, not a hardened enterprise product. T
 - Uploading a CV sends parsed text to your configured **LLM provider** for matching.
 - Settings → data summary / export describes stored fields; account deletion removes user + jobs.
 - Job reminder and password-reset emails require **SMTP**; links use `FRONTEND_URL`.
-
-**Full checklist, file references, and ops notes:** [`handoff.md` § Security](handoff.md#14-security--threats)
 
 ---
 
@@ -679,7 +677,7 @@ JobRadar is a **personal/small-team tool**, not a hardened enterprise product. T
 - Job posted date on cards, Kanban (desktop DnD + mobile tabs)
 - User data export and account/CV deletion in Settings
 
-**Ops + security:** see [`handoff.md`](handoff.md) for limits, admin access, SMTP/email, and production security checklist.
+**Ops + security:** see the **Security** section above and `backend/.env.example` for production checklist.
 
 The system is deliberately **.env-driven** — no model names or providers are hardcoded in code.
 

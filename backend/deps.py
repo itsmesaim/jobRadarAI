@@ -22,12 +22,13 @@ bearer_scheme = HTTPBearer(auto_error=True)
 async def get_current_user(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ):
-    user_id = decode_access_token(creds.credentials)
-    if not user_id:
+    decoded = decode_access_token(creds.credentials)
+    if not decoded:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
+    user_id, token_version = decoded
 
     try:
         oid = ObjectId(user_id)
@@ -40,5 +41,12 @@ async def get_current_user(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
+        )
+
+    current_version = int(user.get("token_version", 1) or 1)
+    if token_version != current_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired. Please sign in again.",
         )
     return user

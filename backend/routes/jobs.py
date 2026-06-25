@@ -32,6 +32,7 @@ from services.limits import (
     rating_limit_message,
     refund_rating,
 )
+from services.url_fetch import fetch_job_page_text
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -58,6 +59,10 @@ class ManualJD(BaseModel):
     company: str
     url: str = ""
     jd_text: str
+
+
+class FetchUrlRequest(BaseModel):
+    url: str
 
 
 def _format_job(job: dict, user_id: str) -> dict:
@@ -293,6 +298,12 @@ async def rate_all(background_tasks: BackgroundTasks, user=Depends(get_current_u
         "ratings_remaining": remaining,
         "will_rate_up_to": min(pending_count, remaining),
     }
+
+
+# ── FETCH URL (server-side, SSRF-safe) ─────────────────────
+@router.post("/fetch-url")
+async def fetch_job_url(payload: FetchUrlRequest, user=Depends(get_current_user)):
+    return await fetch_job_page_text(payload.url)
 
 
 # ── MANUAL JD ────────────────────────────────────────────
