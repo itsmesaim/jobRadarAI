@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { getInitialTheme, persistTheme, type ThemeMode } from "../lib/theme";
+import { getInitialTheme, persistTheme, type ThemeMode } from "../utils/theme";
 
 interface AuthState {
   token: string | null;
