@@ -11,6 +11,7 @@ Still uses the full structured LLM rating (gpt-4o-mini or your model) for promis
 """
 
 import asyncio
+import hashlib
 import json
 import math
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ from bson import ObjectId
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
 from pydantic import BaseModel, Field
+from pymongo import ReturnDocument
 
 from database import get_database
 from config import settings
@@ -219,6 +221,26 @@ Examples of good tips:
 Make the tips specific to the JD text and the candidate's actual projects. Avoid generic advice.
 """.strip()
 
+FAST_RATING_SYSTEM_PROMPT = """
+You are a senior technical recruiter rating candidate–job fit (1–10). Be honest; do not inflate.
+
+Check first for deal-breakers (set structural_mismatch=true, score ≤ 3):
+- Hard people-management requirement vs IC candidate
+- Core domain required with zero candidate exposure
+- Work authorization / strict onsite mismatch with stated constraints
+
+Then score:
+- Start at 5 for a relevant candidate
+- + for required skills, named tools in the CV, production agentic/LLM systems built
+- − for missing required skills (larger) vs preferred (smaller)
+- Cap at 3 for structural mismatch; 7–8 strong match; 9–10 excellent
+
+Return matched_strengths, gaps, verdict (one sentence), auto_reject, structural_mismatch.
+Skip tailoring_tips (empty list is fine for bulk screening).
+""".strip()
+
+_RATING_IN_PROGRESS = "__rating_in_progress__"
+
 
 ROAST_SYSTEM_PROMPT = """
 You are a brutally honest, savagely funny tech recruiter doing a comedy
@@ -309,11 +331,49 @@ def is_billable_rating(rating: dict) -> bool:
     return not any(verdict.startswith(p) for p in _NON_BILLABLE_VERDICT_PREFIXES)
 
 
+# ── Rate-all query helpers ────────────────────────────────────────────────────
+
+
+def unrated_jobs_filter(user_id: str) -> dict:
+    """Jobs eligible for bulk rating: never rated, or only failed (score ≤ 0)."""
+    rating_path = f"ratings.{user_id}"
+    score_path = f"{rating_path}.score"
+    verdict_path = f"{rating_path}.verdict"
+    return {
+        "crawled_by": user_id,
+        verdict_path: {"$ne": _RATING_IN_PROGRESS},
+        "$or": [
+            {rating_path: {"$exists": False}},
+            {score_path: {"$lte": 0}},
+        ],
+    }
+
+
+def _existing_rating_score(job: dict, user_id: str) -> int | None:
+    rating = (job.get("ratings") or {}).get(user_id)
+    if not rating:
+        return None
+    score = rating.get("score")
+    return score if isinstance(score, int) else None
+
+
+def _should_skip_rating(job: dict, user_id: str) -> bool:
+    """Skip jobs already scored > 0 or currently being rated by another worker."""
+    rating = (job.get("ratings") or {}).get(user_id)
+    if not rating:
+        return False
+    verdict = (rating.get("verdict") or "").strip()
+    if verdict == _RATING_IN_PROGRESS:
+        return True
+    score = rating.get("score")
+    return isinstance(score, int) and score > 0
+
+
 # ── Main rating function ──────────────────────────────────────────────────────
 
 
 @traceable(name="rate_job_for_user", run_type="chain")
-async def rate_job_for_user(job: dict, user: dict) -> dict:
+async def rate_job_for_user(job: dict, user: dict, *, mode: str = "full") -> dict:
     cv = user.get("cv", {})
     if not cv:
         return {
@@ -365,8 +425,14 @@ Education: {json.dumps(structured.get('education', []))}
 
     human_message_content = "\n".join(sections)
 
+    system_prompt = (
+        FAST_RATING_SYSTEM_PROMPT if mode == "fast" else RATING_SYSTEM_PROMPT
+    )
+    operation = "job_rating_fast" if mode == "fast" else "job_rating"
+    prompt_chars = len(system_prompt) + len(human_message_content)
+
     messages = [
-        SystemMessage(content=RATING_SYSTEM_PROMPT),
+        SystemMessage(content=system_prompt),
         HumanMessage(content=human_message_content),
     ]
 
@@ -379,32 +445,33 @@ Education: {json.dumps(structured.get('education', []))}
         )
         structured_llm = llm.with_structured_output(JobRating, include_raw=True)
         print(
-            "[rating] [job] about to invoke structured LLM (check the [rating] Using provider=... line above for the exact model)"
-        )
-        print(
-            "[rating] [job] sending prompt to rating LLM (this is the expensive part)"
+            f"[rating] [job] LLM invoke mode={mode} provider={provider} model={model}"
         )
         raw_result = await structured_llm.ainvoke(messages)
         if isinstance(raw_result, dict):
             result: JobRating = raw_result.get("parsed")
             raw_msg = raw_result.get("raw")
+            completion_chars = len(result.model_dump_json()) if result else 0
             if user_id and raw_msg:
                 await record_from_llm_response(
                     user_id,
                     raw_msg,
-                    operation="job_rating",
+                    operation=operation,
                     provider=provider,
                     model=str(model),
+                    prompt_chars=prompt_chars,
+                    completion_chars=completion_chars,
                 )
         else:
             result = raw_result
             if user_id:
                 await record_ai_usage(
                     user_id,
-                    operation="job_rating",
+                    operation=operation,
                     provider=provider,
                     model=str(model),
                     llm_calls=1,
+                    prompt_tokens=max(prompt_chars // 4, 1),
                 )
         print("[rating] [job] LLM response received successfully")
         return result.model_dump()
@@ -439,6 +506,9 @@ EMBEDDING_SIMILARITY_CUTOFF = 0.18
 # Max jobs to pull in one rate-all run. Set high to process hundreds in one background task.
 RATE_ALL_MAX_JOBS = 2000
 
+# Bulk fast rating first; run full detailed prompt only when fast score ≥ this.
+FULL_RATING_SCORE_THRESHOLD = 7
+
 
 # ── Embedding helpers (cheap & fast pre-filter) ───────────────────────────────
 
@@ -454,39 +524,81 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
-async def _get_cv_embedding(user: dict) -> list[float] | None:
-    """Embed the user's CV once. Prefer raw_text; fall back to a condensed structured version."""
+def _cv_embedding_text(user: dict) -> str:
+    """Text used for CV embedding (raw_text preferred)."""
     cv = user.get("cv", {})
     raw = cv.get("raw_text", "") or ""
     if len(raw) > 200:
-        text = raw[:8000]
-    else:
-        # fallback: build a compact string from structured CV
-        structured = cv.get("structured", {})
-        parts = [
-            structured.get("summary", ""),
-            " ".join(structured.get("skills", [])),
-        ]
-        for exp in structured.get("experience", []):
-            parts.append(f"{exp.get('title','')} {exp.get('company','')}")
-            parts.extend(exp.get("bullets", [])[:2])
-        text = " ".join(p for p in parts if p)[:8000]
+        return raw[:8000]
 
+    structured = cv.get("structured", {})
+    parts = [
+        structured.get("summary", ""),
+        " ".join(structured.get("skills", [])),
+    ]
+    for exp in structured.get("experience", []):
+        parts.append(f"{exp.get('title','')} {exp.get('company','')}")
+        parts.extend(exp.get("bullets", [])[:2])
+    return " ".join(p for p in parts if p)[:8000]
+
+
+def _cv_embedding_content_hash(user: dict) -> str:
+    """Hash CV + profile fields that affect semantic match."""
+    payload = json.dumps(
+        {
+            "cv": _cv_embedding_text(user),
+            "about_me": user.get("about_me", ""),
+            "skill_overrides": user.get("skill_overrides", {}),
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+async def _get_cv_embedding(user: dict) -> list[float] | None:
+    """Embed the user's CV once per content hash; cache vector on user doc."""
+    text = _cv_embedding_text(user)
     if not text.strip():
         return None
+
+    content_hash = _cv_embedding_content_hash(user)
+    cached = user.get("cv_embedding")
+    if (
+        isinstance(cached, dict)
+        and cached.get("content_hash") == content_hash
+        and isinstance(cached.get("vector"), list)
+        and cached["vector"]
+    ):
+        print("[rating] CV embedding cache hit (no API call)")
+        return cached["vector"]
 
     try:
         emb = get_embeddings()
         vecs = await emb.aembed_documents([text])
+        vec = vecs[0] if vecs else None
         user_id = str(user.get("_id", ""))
-        if user_id:
+        if user_id and vec:
+            db = get_database()
+            await db.users.update_one(
+                {"_id": ObjectId(user_id)},
+                {
+                    "$set": {
+                        "cv_embedding": {
+                            "content_hash": content_hash,
+                            "vector": vec,
+                            "cached_at": datetime.now(timezone.utc),
+                        }
+                    }
+                },
+            )
             await record_embedding_usage(
                 user_id,
                 num_documents=1,
                 total_chars=len(text),
                 operation="cv_embedding",
             )
-        return vecs[0] if vecs else None
+            print("[rating] CV embedding computed and cached on user doc")
+        return vec
     except Exception:
         return None
 
@@ -569,12 +681,12 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
         print(f"[rating] Skipped for {user_email}: {msg}")
         return {"rated": 0, "error": msg}
 
-    # Unrated queue — per-job quota is reserved inside rate_and_store
-    jobs = await db.jobs.find(
-        {"crawled_by": user_id, f"ratings.{user_id}": {"$exists": False}}
-    ).to_list(length=RATE_ALL_MAX_JOBS)
+    # Unrated queue — skip jobs already scored > 0; per-job quota inside rate_and_store
+    jobs = await db.jobs.find(unrated_jobs_filter(user_id)).to_list(
+        length=RATE_ALL_MAX_JOBS
+    )
     print(
-        f"[rating] [queue] Unrated jobs found in queue for user: {len(jobs)} (capped by remaining quota)"
+        f"[rating] [queue] Unrated jobs found in queue for user: {len(jobs)} (skips score>0; capped by remaining quota)"
     )
 
     if not jobs:
@@ -609,18 +721,64 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
 
     prefilter_count = 0
     llm_count = 0
+    full_llm_count = 0
+    skipped_count = 0
     error_count = 0
 
     async def rate_and_store(job):
-        nonlocal prefilter_count, llm_count, error_count
+        nonlocal prefilter_count, llm_count, full_llm_count, skipped_count, error_count
         async with sem:
+            job_id = str(job["_id"])
+            job_title = str(job.get("title", "Unknown"))[:50]
+
+            # Atomic claim — prevents duplicate LLM calls if rate-all runs overlap
+            claimed = await db.jobs.find_one_and_update(
+                {
+                    "_id": ObjectId(job["_id"]),
+                    "crawled_by": user_id,
+                    **unrated_jobs_filter(user_id),
+                },
+                {
+                    "$set": {
+                        f"ratings.{user_id}": {
+                            "score": 0,
+                            "matched_strengths": [],
+                            "gaps": [],
+                            "verdict": _RATING_IN_PROGRESS,
+                            "auto_reject": False,
+                            "rated_at": datetime.now(timezone.utc),
+                        }
+                    }
+                },
+                return_document=ReturnDocument.BEFORE,
+            )
+            if not claimed:
+                fresh = await db.jobs.find_one(
+                    {"_id": ObjectId(job["_id"])},
+                    {f"ratings.{user_id}": 1},
+                )
+                if fresh and _should_skip_rating(fresh, user_id):
+                    skipped_count += 1
+                    print(
+                        f"[rating] [{job_id}] SKIP already rated score={_existing_rating_score(fresh, user_id)} title='{job_title}'"
+                    )
+                return 0
+
             fresh_user = await _get_fresh_user(user_id)
             if not fresh_user:
+                await db.jobs.update_one(
+                    {"_id": ObjectId(job["_id"])},
+                    {"$unset": {f"ratings.{user_id}": ""}},
+                )
                 return 0
 
             token_ok, token_msg = await check_ai_token_quota(fresh_user)
             if not token_ok:
                 print(f"[rating] Token cap hit mid-batch for {user_email}: {token_msg}")
+                await db.jobs.update_one(
+                    {"_id": ObjectId(job["_id"])},
+                    {"$unset": {f"ratings.{user_id}": ""}},
+                )
                 return 0
 
             allowed, quota_msg, _ = await check_and_increment_rating(
@@ -628,10 +786,11 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
             )
             if not allowed:
                 print(f"[rating] Rating quota exhausted for {user_email}: {quota_msg}")
+                await db.jobs.update_one(
+                    {"_id": ObjectId(job["_id"])},
+                    {"$unset": {f"ratings.{user_id}": ""}},
+                )
                 return 0
-
-            job_id = str(job["_id"])
-            job_title = str(job.get("title", "Unknown"))[:50]
             # Embedding fast-path: skip LLM for clear non-matches
             sim: float | None = None
             if cv_embedding and embeddings:
@@ -651,14 +810,19 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
                         )
                         return 1 if is_billable_rating(rating) else 0
 
-            # Full LLM rating
+            # Fast LLM rating first; full prompt only for strong matches
             llm_count += 1
             sim_str = f" sim={sim:.3f}" if sim is not None else ""
-            print(
-                f"[rating] [{job_id}] LLM-CALL (expensive){sim_str} title='{job_title}'"
-            )
+            print(f"[rating] [{job_id}] LLM-FAST{sim_str} title='{job_title}'")
             try:
-                rating = await rate_job_for_user(job, user)
+                rating = await rate_job_for_user(job, fresh_user, mode="fast")
+                fast_score = rating.get("score", 0) or 0
+                if fast_score >= FULL_RATING_SCORE_THRESHOLD:
+                    full_llm_count += 1
+                    print(
+                        f"[rating] [{job_id}] LLM-FULL (fast={fast_score}≥{FULL_RATING_SCORE_THRESHOLD}) title='{job_title}'"
+                    )
+                    rating = await rate_job_for_user(job, fresh_user, mode="full")
                 rating["rated_at"] = datetime.now(timezone.utc)
                 await db.jobs.update_one(
                     {"_id": ObjectId(job["_id"])},
@@ -675,6 +839,10 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
                 return 1 if is_billable_rating(rating) else 0
             except Exception as e:
                 await refund_rating(user_id, 1)
+                await db.jobs.update_one(
+                    {"_id": ObjectId(job["_id"])},
+                    {"$unset": {f"ratings.{user_id}": ""}},
+                )
                 error_count += 1
                 print(f"[rating] [{job_id}] UNEXPECTED ERROR during rating: {e}")
                 return 0
@@ -693,12 +861,14 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
 
     print(f"[rating] === FINISHED {user_email} ===")
     print(
-        f"[rating] [queue] Summary: total_in_queue={len(jobs)} | prefiltered(cheap,no-LLM)={prefilter_count} | llm_called(expensive)={llm_count} | errors={error_count} | successfully_stored={rated_count}"
+        f"[rating] [queue] Summary: total_in_queue={len(jobs)} | skipped(already_rated)={skipped_count} | prefiltered(cheap,no-LLM)={prefilter_count} | llm_fast={llm_count} | llm_full={full_llm_count} | errors={error_count} | successfully_stored={rated_count}"
     )
     return {
         "rated": rated_count,
+        "skipped": skipped_count,
         "prefiltered": prefilter_count,
         "llm_calls": llm_count,
+        "llm_full_calls": full_llm_count,
         "errors": error_count,
     }
 

@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     jobsapi_key: str = ""
 
     # Auto scheduler (search + rate every N hours in background)
-    auto_crawl_interval_hours: int = 12
+    auto_crawl_interval_hours: int = 24
     # Cap new jobs stored per user per auto-crawl cycle (does not consume manual search quota)
     auto_crawl_max_stored_per_cycle: int = 25
 

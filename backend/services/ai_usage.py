@@ -175,13 +175,18 @@ async def record_from_llm_response(
     operation: str,
     provider: str = "",
     model: str = "",
+    prompt_chars: int = 0,
+    completion_chars: int = 0,
 ) -> None:
     if not user_id or message is None:
         return
     usage = parse_token_usage(message)
-    if usage["total_tokens"] == 0 and usage["prompt_tokens"] == 0:
-        # Ollama / some providers omit usage — count the call anyway
-        usage["total_tokens"] = 0
+    if usage["prompt_tokens"] == 0 and prompt_chars > 0:
+        usage["prompt_tokens"] = max(prompt_chars // 4, 1)
+    if usage["completion_tokens"] == 0 and completion_chars > 0:
+        usage["completion_tokens"] = max(completion_chars // 4, 1)
+    if usage["total_tokens"] == 0:
+        usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
 
     await record_ai_usage(
         user_id,

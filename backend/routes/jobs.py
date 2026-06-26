@@ -23,6 +23,7 @@ from services.rating import (
     generate_job_brief,
     is_billable_rating,
     rate_all_jobs_for_user,
+    unrated_jobs_filter,
     rate_job_for_user,
 )
 from services.limits import (
@@ -387,9 +388,7 @@ async def rate_all(background_tasks: BackgroundTasks, user=Depends(get_current_u
     # Quick visibility into the current "rating queue" size before accepting
     pending_count = 0
     try:
-        pending_count = await db.jobs.count_documents(
-            {"crawled_by": user_id, f"ratings.{user_id}": {"$exists": False}}
-        )
+        pending_count = await db.jobs.count_documents(unrated_jobs_filter(user_id))
         print(
             f"[rating] [route] /rate-all: current pending unrated jobs in queue for user: {pending_count}"
         )

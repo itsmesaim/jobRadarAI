@@ -69,7 +69,8 @@ async def upload_cv(
                     "uploaded_at": datetime.now(timezone.utc),
                     "filename": file.filename,
                 }
-            }
+            },
+            "$unset": {"cv_embedding": ""},
         },
     )
 
@@ -100,5 +101,5 @@ async def delete_my_cv(user=Depends(get_current_user)):
     db = get_database()
     await db.users.update_one(
         {"_id": ObjectId(user["_id"])},
-        {"$unset": {"cv": ""}},
+        {"$unset": {"cv": "", "cv_embedding": ""}},
     )
