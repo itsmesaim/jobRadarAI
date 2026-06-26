@@ -44,8 +44,64 @@ if not settings.debug and is_weak_jwt_secret(settings.jwt_secret):
 async def lifespan(app: FastAPI):
     # ── startup ──
     await connect_to_mongo()
+    db = get_database()
     # enforce one account per email at the DB level
-    await get_database().users.create_index("email", unique=True)
+    await db.users.create_index("email", unique=True)
+
+    # Per-user job isolation + dedup (never share listings across accounts)
+    try:
+        await db.jobs.create_index(
+            [("crawled_by", 1), ("url_hash", 1)],
+            unique=True,
+            name="uniq_user_url_hash",
+        )
+        await db.jobs.create_index(
+            [("crawled_by", 1), ("content_fingerprint", 1)],
+            name="user_content_fingerprint",
+        )
+        await db.jobs.create_index([("crawled_by", 1), ("crawled_at", -1)])
+    except Exception as exc:
+        print(f"[startup] WARNING: job index setup failed: {exc}")
+
+    orphan_result = await db.jobs.delete_many(
+        {
+            "$or": [
+                {"crawled_by": {"$exists": False}},
+                {"crawled_by": None},
+                {"crawled_by": ""},
+            ]
+        }
+    )
+    if orphan_result.deleted_count:
+        print(
+            f"[startup] Removed {orphan_result.deleted_count} orphan job(s) "
+            "without a user owner"
+        )
+
+    # Drop older duplicate rows (same user + url_hash) before unique index
+    dup_groups = await db.jobs.aggregate(
+        [
+            {"$match": {"crawled_by": {"$exists": True, "$ne": ""}}},
+            {
+                "$group": {
+                    "_id": {"user": "$crawled_by", "url_hash": "$url_hash"},
+                    "ids": {"$push": "$_id"},
+                    "count": {"$sum": 1},
+                }
+            },
+            {"$match": {"count": {"$gt": 1}}},
+        ]
+    ).to_list(length=None)
+    dup_removed = 0
+    for group in dup_groups:
+        ids = group["ids"]
+        keep = max(ids)
+        to_delete = [oid for oid in ids if oid != keep]
+        if to_delete:
+            result = await db.jobs.delete_many({"_id": {"$in": to_delete}})
+            dup_removed += result.deleted_count
+    if dup_removed:
+        print(f"[startup] Removed {dup_removed} duplicate job(s) per user/url")
 
     if is_weak_jwt_secret(settings.jwt_secret):
         print(

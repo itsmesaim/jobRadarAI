@@ -298,8 +298,8 @@ flowchart LR
     D --> E[Search jobs]
     E --> F[Jooble + JobsAPI]
     F --> G[Store jobs in MongoDB]
-    G --> H[Pre-filter + Rating LLM (split model) rates jobs]
-    H --> I[Dashboard (with posted date) + Kanban + usage pills]
+    G --> H["Pre-filter + Rating LLM (split model) rates jobs"]
+    H --> I["Dashboard (with posted date) + Kanban + usage pills"]
 ```
 
 ### 1. Authentication

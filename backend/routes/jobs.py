@@ -9,7 +9,7 @@ POST  /jobs/rate-all     — trigger rating for all unrated jobs
 POST  /jobs/manual       — paste a JD manually and rate it instantly
 """
 
-import hashlib
+import re
 from datetime import datetime, timezone
 
 from bson import ObjectId
@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from database import get_database
 from deps import get_current_user
+from services.job_dedup import content_fingerprint, hash_url, job_exists_for_user
 from services.rating import (
     generate_job_brief,
     is_billable_rating,
@@ -87,19 +88,90 @@ def _format_job(job: dict, user_id: str) -> dict:
     }
 
 
+def _user_job_filter(user_id: str) -> dict:
+    """Mongo filter: only jobs owned by this user (never shared/orphan rows)."""
+    return {"crawled_by": user_id}
+
+
+def _build_list_query(
+    user_id: str,
+    *,
+    score_min: int,
+    score_max: int,
+    rating: str,
+    status: str | None,
+    source: str | None,
+    q: str | None,
+) -> dict:
+    """Mongo query for per-user job list (score/status/source/text in DB)."""
+    hidden_key = f"hidden_{user_id}"
+    status_key = f"status_{user_id}"
+    rating_key = f"ratings.{user_id}.score"
+
+    query: dict = {**_user_job_filter(user_id), hidden_key: {"$ne": True}}
+
+    if status:
+        query[status_key] = status
+
+    if source:
+        query["source"] = source
+
+    and_clauses: list[dict] = []
+
+    if q:
+        pattern = re.escape(q.strip())
+        if pattern:
+            and_clauses.append(
+                {
+                    "$or": [
+                        {"title": {"$regex": pattern, "$options": "i"}},
+                        {"company": {"$regex": pattern, "$options": "i"}},
+                    ]
+                }
+            )
+
+    if rating == "unrated":
+        query[f"ratings.{user_id}"] = {"$exists": False}
+    elif rating == "rated":
+        query[rating_key] = {"$gte": score_min, "$lte": score_max}
+    elif score_min > 0 or score_max < 10:
+        and_clauses.append(
+            {
+                "$or": [
+                    {rating_key: {"$gte": score_min, "$lte": score_max}},
+                    {f"ratings.{user_id}": {"$exists": False}},
+                ]
+            }
+        )
+
+    if and_clauses:
+        query["$and"] = and_clauses
+
+    return query
+
+
 def _passes_job_filters(
     job: dict,
     formatted: dict,
     *,
     score_min: int,
     score_max: int,
+    rating: str,
     status: str | None,
     source: str | None,
     q: str | None,
 ) -> bool:
     score = formatted.get("score")
-    if score is not None and (score < score_min or score > score_max):
+
+    if rating == "unrated":
+        if score is not None:
+            return False
+    elif rating == "rated":
+        if score is None or score < score_min or score > score_max:
+            return False
+    elif score is not None and (score < score_min or score > score_max):
         return False
+
     if status and formatted.get("status") != status:
         return False
     if source and job.get("source") != source:
@@ -111,12 +183,53 @@ def _passes_job_filters(
     return True
 
 
+def _dedupe_and_format_jobs(
+    jobs: list[dict],
+    user_id: str,
+    *,
+    score_min: int,
+    score_max: int,
+    rating: str,
+    status: str | None,
+    source: str | None,
+    q: str | None,
+) -> list[dict]:
+    seen_fingerprints: set[str] = set()
+    results: list[dict] = []
+    for job in jobs:
+        fp = job.get("content_fingerprint") or content_fingerprint(
+            job.get("title", ""),
+            job.get("company", ""),
+            job.get("location", ""),
+        )
+        if fp in seen_fingerprints:
+            continue
+
+        formatted = _format_job(job, user_id)
+        if not _passes_job_filters(
+            job,
+            formatted,
+            score_min=score_min,
+            score_max=score_max,
+            rating=rating,
+            status=status,
+            source=source,
+            q=q,
+        ):
+            continue
+
+        seen_fingerprints.add(fp)
+        results.append(formatted)
+    return results
+
+
 async def _list_kanban_jobs(
     db,
     user_id: str,
     *,
     score_min: int,
     score_max: int,
+    rating: str,
     status: str | None,
     source: str | None,
     q: str | None,
@@ -129,9 +242,10 @@ async def _list_kanban_jobs(
     status_key = f"status_{user_id}"
     hidden_key = f"hidden_{user_id}"
 
+    base = _user_job_filter(user_id)
     pipeline_jobs = await db.jobs.find(
         {
-            "crawled_by": user_id,
+            **base,
             status_key: {"$in": PIPELINE_STATUSES},
             hidden_key: {"$ne": True},
         }
@@ -140,7 +254,7 @@ async def _list_kanban_jobs(
     new_jobs = (
         await db.jobs.find(
             {
-                "crawled_by": user_id,
+                **base,
                 hidden_key: {"$ne": True},
                 "$or": [{status_key: {"$exists": False}}, {status_key: "NEW"}],
             }
@@ -151,35 +265,36 @@ async def _list_kanban_jobs(
     )
 
     seen_ids: set[str] = set()
-    results: list[dict] = []
+    merged: list[dict] = []
     for job in pipeline_jobs + new_jobs:
         job_id = str(job["_id"])
         if job_id in seen_ids:
             continue
         seen_ids.add(job_id)
+        merged.append(job)
 
-        formatted = _format_job(job, user_id)
-        if not _passes_job_filters(
-            job,
-            formatted,
-            score_min=score_min,
-            score_max=score_max,
-            status=status,
-            source=source,
-            q=q,
-        ):
-            continue
-        results.append(formatted)
-
-    return results
+    return _dedupe_and_format_jobs(
+        merged,
+        user_id,
+        score_min=score_min,
+        score_max=score_max,
+        rating=rating,
+        status=status,
+        source=source,
+        q=q,
+    )
 
 
 # ── LIST ─────────────────────────────────────────────────
+LIST_SCAN_CAP = 3000
+
+
 @router.get("")
 async def list_jobs(
     user=Depends(get_current_user),
     score_min: int = 0,
     score_max: int = 10,
+    rating: str = "all",
     status: str = None,
     source: str = None,
     q: str = None,
@@ -190,12 +305,19 @@ async def list_jobs(
     db = get_database()
     user_id = str(user["_id"])
 
+    if rating not in ("all", "rated", "unrated"):
+        raise HTTPException(
+            status_code=400,
+            detail="rating must be one of: all, rated, unrated",
+        )
+
     if kanban:
         results = await _list_kanban_jobs(
             db,
             user_id,
             score_min=score_min,
             score_max=score_max,
+            rating=rating,
             status=status,
             source=source,
             q=q,
@@ -207,44 +329,52 @@ async def list_jobs(
             "limit": total,
             "total": total,
             "pages": 1,
+            "account_total": await db.jobs.count_documents(
+                {**_user_job_filter(user_id), f"hidden_{user_id}": {"$ne": True}}
+            ),
         }
 
-    skip = (page - 1) * limit
+    mongo_query = _build_list_query(
+        user_id,
+        score_min=score_min,
+        score_max=score_max,
+        rating=rating,
+        status=status,
+        source=source,
+        q=q,
+    )
     all_jobs = (
-        await db.jobs.find({"crawled_by": user_id})
+        await db.jobs.find(mongo_query)
         .sort("crawled_at", -1)
-        .skip(skip)
-        .limit(limit * 5)
-        .to_list(length=limit * 5)
+        .limit(LIST_SCAN_CAP)
+        .to_list(length=LIST_SCAN_CAP)
     )
 
-    results = []
-    for job in all_jobs:
-        if job.get(f"hidden_{user_id}"):
-            continue
+    filtered = _dedupe_and_format_jobs(
+        all_jobs,
+        user_id,
+        score_min=score_min,
+        score_max=score_max,
+        rating=rating,
+        status=status,
+        source=source,
+        q=q,
+    )
 
-        formatted = _format_job(job, user_id)
-        if not _passes_job_filters(
-            job,
-            formatted,
-            score_min=score_min,
-            score_max=score_max,
-            status=status,
-            source=source,
-            q=q,
-        ):
-            continue
-        results.append(formatted)
-        if len(results) >= limit:
-            break
+    total = len(filtered)
+    skip = (page - 1) * limit
+    page_jobs = filtered[skip : skip + limit]
+    account_total = await db.jobs.count_documents(
+        {**_user_job_filter(user_id), f"hidden_{user_id}": {"$ne": True}}
+    )
 
-    total = await db.jobs.count_documents({"crawled_by": user_id})
     return {
-        "jobs": results,
+        "jobs": page_jobs,
         "page": page,
         "limit": limit,
         "total": total,
-        "pages": (total + limit - 1) // limit,
+        "pages": max(1, (total + limit - 1) // limit) if total else 1,
+        "account_total": account_total,
     }
 
 
@@ -312,19 +442,22 @@ async def add_manual_jd(payload: ManualJD, user=Depends(get_current_user)):
     db = get_database()
     user_id = str(user["_id"])
 
-    url_hash = hashlib.sha256(
-        (payload.url or payload.title + payload.company).encode()
-    ).hexdigest()
+    url_hash = hash_url(payload.url or f"{payload.title}:{payload.company}")
 
-    # per-user: allow same JD for different users
-    existing = await db.jobs.find_one({"url_hash": url_hash, "crawled_by": user_id})
-    if existing:
+    if await job_exists_for_user(
+        db,
+        user_id=user_id,
+        url=payload.url or f"{payload.title}:{payload.company}",
+        title=payload.title,
+        company=payload.company,
+    ):
         raise HTTPException(status_code=409, detail="Job already exists for you.")
 
     doc = {
         "title": f"{payload.title} — {payload.company}",
         "url": payload.url,
         "url_hash": url_hash,
+        "content_fingerprint": content_fingerprint(payload.title, payload.company),
         "snippet": payload.jd_text[:400],
         "full_text": payload.jd_text,
         "source": "manual",

@@ -23,6 +23,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { jobsApi } from "../api/index";
 import { ScoreBadge } from "../components/ScoreBadge";
+import { useAuthStore } from "../hooks/useStores";
 import type { Job, JobStatus } from "../types";
 
 const COLUMNS: { status: JobStatus; label: string; color: string }[] = [
@@ -462,10 +463,13 @@ function MobileKanbanBoard({
 export function KanbanPage() {
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
+  const { user } = useAuthStore();
+  const userId = user?.id ?? user?._id ?? "anonymous";
 
   const { data, isLoading } = useQuery({
-    queryKey: ["kanban"],
+    queryKey: ["kanban", userId],
     queryFn: () => jobsApi.list({ kanban: true }),
+    enabled: !!user,
   });
 
   const jobs = data?.jobs ?? [];
@@ -474,7 +478,7 @@ export function KanbanPage() {
     const current = jobs.find((j) => j.id === jobId);
     if (!current || current.status === targetStatus) return;
 
-    queryClient.setQueryData(["kanban"], (old: any) => {
+    queryClient.setQueryData(["kanban", userId], (old: any) => {
       if (!old) return old;
       return {
         ...old,

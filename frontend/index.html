@@ -3,8 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0c0c0e" />
+    <meta name="description" content="JobRadar — AI-powered job matching for developers" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
     <title>JobRadar</title>
+    <style>
+      html {
+        background-color: #0c0c0e;
+        color-scheme: dark;
+      }
+      html:not(.dark) {
+        background-color: #f3f5f9;
+        color-scheme: light;
+      }
+    </style>
+    <script>
+      (function () {
+        var saved = localStorage.getItem("theme");
+        var dark = saved !== "light";
+        if (dark) document.documentElement.classList.add("dark");
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute("content", dark ? "#0c0c0e" : "#f3f5f9");
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

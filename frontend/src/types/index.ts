@@ -47,12 +47,15 @@ export type JobStatus =
   | "FOLLOWUP"
   | "HALF_APPLIED";
 
+export type JobRatingFilter = "all" | "rated" | "unrated";
+
 export interface JobsResponse {
   jobs: Job[];
   page: number;
   limit: number;
   total: number;
   pages: number;
+  account_total?: number;
 }
 export interface WorkMode {
   remote: boolean;

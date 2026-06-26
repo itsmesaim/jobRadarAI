@@ -5,7 +5,6 @@ Docs: rapidapi.com/Pat92/api/jobs-api14
 """
 
 import asyncio
-import hashlib
 from datetime import datetime, timezone
 
 import httpx
@@ -13,13 +12,10 @@ from bson import ObjectId
 
 from config import settings
 from database import get_database
+from services.job_dedup import content_fingerprint, hash_url, job_exists_for_user
 
 BASE_URL = "https://jobs-api14.p.rapidapi.com"
 MIN_CONTENT_LENGTH = 200
-
-
-def _hash_url(url: str) -> str:
-    return hashlib.sha256(url.encode()).hexdigest()
 
 
 def _build_search_terms(user: dict) -> list[str]:
@@ -201,14 +197,25 @@ async def crawl_jobs_for_user_jobsapi(
                         skipped += 1
                         continue
 
-                    url_hash = _hash_url(url)
-                    # dedup per user only
-                    existing = await db.jobs.find_one(
-                        {"url_hash": url_hash, "crawled_by": str(user["_id"])}
-                    )
-                    if existing:
+                    title = job.get("title", "Unknown Role")
+                    company_obj = job.get("company", {}) or {}
+                    company = company_obj.get("name", "")
+                    location_obj = job.get("location", {}) or {}
+                    job_location = location_obj.get("location", raw_location)
+                    user_id = str(user["_id"])
+
+                    if await job_exists_for_user(
+                        db,
+                        user_id=user_id,
+                        url=url,
+                        title=title,
+                        company=company,
+                        location=job_location,
+                    ):
                         skipped += 1
                         continue
+
+                    url_hash = hash_url(url)
 
                     full_text = job.get("description", "")
                     if len(full_text) < MIN_CONTENT_LENGTH:
@@ -219,9 +226,6 @@ async def crawl_jobs_for_user_jobsapi(
                     if not _is_relevant_job(full_text, user):
                         skipped += 1
                         continue
-
-                    company_obj = job.get("company", {}) or {}
-                    location_obj = job.get("location", {}) or {}
 
                     # JobsAPI sometimes includes postedDate
                     posted_at = None
@@ -237,9 +241,12 @@ async def crawl_jobs_for_user_jobsapi(
                             posted_at = None
 
                     doc = {
-                        "title": job.get("title", "Unknown Role"),
+                        "title": title,
                         "url": url,
                         "url_hash": url_hash,
+                        "content_fingerprint": content_fingerprint(
+                            title, company, job_location
+                        ),
                         "snippet": full_text[:400],
                         "full_text": full_text,
                         "company": company_obj.get("name", ""),

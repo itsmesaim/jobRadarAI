@@ -2,6 +2,7 @@ import api from "./client";
 import type {
   Job,
   JobsResponse,
+  JobRatingFilter,
   JobStatus,
   UserPreferences,
   CVData,
@@ -41,6 +42,7 @@ export const jobsApi = {
   list: async (params?: {
     score_min?: number;
     score_max?: number;
+    rating?: JobRatingFilter;
     status?: string;
     source?: string;
     q?: string;

@@ -1,19 +1,13 @@
 import { Link, useLocation } from "react-router-dom";
-import {
-  Sun,
-  Moon,
-  LogOut,
-  LayoutGrid,
-  Kanban,
-  Settings,
-  Shield,
-} from "lucide-react";
-import { useAuthStore, useThemeStore } from "../hooks/useStores";
+import { LogOut, LayoutGrid, Kanban, Settings, Shield } from "lucide-react";
+import { useAuthStore } from "../hooks/useStores";
+import { clearUserScopedCache } from "../queryClient";
+import { Logo } from "./Logo";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function Navbar() {
   const location = useLocation();
   const logout = useAuthStore((s) => s.logout);
-  const { dark, toggle } = useThemeStore();
 
   const { user } = useAuthStore();
   const links = [
@@ -44,9 +38,7 @@ export function Navbar() {
           className="nav-brand"
           style={{ textDecoration: "none", marginRight: 36, flexShrink: 0 }}
         >
-          <span style={{ fontSize: 17, fontWeight: 700, color: "var(--text)" }}>
-            Job<span style={{ color: "var(--accent)" }}>Radar</span>
-          </span>
+          <Logo size={28} wordmarkSize={17} />
         </Link>
 
         <div
@@ -112,16 +104,10 @@ export function Navbar() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            onClick={toggle}
-            className="btn btn-ghost"
-            style={{ padding: "8px 10px" }}
-            title={dark ? "Light mode" : "Dark mode"}
-          >
-            {dark ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
+          <ThemeToggle />
           <button
             onClick={() => {
+              clearUserScopedCache();
               logout();
               window.location.href = "/login";
             }}

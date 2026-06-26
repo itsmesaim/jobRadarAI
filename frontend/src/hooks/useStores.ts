@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { getInitialTheme, persistTheme, type ThemeMode } from "../lib/theme";
 
 interface AuthState {
   token: string | null;
@@ -27,16 +28,14 @@ interface ThemeState {
   toggle: () => void;
 }
 
-const savedDark = localStorage.getItem("theme") === "dark";
-if (savedDark) document.documentElement.classList.add("dark");
+const initialTheme = getInitialTheme();
 
 export const useThemeStore = create<ThemeState>((set) => ({
-  dark: savedDark,
+  dark: initialTheme === "dark",
   toggle: () =>
     set((s) => {
-      const next = !s.dark;
-      document.documentElement.classList.toggle("dark", next);
-      localStorage.setItem("theme", next ? "dark" : "light");
-      return { dark: next };
+      const next: ThemeMode = s.dark ? "light" : "dark";
+      persistTheme(next);
+      return { dark: next === "dark" };
     }),
 }));

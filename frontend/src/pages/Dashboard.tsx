@@ -22,21 +22,81 @@ import {
 import { jobsApi, crawlerApi } from "../api/index";
 import { useAuthStore } from "../hooks/useStores";
 
-const SCORE_OPTS = [
-  { label: "Show all (incl. <6)", min: 0 },
-  { label: "6+ (default)", min: 6 },
-  { label: "7+ only", min: 7 },
-  { label: "8+ only", min: 8 },
+type ScoreFilterId = "6plus" | "7plus" | "8plus" | "below6" | "unrated" | "all";
+
+const SCORE_FILTER_OPTS: {
+  id: ScoreFilterId;
+  label: string;
+  hint: string;
+  score_min: number;
+  score_max: number;
+  rating: "all" | "rated" | "unrated";
+}[] = [
+  {
+    id: "6plus",
+    label: "6+ matches",
+    hint: "Rated 6–10 only",
+    score_min: 6,
+    score_max: 10,
+    rating: "rated",
+  },
+  {
+    id: "7plus",
+    label: "7+ strong",
+    hint: "Rated 7–10 only",
+    score_min: 7,
+    score_max: 10,
+    rating: "rated",
+  },
+  {
+    id: "8plus",
+    label: "8+ top picks",
+    hint: "Rated 8–10 only",
+    score_min: 8,
+    score_max: 10,
+    rating: "rated",
+  },
+  {
+    id: "below6",
+    label: "Below 6",
+    hint: "Rated 1–5 only",
+    score_min: 1,
+    score_max: 5,
+    rating: "rated",
+  },
+  {
+    id: "unrated",
+    label: "Not rated",
+    hint: "Waiting for AI score",
+    score_min: 0,
+    score_max: 10,
+    rating: "unrated",
+  },
+  {
+    id: "all",
+    label: "All jobs",
+    hint: "Everything in your account",
+    score_min: 0,
+    score_max: 10,
+    rating: "all",
+  },
 ];
 
 const STATUS_OPTS: { label: string; value: string | undefined }[] = [
-  { label: "All", value: undefined },
+  { label: "All statuses", value: undefined },
   { label: "New", value: "NEW" },
   { label: "Saved", value: "SAVED" },
   { label: "Applied", value: "APPLIED" },
   { label: "Interviewing", value: "INTERVIEWING" },
   { label: "Offer", value: "OFFER" },
   { label: "Rejected", value: "REJECTED" },
+];
+
+const SOURCE_OPTS: { label: string; value: string | undefined }[] = [
+  { label: "All sources", value: undefined },
+  { label: "Jooble", value: "jooble" },
+  { label: "Indeed", value: "jobsapi-indeed" },
+  { label: "Manual", value: "manual" },
 ];
 
 function formatTokens(n: number) {
@@ -47,8 +107,11 @@ function formatTokens(n: number) {
 
 export function Dashboard() {
   const { user } = useAuthStore();
-  const [scoreMin, setScoreMin] = useState(6);
+  const [scoreFilter, setScoreFilter] = useState<ScoreFilterId>("6plus");
   const [statusFilter, setStatusFilter] = useState<string | undefined>(
+    undefined,
+  );
+  const [sourceFilter, setSourceFilter] = useState<string | undefined>(
     undefined,
   );
   const [page, setPage] = useState(1);
@@ -116,12 +179,39 @@ export function Dashboard() {
     },
   });
 
+  const userId = user?.id ?? user?._id ?? "anonymous";
+  const activeScoreFilter =
+    SCORE_FILTER_OPTS.find((o) => o.id === scoreFilter) ?? SCORE_FILTER_OPTS[0];
+  const hasActiveFilters =
+    scoreFilter !== "6plus" ||
+    !!statusFilter ||
+    !!sourceFilter ||
+    !!debouncedQuery;
+  const activeFilterCount = [
+    scoreFilter !== "6plus",
+    !!statusFilter,
+    !!sourceFilter,
+    !!debouncedQuery,
+  ].filter(Boolean).length;
+
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ["jobs", scoreMin, statusFilter, page, debouncedQuery],
+    queryKey: [
+      "jobs",
+      userId,
+      scoreFilter,
+      statusFilter,
+      sourceFilter,
+      page,
+      debouncedQuery,
+    ],
+    enabled: !!user,
     queryFn: () =>
       jobsApi.list({
-        score_min: scoreMin,
+        score_min: activeScoreFilter.score_min,
+        score_max: activeScoreFilter.score_max,
+        rating: activeScoreFilter.rating,
         status: statusFilter,
+        source: sourceFilter,
         page,
         limit: 20,
         q: debouncedQuery || undefined,
@@ -279,17 +369,23 @@ export function Dashboard() {
       <div className="dash-header">
         <h1 className="page-title">Jobs</h1>
         <p className="page-subtitle">
-          Ranked listings from your searches — filter by score, status, or
-          keyword.
+          Your personal job list from your searches only — filter by score,
+          status, or keyword.
         </p>
       </div>
 
       {data && (
         <div className="dash-metrics">
           <div className="dash-metric">
-            <span className="dash-metric-label">Total saved</span>
+            <span className="dash-metric-label">
+              {hasActiveFilters ? "Matching filters" : "Total saved"}
+            </span>
             <span className="dash-metric-value">{data.total}</span>
-            <span className="dash-metric-hint">All time in your account</span>
+            <span className="dash-metric-hint">
+              {hasActiveFilters && data.account_total != null
+                ? `of ${data.account_total} in your account`
+                : "All time in your account"}
+            </span>
           </div>
           <div className="dash-metric">
             <span className="dash-metric-label">Strong on page</span>
@@ -461,7 +557,7 @@ export function Dashboard() {
           <div className="dash-reminder-actions">
             <button
               onClick={() => {
-                setScoreMin(8);
+                setScoreFilter("8plus");
                 setStatusFilter("NEW");
                 setPage(1);
               }}
@@ -559,7 +655,7 @@ export function Dashboard() {
         >
           <SlidersHorizontal size={13} />
           Filters
-          {(scoreMin > 0 || statusFilter) && (
+          {activeFilterCount > 0 && (
             <span
               style={{
                 background: "var(--accent)",
@@ -573,7 +669,7 @@ export function Dashboard() {
                 justifyContent: "center",
               }}
             >
-              {[scoreMin > 0, !!statusFilter].filter(Boolean).length}
+              {activeFilterCount}
             </span>
           )}
         </button>
@@ -594,22 +690,52 @@ export function Dashboard() {
             padding: 16,
             marginBottom: 18,
             display: "flex",
-            gap: 20,
-            flexWrap: "wrap",
+            flexDirection: "column",
+            gap: 16,
           }}
         >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>
+              Filters apply only to <strong>your</strong> saved jobs.
+            </p>
+            {hasActiveFilters && (
+              <button
+                onClick={() => {
+                  setScoreFilter("6plus");
+                  setStatusFilter(undefined);
+                  setSourceFilter(undefined);
+                  setSearchQuery("");
+                  setPage(1);
+                }}
+                className="btn btn-ghost"
+                style={{ fontSize: 12, padding: "6px 10px" }}
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+
           <div>
             <p className="label" style={{ marginBottom: 8 }}>
-              Score
+              Match score
             </p>
-            <div style={{ display: "flex", gap: 6 }}>
-              {SCORE_OPTS.map((o) => (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {SCORE_FILTER_OPTS.map((o) => (
                 <button
-                  key={o.label}
+                  key={o.id}
                   onClick={() => {
-                    setScoreMin(o.min);
+                    setScoreFilter(o.id);
                     setPage(1);
                   }}
+                  title={o.hint}
                   style={{
                     padding: "6px 12px",
                     fontSize: 13,
@@ -617,12 +743,12 @@ export function Dashboard() {
                     cursor: "pointer",
                     border: "none",
                     background:
-                      scoreMin === o.min
+                      scoreFilter === o.id
                         ? "var(--accent)"
                         : "var(--bg-secondary)",
                     color:
-                      scoreMin === o.min ? "#fff" : "var(--text-secondary)",
-                    fontWeight: scoreMin === o.min ? 600 : 400,
+                      scoreFilter === o.id ? "#fff" : "var(--text-secondary)",
+                    fontWeight: scoreFilter === o.id ? 600 : 400,
                     transition: "all 0.15s",
                   }}
                 >
@@ -630,41 +756,94 @@ export function Dashboard() {
                 </button>
               ))}
             </div>
+            <p
+              style={{
+                margin: "8px 0 0",
+                fontSize: 12,
+                color: "var(--text-muted)",
+              }}
+            >
+              {activeScoreFilter.hint}
+            </p>
           </div>
 
-          <div>
-            <p className="label" style={{ marginBottom: 8 }}>
-              Status
-            </p>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {STATUS_OPTS.map((o) => (
-                <button
-                  key={o.label}
-                  onClick={() => {
-                    setStatusFilter(o.value);
-                    setPage(1);
-                  }}
-                  style={{
-                    padding: "6px 12px",
-                    fontSize: 13,
-                    borderRadius: 8,
-                    cursor: "pointer",
-                    border: "none",
-                    background:
-                      statusFilter === o.value
-                        ? "var(--accent)"
-                        : "var(--bg-secondary)",
-                    color:
-                      statusFilter === o.value
-                        ? "#fff"
-                        : "var(--text-secondary)",
-                    fontWeight: statusFilter === o.value ? 600 : 400,
-                    transition: "all 0.15s",
-                  }}
-                >
-                  {o.label}
-                </button>
-              ))}
+          <div
+            style={{
+              display: "flex",
+              gap: 20,
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <p className="label" style={{ marginBottom: 8 }}>
+                Status
+              </p>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {STATUS_OPTS.map((o) => (
+                  <button
+                    key={o.label}
+                    onClick={() => {
+                      setStatusFilter(o.value);
+                      setPage(1);
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: 13,
+                      borderRadius: 8,
+                      cursor: "pointer",
+                      border: "none",
+                      background:
+                        statusFilter === o.value
+                          ? "var(--accent)"
+                          : "var(--bg-secondary)",
+                      color:
+                        statusFilter === o.value
+                          ? "#fff"
+                          : "var(--text-secondary)",
+                      fontWeight: statusFilter === o.value ? 600 : 400,
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="label" style={{ marginBottom: 8 }}>
+                Source
+              </p>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {SOURCE_OPTS.map((o) => (
+                  <button
+                    key={o.label}
+                    onClick={() => {
+                      setSourceFilter(o.value);
+                      setPage(1);
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: 13,
+                      borderRadius: 8,
+                      cursor: "pointer",
+                      border: "none",
+                      background:
+                        sourceFilter === o.value
+                          ? "var(--accent)"
+                          : "var(--bg-secondary)",
+                      color:
+                        sourceFilter === o.value
+                          ? "#fff"
+                          : "var(--text-secondary)",
+                      fontWeight: sourceFilter === o.value ? 600 : 400,
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -690,7 +869,9 @@ export function Dashboard() {
               marginBottom: 18,
             }}
           >
-            No jobs found. Search to discover new roles.
+            {hasActiveFilters
+              ? "No jobs match your current filters. Try clearing filters or broadening the score range."
+              : "No jobs found. Search to discover new roles."}
           </p>
           <button
             onClick={() => crawlMutation.mutate()}

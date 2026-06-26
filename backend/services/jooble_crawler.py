@@ -8,7 +8,6 @@ Docs: https://jooble.org/api/about
 
 import asyncio
 import re
-import hashlib
 from datetime import datetime, timezone, timedelta
 
 import httpx
@@ -16,12 +15,9 @@ from bson import ObjectId
 
 from config import settings
 from database import get_database
+from services.job_dedup import content_fingerprint, hash_url, job_exists_for_user
 
 JOOBLE_BASE = "https://jooble.org/api"
-
-
-def _hash_url(url: str) -> str:
-    return hashlib.sha256(url.encode()).hexdigest()
 
 
 def _build_search_terms(user: dict) -> list[str]:
@@ -29,7 +25,6 @@ def _build_search_terms(user: dict) -> list[str]:
     secondary_roles = user.get("secondary_roles", [])
     roles = [primary_role] + secondary_roles
 
-    # Pull key skills (from prefs or CV) to make searches much more relevant
     key_skills = user.get("key_skills", [])
     if not key_skills:
         cv = user.get("cv", {})
@@ -50,20 +45,18 @@ def _build_search_terms(user: dict) -> list[str]:
     for role in roles:
         terms.append(role)
         if key_skills:
-            # Create more targeted keyword strings (Jooble handles this well)
             for skill in key_skills[:3]:
                 terms.append(f"{role} {skill}")
             if len(key_skills) >= 2:
                 terms.append(f"{key_skills[0]} {key_skills[1]} {role}")
 
-    # dedupe while preserving order
     seen = set()
     unique = []
     for t in terms:
         if t not in seen:
             seen.add(t)
             unique.append(t)
-    return unique[:12]  # cap to avoid too many API calls
+    return unique[:12]
 
 
 def _clean_html(text: str) -> str:
@@ -130,15 +123,22 @@ async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) 
                         break
                     found += 1
                     url = job.get("link", "")
-                    url_hash = _hash_url(url)
+                    title = job.get("title", "Unknown Role")
+                    company = job.get("company", "")
+                    user_id = str(user["_id"])
 
-                    # dedup per user only
-                    existing = await db.jobs.find_one(
-                        {"url_hash": url_hash, "crawled_by": str(user["_id"])}
-                    )
-                    if existing:
+                    if await job_exists_for_user(
+                        db,
+                        user_id=user_id,
+                        url=url,
+                        title=title,
+                        company=company,
+                        location=job.get("location", raw_location),
+                    ):
                         skipped += 1
                         continue
+
+                    url_hash = hash_url(url)
 
                     # date filter — skip older than 30 days
                     updated_str = job.get("updated", "")
@@ -179,9 +179,12 @@ async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) 
                             posted_at = None
 
                     doc = {
-                        "title": job.get("title", "Unknown Role"),
+                        "title": title,
                         "url": url,
                         "url_hash": url_hash,
+                        "content_fingerprint": content_fingerprint(
+                            title, company, job.get("location", raw_location)
+                        ),
                         "snippet": snippet[:400],
                         "full_text": full_text,
                         "company": job.get("company", ""),
@@ -205,21 +208,10 @@ async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) 
     return {"found": found, "stored": stored, "skipped": skipped}
 
 
-async def _fetch_full_text(client: httpx.AsyncClient, url: str) -> str:
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; JobRadarBot/1.0)"}
-        r = await client.get(url, headers=headers, follow_redirects=True, timeout=10)
-        if r.status_code == 200:
-            return r.text[:8000]
-    except Exception:
-        pass
-    return ""
-
-
 def _is_relevant_job(
     full_text: str, snippet: str, user: dict, cv_embedding: list = None
 ) -> bool:
-    """Keyword-based relevance gate before storing. (Heavy sim filtering happens in rating pre-filter.)"""
+    """Keyword-based relevance gate before storing."""
     text = (full_text + " " + snippet).lower()
 
     key_skills = user.get("key_skills", [])
@@ -237,3 +229,14 @@ def _is_relevant_job(
             return False
 
     return True
+
+
+async def _fetch_full_text(client: httpx.AsyncClient, url: str) -> str:
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; JobRadarBot/1.0)"}
+        r = await client.get(url, headers=headers, follow_redirects=True, timeout=10)
+        if r.status_code == 200:
+            return r.text[:8000]
+    except Exception:
+        pass
+    return ""
