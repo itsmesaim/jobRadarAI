@@ -9,12 +9,7 @@ type AuthPageShellProps = {
   showBrand?: boolean;
 };
 
-export function AuthPageShell({
-  children,
-  title,
-  subtitle,
-  showBrand = true,
-}: AuthPageShellProps) {
+export function AuthPageShell({ children, title, subtitle, showBrand = true }: AuthPageShellProps) {
   return (
     <div
       style={{

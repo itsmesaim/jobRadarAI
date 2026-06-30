@@ -10,6 +10,8 @@ import {
   Loader,
   Zap,
   Cpu,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { JobCard } from "../components/JobCard";
@@ -23,6 +25,7 @@ import { jobsApi, crawlerApi } from "../api/index";
 import { useAuthStore } from "../hooks/useStores";
 
 type ScoreFilterId = "6plus" | "7plus" | "8plus" | "below6" | "unrated" | "all";
+type ViewMode = "active" | "all";
 
 const SCORE_FILTER_OPTS: {
   id: ScoreFilterId;
@@ -34,24 +37,24 @@ const SCORE_FILTER_OPTS: {
 }[] = [
   {
     id: "6plus",
-    label: "6+ matches",
-    hint: "Rated 6–10 only",
+    label: "6+",
+    hint: "Score 6–10",
     score_min: 6,
     score_max: 10,
     rating: "rated",
   },
   {
     id: "7plus",
-    label: "7+ strong",
-    hint: "Rated 7–10 only",
+    label: "7+",
+    hint: "Score 7–10 — strong matches",
     score_min: 7,
     score_max: 10,
     rating: "rated",
   },
   {
     id: "8plus",
-    label: "8+ top picks",
-    hint: "Rated 8–10 only",
+    label: "8+",
+    hint: "Score 8–10 — top picks",
     score_min: 8,
     score_max: 10,
     rating: "rated",
@@ -59,14 +62,14 @@ const SCORE_FILTER_OPTS: {
   {
     id: "below6",
     label: "Below 6",
-    hint: "Rated 1–5 only",
+    hint: "Score 1–5",
     score_min: 1,
     score_max: 5,
     rating: "rated",
   },
   {
     id: "unrated",
-    label: "Not rated",
+    label: "Unrated",
     hint: "Waiting for AI score",
     score_min: 0,
     score_max: 10,
@@ -74,8 +77,8 @@ const SCORE_FILTER_OPTS: {
   },
   {
     id: "all",
-    label: "All jobs",
-    hint: "Everything in your account",
+    label: "All scores",
+    hint: "Every job in your account",
     score_min: 0,
     score_max: 10,
     rating: "all",
@@ -83,10 +86,12 @@ const SCORE_FILTER_OPTS: {
 ];
 
 const STATUS_OPTS: { label: string; value: string | undefined }[] = [
-  { label: "All statuses", value: undefined },
+  { label: "All", value: undefined },
   { label: "New", value: "NEW" },
   { label: "Saved", value: "SAVED" },
+  { label: "Half applied", value: "HALF_APPLIED" },
   { label: "Applied", value: "APPLIED" },
+  { label: "Follow up", value: "FOLLOWUP" },
   { label: "Interviewing", value: "INTERVIEWING" },
   { label: "Offer", value: "OFFER" },
   { label: "Rejected", value: "REJECTED" },
@@ -105,21 +110,128 @@ function formatTokens(n: number) {
   return String(n);
 }
 
+function Pagination({
+  page,
+  totalPages,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  onPage: (p: number) => void;
+}) {
+  const pages: (number | "…")[] = [];
+
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (page > 3) pages.push("…");
+    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.push(i);
+    if (page < totalPages - 2) pages.push("…");
+    pages.push(totalPages);
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 4,
+        marginTop: 32,
+        flexWrap: "wrap",
+      }}
+    >
+      <button
+        onClick={() => onPage(page - 1)}
+        disabled={page === 1}
+        className="btn btn-ghost"
+        style={{ padding: "8px 14px", fontSize: 13, gap: 4 }}
+      >
+        <ChevronLeft size={14} /> Prev
+      </button>
+
+      {pages.map((p, i) =>
+        p === "…" ? (
+          <span
+            key={`e${i}`}
+            style={{
+              padding: "8px 6px",
+              color: "var(--text-muted)",
+              fontSize: 13,
+            }}
+          >
+            …
+          </span>
+        ) : (
+          <button
+            key={p}
+            onClick={() => onPage(p as number)}
+            className={p === page ? "btn btn-primary" : "btn btn-ghost"}
+            style={{
+              padding: "8px 0",
+              minWidth: 36,
+              fontSize: 13,
+              justifyContent: "center",
+            }}
+          >
+            {p}
+          </button>
+        ),
+      )}
+
+      <button
+        onClick={() => onPage(page + 1)}
+        disabled={page === totalPages}
+        className="btn btn-ghost"
+        style={{ padding: "8px 14px", fontSize: 13, gap: 4 }}
+      >
+        Next <ChevronRight size={14} />
+      </button>
+    </div>
+  );
+}
+
+function FilterChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "5px 12px",
+        fontSize: 12.5,
+        borderRadius: 20,
+        cursor: "pointer",
+        border: active ? "none" : "1px solid var(--border)",
+        background: active ? "var(--accent)" : "var(--bg-secondary)",
+        color: active ? "#fff" : "var(--text-secondary)",
+        fontWeight: active ? 600 : 400,
+        transition: "all 0.15s",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function Dashboard() {
   const { user } = useAuthStore();
   const [scoreFilter, setScoreFilter] = useState<ScoreFilterId>("6plus");
-  const [statusFilter, setStatusFilter] = useState<string | undefined>(
-    undefined,
-  );
-  const [sourceFilter, setSourceFilter] = useState<string | undefined>(
-    undefined,
-  );
+  const [viewMode, setViewMode] = useState<ViewMode>("active");
+  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [sourceFilter, setSourceFilter] = useState<string | undefined>(undefined);
   const [page, setPage] = useState(1);
   const [showManual, setShowManual] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [reminderDismissed, setReminderDismissed] = useState(false);
-
-  // search-within-list state
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [limitModalKind, setLimitModalKind] = useState<LimitKind | null>(null);
@@ -159,13 +271,9 @@ export function Dashboard() {
       toast(`Rating up to ${willRate} job${willRate === 1 ? "" : "s"}...`, {
         duration: 4000,
       });
-
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      const intervals = [2000, 4000, 7000, 10000, 15000, 20000, 30000];
-      intervals.forEach((delay) => {
-        setTimeout(() => {
-          queryClient.invalidateQueries({ queryKey: ["jobs"] });
-        }, delay);
+      [2000, 4000, 7000, 10000, 15000, 20000, 30000].forEach((delay) => {
+        setTimeout(() => queryClient.invalidateQueries({ queryKey: ["jobs"] }), delay);
       });
     },
     onError: (err: any) => {
@@ -182,11 +290,17 @@ export function Dashboard() {
   const userId = user?.id ?? user?._id ?? "anonymous";
   const activeScoreFilter =
     SCORE_FILTER_OPTS.find((o) => o.id === scoreFilter) ?? SCORE_FILTER_OPTS[0];
+
+  // exclude_terminal = active view + no specific status selected
+  const excludeTerminal = viewMode === "active" && !statusFilter;
+
   const hasActiveFilters =
     scoreFilter !== "6plus" ||
     !!statusFilter ||
     !!sourceFilter ||
-    !!debouncedQuery;
+    !!debouncedQuery ||
+    viewMode !== "active";
+
   const activeFilterCount = [
     scoreFilter !== "6plus",
     !!statusFilter,
@@ -203,6 +317,7 @@ export function Dashboard() {
       sourceFilter,
       page,
       debouncedQuery,
+      viewMode,
     ],
     enabled: !!user,
     queryFn: () =>
@@ -215,6 +330,7 @@ export function Dashboard() {
         page,
         limit: 20,
         q: debouncedQuery || undefined,
+        exclude_terminal: excludeTerminal,
       }),
     refetchInterval: 30000,
   });
@@ -234,10 +350,7 @@ export function Dashboard() {
         const isFullAccess = !!status.full_access;
         const ratingsLeft = isFullAccess
           ? 999
-          : Math.max(
-              0,
-              (status.rating_limit ?? 0) - (status.ratings_used ?? 0),
-            );
+          : Math.max(0, (status.rating_limit ?? 0) - (status.ratings_used ?? 0));
         const tokensBlocked =
           !status.token_quota_unlimited &&
           (status.daily_token_limit ?? 0) > 0 &&
@@ -257,15 +370,11 @@ export function Dashboard() {
         const r = await jobsApi.rateAll();
         const willRate = r?.will_rate_up_to ?? r?.queued ?? 0;
         if (willRate > 0) {
-          toast(
-            `Rating up to ${willRate} new job${willRate === 1 ? "" : "s"}...`,
-            { duration: 3000 },
-          );
-          const intervals = [2000, 4000, 7000, 10000, 15000, 20000, 30000];
-          intervals.forEach((delay) => {
-            setTimeout(() => {
-              queryClient.invalidateQueries({ queryKey: ["jobs"] });
-            }, delay);
+          toast(`Rating up to ${willRate} new job${willRate === 1 ? "" : "s"}...`, {
+            duration: 3000,
+          });
+          [2000, 4000, 7000, 10000, 15000, 20000, 30000].forEach((delay) => {
+            setTimeout(() => queryClient.invalidateQueries({ queryKey: ["jobs"] }), delay);
           });
         }
       } catch (err: any) {
@@ -301,13 +410,10 @@ export function Dashboard() {
   const isFull =
     usage &&
     (usage.full_access ||
-      (usage.full_access_until &&
-        new Date(usage.full_access_until) > new Date()));
+      (usage.full_access_until && new Date(usage.full_access_until) > new Date()));
   const ratingsUsed = usage?.ratings_used ?? 0;
   const ratingsLimit = usage?.rating_limit ?? 10;
-  const ratingsRemaining = isFull
-    ? 999
-    : Math.max(0, ratingsLimit - ratingsUsed);
+  const ratingsRemaining = isFull ? 999 : Math.max(0, ratingsLimit - ratingsUsed);
   const isRatingsLimited = !isFull && ratingsUsed >= ratingsLimit;
 
   const dailyTokensUsed = usage?.daily_tokens_used ?? 0;
@@ -315,62 +421,64 @@ export function Dashboard() {
   const monthlyTokensUsed = usage?.monthly_tokens_used ?? 0;
   const monthlyTokenLimit = usage?.monthly_token_limit ?? 0;
   const tokensUnlimited =
-    isFull ||
-    usage?.token_quota_unlimited ||
-    (dailyTokenLimit <= 0 && monthlyTokenLimit <= 0);
+    isFull || usage?.token_quota_unlimited || (dailyTokenLimit <= 0 && monthlyTokenLimit <= 0);
   const dailyTokensRemaining =
     dailyTokenLimit > 0 ? Math.max(0, dailyTokenLimit - dailyTokensUsed) : null;
   const monthlyTokensRemaining =
-    monthlyTokenLimit > 0
-      ? Math.max(0, monthlyTokenLimit - monthlyTokensUsed)
-      : null;
+    monthlyTokenLimit > 0 ? Math.max(0, monthlyTokenLimit - monthlyTokensUsed) : null;
   const isDailyTokensLimited =
     !tokensUnlimited && dailyTokenLimit > 0 && dailyTokensRemaining === 0;
   const isMonthlyTokensLimited =
     !tokensUnlimited && monthlyTokenLimit > 0 && monthlyTokensRemaining === 0;
   const isTokensLimited = isDailyTokensLimited || isMonthlyTokensLimited;
-  const tokenLimitKind: LimitKind = isMonthlyTokensLimited
-    ? "token_monthly"
-    : "token_daily";
+  const tokenLimitKind: LimitKind = isMonthlyTokensLimited ? "token_monthly" : "token_daily";
 
   const searchesUsed = usage?.searches_used ?? 0;
   const searchesLimit = usage?.search_limit ?? 5;
-  const searchesRemaining = isFull
-    ? 999
-    : Math.max(0, searchesLimit - searchesUsed);
+  const searchesRemaining = isFull ? 999 : Math.max(0, searchesLimit - searchesUsed);
 
   const canRate = user?.isAdmin || (ratingsRemaining > 0 && !isTokensLimited);
-  const canSearch =
-    user?.isAdmin || (searchesRemaining > 0 && !isTokensLimited);
+  const canSearch = user?.isAdmin || (searchesRemaining > 0 && !isTokensLimited);
 
   const jobs = data?.jobs ?? [];
   const totalPages = data?.pages ?? 1;
 
-  const highScoreUnaplied = jobs.filter(
-    (j) => (j.score ?? 0) >= 8 && j.status === "NEW",
-  );
-  const showReminder = !reminderDismissed && highScoreUnaplied.length >= 2;
+  const highScoreUnapplied = jobs.filter((j) => (j.score ?? 0) >= 8 && j.status === "NEW");
+  const showReminder = !reminderDismissed && highScoreUnapplied.length >= 2;
 
   const strongOnPage = jobs.filter((j) => (j.score ?? 0) >= 7).length;
   const appliedOnPage = jobs.filter((j) => j.status === "APPLIED").length;
-  const searchUsedPct = isFull
-    ? 0
-    : Math.round((searchesUsed / Math.max(searchesLimit, 1)) * 100);
-  const ratingUsedPct = isFull
-    ? 0
-    : Math.round((ratingsUsed / Math.max(ratingsLimit, 1)) * 100);
+  const searchUsedPct = isFull ? 0 : Math.round((searchesUsed / Math.max(searchesLimit, 1)) * 100);
+  const ratingUsedPct = isFull ? 0 : Math.round((ratingsUsed / Math.max(ratingsLimit, 1)) * 100);
   const tokenUsedPct =
-    dailyTokenLimit > 0
-      ? Math.round((dailyTokensUsed / dailyTokenLimit) * 100)
-      : 0;
+    dailyTokenLimit > 0 ? Math.round((dailyTokensUsed / dailyTokenLimit) * 100) : 0;
+
+  const handleStatusFilter = (val: string | undefined) => {
+    setStatusFilter(val);
+    // when picking a specific terminal status, switch to "all" view so it shows
+    if (val === "APPLIED" || val === "REJECTED" || val === "OFFER") {
+      setViewMode("all");
+    }
+    setPage(1);
+  };
+
+  const clearAllFilters = () => {
+    setScoreFilter("6plus");
+    setStatusFilter(undefined);
+    setSourceFilter(undefined);
+    setSearchQuery("");
+    setViewMode("active");
+    setPage(1);
+  };
 
   return (
     <div className="page-shell">
       <div className="dash-header">
         <h1 className="page-title">Jobs</h1>
         <p className="page-subtitle">
-          Your personal job list from your searches only — filter by score,
-          status, or keyword.
+          {viewMode === "active"
+            ? "Active opportunities — Applied, Rejected, and Offers are hidden. Switch to All to see them."
+            : "All your saved jobs — filter by score, status, or keyword."}
         </p>
       </div>
 
@@ -378,33 +486,35 @@ export function Dashboard() {
         <div className="dash-metrics">
           <div className="dash-metric">
             <span className="dash-metric-label">
-              {hasActiveFilters ? "Matching filters" : "Total saved"}
+              {hasActiveFilters
+                ? "Matching filters"
+                : viewMode === "active"
+                  ? "Active jobs"
+                  : "Total saved"}
             </span>
             <span className="dash-metric-value">{data.total}</span>
             <span className="dash-metric-hint">
-              {hasActiveFilters && data.account_total != null
-                ? `of ${data.account_total} in your account`
-                : "All time in your account"}
+              {data.account_total != null ? `of ${data.account_total} in account` : "All time"}
             </span>
           </div>
           <div className="dash-metric">
             <span className="dash-metric-label">Strong on page</span>
             <span className="dash-metric-value is-success">{strongOnPage}</span>
-            <span className="dash-metric-hint">Score 7+ in current view</span>
+            <span className="dash-metric-hint">Score 7+ in view</span>
           </div>
           <div className="dash-metric">
             <span className="dash-metric-label">Apply soon</span>
             <span
-              className={`dash-metric-value${highScoreUnaplied.length > 0 ? " is-warning" : ""}`}
+              className={`dash-metric-value${highScoreUnapplied.length > 0 ? " is-warning" : ""}`}
             >
-              {highScoreUnaplied.length}
+              {highScoreUnapplied.length}
             </span>
             <span className="dash-metric-hint">8+ still marked New</span>
           </div>
           <div className="dash-metric">
             <span className="dash-metric-label">Applied on page</span>
             <span className="dash-metric-value">{appliedOnPage}</span>
-            <span className="dash-metric-hint">In your active pipeline</span>
+            <span className="dash-metric-hint">In your pipeline</span>
           </div>
         </div>
       )}
@@ -430,11 +540,7 @@ export function Dashboard() {
 
             <div
               className={`dash-usage-item${
-                isRatingsLimited
-                  ? " is-limit"
-                  : ratingsRemaining <= 2 && !isFull
-                    ? " is-warn"
-                    : ""
+                isRatingsLimited ? " is-limit" : ratingsRemaining <= 2 && !isFull ? " is-warn" : ""
               }`}
             >
               <div className="dash-usage-label">
@@ -479,8 +585,7 @@ export function Dashboard() {
                   <Cpu size={12} /> AI tokens today
                 </div>
                 <div className="dash-usage-value">
-                  {formatTokens(dailyTokensUsed)} /{" "}
-                  {formatTokens(dailyTokenLimit)}
+                  {formatTokens(dailyTokensUsed)} / {formatTokens(dailyTokenLimit)}
                 </div>
                 <div className="dash-usage-bar">
                   <span style={{ width: `${Math.min(100, tokenUsedPct)}%` }} />
@@ -517,8 +622,7 @@ export function Dashboard() {
                 cursor: "pointer",
               }}
             >
-              <AlertCircle size={12} /> Rating limit reached — click to request
-              more access
+              <AlertCircle size={12} /> Rating limit reached — click to request more access
             </div>
           )}
 
@@ -546,19 +650,17 @@ export function Dashboard() {
 
       {showReminder && (
         <div className="dash-reminder">
-          <AlertCircle
-            size={18}
-            style={{ color: "var(--warning)", flexShrink: 0 }}
-          />
+          <AlertCircle size={18} style={{ color: "var(--warning)", flexShrink: 0 }} />
           <p className="dash-reminder-text">
-            <strong>Hey!</strong> {highScoreUnaplied.length} jobs scoring 8+/10
-            are sitting unapplied. Don&apos;t let good opportunities slip by.
+            <strong>Hey!</strong> {highScoreUnapplied.length} jobs scoring 8+/10 are sitting
+            unapplied. Don&apos;t let good opportunities slip by.
           </p>
           <div className="dash-reminder-actions">
             <button
               onClick={() => {
                 setScoreFilter("8plus");
                 setStatusFilter("NEW");
+                setViewMode("all");
                 setPage(1);
               }}
               className="btn btn-secondary"
@@ -582,6 +684,7 @@ export function Dashboard() {
         </div>
       )}
 
+      {/* Toolbar */}
       <div className="dash-toolbar">
         <button onClick={() => setShowManual(true)} className="btn btn-ghost">
           <Plus size={14} /> Paste JD
@@ -602,7 +705,7 @@ export function Dashboard() {
           {crawlMutation.isPending
             ? "Searching..."
             : isFull
-              ? "Search jobs (unlimited)"
+              ? "Search jobs"
               : `Search jobs (${searchesRemaining} left)`}
         </button>
 
@@ -623,11 +726,7 @@ export function Dashboard() {
               <Loader size={14} className="animate-spin" /> Rating...
             </>
           ) : canRate ? (
-            <>
-              {isFull
-                ? "Rate now (unlimited)"
-                : `Rate now (${ratingsRemaining} left)`}
-            </>
+            <>{isFull ? "Rate now" : `Rate now (${ratingsRemaining} left)`}</>
           ) : isTokensLimited ? (
             <>AI limit reached</>
           ) : (
@@ -649,10 +748,7 @@ export function Dashboard() {
 
         <div style={{ flex: 1 }} />
 
-        <button
-          onClick={() => setShowFilters(!showFilters)}
-          className="btn btn-ghost"
-        >
+        <button onClick={() => setShowFilters(!showFilters)} className="btn btn-ghost">
           <SlidersHorizontal size={13} />
           Filters
           {activeFilterCount > 0 && (
@@ -674,15 +770,119 @@ export function Dashboard() {
           )}
         </button>
 
-        <button
-          onClick={() => refetch()}
-          className="btn btn-ghost"
-          style={{ padding: "9px 11px" }}
-        >
+        <button onClick={() => refetch()} className="btn btn-ghost" style={{ padding: "9px 11px" }}>
           <RefreshCw size={14} />
         </button>
       </div>
 
+      {/* Always-visible filter bar: score chips + Active/All toggle — two rows so mobile never overlaps */}
+      <div
+        style={{
+          marginBottom: 14,
+          paddingBottom: 14,
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
+        {/* Row 1: score chips */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            flexWrap: "wrap",
+            marginBottom: 10,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 11.5,
+              color: "var(--text-muted)",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Score
+          </span>
+          {SCORE_FILTER_OPTS.map((o) => (
+            <FilterChip
+              key={o.id}
+              label={o.label}
+              active={scoreFilter === o.id}
+              onClick={() => {
+                setScoreFilter(o.id);
+                setPage(1);
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Row 2: view mode toggle — always on its own line, right-aligned */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+          }}
+        >
+          <span style={{ fontSize: 12, color: "var(--text-muted)", marginRight: 8 }}>Show:</span>
+          <div
+            style={{
+              display: "flex",
+              gap: 2,
+              background: "var(--bg-secondary)",
+              borderRadius: 20,
+              padding: 3,
+              border: "1px solid var(--border)",
+            }}
+          >
+            <button
+              onClick={() => {
+                setViewMode("active");
+                setStatusFilter(undefined);
+                setPage(1);
+              }}
+              style={{
+                padding: "4px 14px",
+                borderRadius: 20,
+                border: "none",
+                fontSize: 12,
+                cursor: "pointer",
+                background: viewMode === "active" ? "var(--bg-card)" : "transparent",
+                color: viewMode === "active" ? "var(--text)" : "var(--text-muted)",
+                fontWeight: viewMode === "active" ? 600 : 400,
+                boxShadow: viewMode === "active" ? "var(--shadow-sm)" : "none",
+                transition: "all 0.15s",
+              }}
+            >
+              Active
+            </button>
+            <button
+              onClick={() => {
+                setViewMode("all");
+                setPage(1);
+              }}
+              style={{
+                padding: "4px 14px",
+                borderRadius: 20,
+                border: "none",
+                fontSize: 12,
+                cursor: "pointer",
+                background: viewMode === "all" ? "var(--bg-card)" : "transparent",
+                color: viewMode === "all" ? "var(--text)" : "var(--text-muted)",
+                fontWeight: viewMode === "all" ? 600 : 400,
+                boxShadow: viewMode === "all" ? "var(--shadow-sm)" : "none",
+                transition: "all 0.15s",
+              }}
+            >
+              All
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Expandable filter panel — status + source */}
       {showFilters && (
         <div
           className="card"
@@ -704,108 +904,32 @@ export function Dashboard() {
             }}
           >
             <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>
-              Filters apply only to <strong>your</strong> saved jobs.
+              Advanced filters — applied on top of score and view mode above.
             </p>
             {hasActiveFilters && (
               <button
-                onClick={() => {
-                  setScoreFilter("6plus");
-                  setStatusFilter(undefined);
-                  setSourceFilter(undefined);
-                  setSearchQuery("");
-                  setPage(1);
-                }}
+                onClick={clearAllFilters}
                 className="btn btn-ghost"
                 style={{ fontSize: 12, padding: "6px 10px" }}
               >
-                Clear filters
+                Clear all
               </button>
             )}
           </div>
 
-          <div>
-            <p className="label" style={{ marginBottom: 8 }}>
-              Match score
-            </p>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {SCORE_FILTER_OPTS.map((o) => (
-                <button
-                  key={o.id}
-                  onClick={() => {
-                    setScoreFilter(o.id);
-                    setPage(1);
-                  }}
-                  title={o.hint}
-                  style={{
-                    padding: "6px 12px",
-                    fontSize: 13,
-                    borderRadius: 8,
-                    cursor: "pointer",
-                    border: "none",
-                    background:
-                      scoreFilter === o.id
-                        ? "var(--accent)"
-                        : "var(--bg-secondary)",
-                    color:
-                      scoreFilter === o.id ? "#fff" : "var(--text-secondary)",
-                    fontWeight: scoreFilter === o.id ? 600 : 400,
-                    transition: "all 0.15s",
-                  }}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
-            <p
-              style={{
-                margin: "8px 0 0",
-                fontSize: 12,
-                color: "var(--text-muted)",
-              }}
-            >
-              {activeScoreFilter.hint}
-            </p>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              gap: 20,
-              flexWrap: "wrap",
-            }}
-          >
+          <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
             <div>
               <p className="label" style={{ marginBottom: 8 }}>
                 Status
               </p>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {STATUS_OPTS.map((o) => (
-                  <button
+                  <FilterChip
                     key={o.label}
-                    onClick={() => {
-                      setStatusFilter(o.value);
-                      setPage(1);
-                    }}
-                    style={{
-                      padding: "6px 12px",
-                      fontSize: 13,
-                      borderRadius: 8,
-                      cursor: "pointer",
-                      border: "none",
-                      background:
-                        statusFilter === o.value
-                          ? "var(--accent)"
-                          : "var(--bg-secondary)",
-                      color:
-                        statusFilter === o.value
-                          ? "#fff"
-                          : "var(--text-secondary)",
-                      fontWeight: statusFilter === o.value ? 600 : 400,
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    {o.label}
-                  </button>
+                    label={o.label}
+                    active={statusFilter === o.value}
+                    onClick={() => handleStatusFilter(o.value)}
+                  />
                 ))}
               </div>
             </div>
@@ -816,32 +940,15 @@ export function Dashboard() {
               </p>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {SOURCE_OPTS.map((o) => (
-                  <button
+                  <FilterChip
                     key={o.label}
+                    label={o.label}
+                    active={sourceFilter === o.value}
                     onClick={() => {
                       setSourceFilter(o.value);
                       setPage(1);
                     }}
-                    style={{
-                      padding: "6px 12px",
-                      fontSize: 13,
-                      borderRadius: 8,
-                      cursor: "pointer",
-                      border: "none",
-                      background:
-                        sourceFilter === o.value
-                          ? "var(--accent)"
-                          : "var(--bg-secondary)",
-                      color:
-                        sourceFilter === o.value
-                          ? "#fff"
-                          : "var(--text-secondary)",
-                      fontWeight: sourceFilter === o.value ? 600 : 400,
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    {o.label}
-                  </button>
+                  />
                 ))}
               </div>
             </div>
@@ -870,15 +977,40 @@ export function Dashboard() {
             }}
           >
             {hasActiveFilters
-              ? "No jobs match your current filters. Try clearing filters or broadening the score range."
+              ? viewMode === "active"
+                ? "No active jobs match these filters. Try switching to All to include Applied and Rejected, or clear filters."
+                : "No jobs match your current filters. Try clearing filters or broadening the score range."
               : "No jobs found. Search to discover new roles."}
           </p>
-          <button
-            onClick={() => crawlMutation.mutate()}
-            className="btn btn-primary"
-          >
-            <Search size={14} /> Search for jobs
-          </button>
+          {!hasActiveFilters ? (
+            <button onClick={() => crawlMutation.mutate()} className="btn btn-primary">
+              <Search size={14} /> Search for jobs
+            </button>
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                justifyContent: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              {viewMode === "active" && (
+                <button
+                  onClick={() => {
+                    setViewMode("all");
+                    setPage(1);
+                  }}
+                  className="btn btn-secondary"
+                >
+                  Show all (including Applied/Rejected)
+                </button>
+              )}
+              <button onClick={clearAllFilters} className="btn btn-ghost">
+                Clear filters
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="jobs-grid">
@@ -890,49 +1022,13 @@ export function Dashboard() {
                 queryClient.invalidateQueries({ queryKey: ["jobs"] });
                 queryClient.invalidateQueries({ queryKey: ["kanban"] });
               }}
-              onHidden={() =>
-                queryClient.invalidateQueries({ queryKey: ["jobs"] })
-              }
+              onHidden={() => queryClient.invalidateQueries({ queryKey: ["jobs"] })}
             />
           ))}
         </div>
       )}
 
-      {totalPages > 1 && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 12,
-            marginTop: 32,
-          }}
-        >
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-            className="btn btn-ghost"
-          >
-            Previous
-          </button>
-          <span
-            style={{
-              fontSize: 14,
-              color: "var(--text-muted)",
-              fontFamily: "monospace",
-            }}
-          >
-            {page} / {totalPages}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-            className="btn btn-ghost"
-          >
-            Next
-          </button>
-        </div>
-      )}
+      {totalPages > 1 && <Pagination page={page} totalPages={totalPages} onPage={setPage} />}
 
       {showManual && (
         <ManualJDModal
@@ -948,10 +1044,7 @@ export function Dashboard() {
       )}
 
       {limitModalKind && (
-        <LimitContactModal
-          kind={limitModalKind}
-          onClose={() => setLimitModalKind(null)}
-        />
+        <LimitContactModal kind={limitModalKind} onClose={() => setLimitModalKind(null)} />
       )}
     </div>
   );

@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from database import get_database
 from deps import get_current_user
 from services.cv_parser import process_cv
-from services.limits import check_ai_token_quota
+from services.limits import check_ai_token_quota, check_and_increment_cv_upload
 
 router = APIRouter(prefix="/cv", tags=["cv"])
 
@@ -39,6 +39,13 @@ async def upload_cv(
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="PDF must be under 5MB.",
+        )
+
+    upload_ok, upload_msg = await check_and_increment_cv_upload(user)
+    if not upload_ok:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=upload_msg,
         )
 
     token_ok, token_msg = await check_ai_token_quota(user)

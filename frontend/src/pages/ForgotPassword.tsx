@@ -27,11 +27,7 @@ export function ForgotPasswordPage() {
   };
 
   return (
-    <AuthPageShell
-      title="Reset password"
-      subtitle="We'll email you a reset link"
-      showBrand={false}
-    >
+    <AuthPageShell title="Reset password" subtitle="We'll email you a reset link" showBrand={false}>
       <div className="card" style={{ padding: 28 }}>
         {sent ? (
           <p
@@ -42,9 +38,8 @@ export function ForgotPasswordPage() {
               margin: "0 0 16px",
             }}
           >
-            If an account exists for that email, instructions were sent. In
-            local dev without SMTP, check the <strong>backend terminal</strong>{" "}
-            for the reset link.
+            If an account exists for that email, instructions were sent. In local dev without SMTP,
+            check the <strong>backend terminal</strong> for the reset link.
           </p>
         ) : (
           <>

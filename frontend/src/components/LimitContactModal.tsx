@@ -13,12 +13,9 @@ const COPY: Record<
     subtitle: "You've used all your free job ratings for today.",
     body: (
       <>
-        <strong>
-          Free accounts can rate a limited number of jobs per day.
-        </strong>
+        <strong>Free accounts can rate a limited number of jobs per day.</strong>
         <br />
-        To rate more jobs and unlock full access, contact the admin for extra
-        credits.
+        To rate more jobs and unlock full access, contact the admin for extra credits.
       </>
     ),
     subject: "JobRadar - Request more rating access",
@@ -30,8 +27,7 @@ const COPY: Record<
       <>
         <strong>Free accounts have a daily search cap.</strong>
         <br />
-        Contact the admin if you need more searches, or wait until your quota
-        resets.
+        Contact the admin if you need more searches, or wait until your quota resets.
       </>
     ),
     subject: "JobRadar - Request more search access",
@@ -43,8 +39,8 @@ const COPY: Record<
       <>
         <strong>Your daily AI credit resets at midnight UTC.</strong>
         <br />
-        Ratings, searches, and CV parsing all use AI tokens. Come back tomorrow,
-        or email the admin if you need more credits sooner.
+        Ratings, searches, and CV parsing all use AI tokens. Come back tomorrow, or email the admin
+        if you need more credits sooner.
       </>
     ),
     subject: "JobRadar - Request more AI credits",
@@ -66,21 +62,13 @@ const COPY: Record<
 export function parseLimitKindFromDetail(detail: string): LimitKind {
   const lower = detail.toLowerCase();
   if (lower.includes("token")) {
-    return lower.includes("/month") || lower.includes("monthly")
-      ? "token_monthly"
-      : "token_daily";
+    return lower.includes("/month") || lower.includes("monthly") ? "token_monthly" : "token_daily";
   }
   if (lower.includes("search")) return "search";
   return "rating";
 }
 
-export function LimitContactModal({
-  kind,
-  onClose,
-}: {
-  kind: LimitKind;
-  onClose: () => void;
-}) {
+export function LimitContactModal({ kind, onClose }: { kind: LimitKind; onClose: () => void }) {
   const copy = COPY[kind];
   const mailto = `mailto:${ADMIN_EMAIL}?subject=${encodeURIComponent(copy.subject)}&body=${encodeURIComponent(`Hi,\n\nI've reached my ${kind.replace("_", " ")} limit on JobRadar and would like more access.\n\nThank you!`)}`;
 
@@ -213,14 +201,9 @@ export function LimitContactModal({
           }}
         >
           Daily limits reset at{" "}
-          <strong style={{ color: "var(--text-secondary)" }}>
-            midnight UTC
-          </strong>
+          <strong style={{ color: "var(--text-secondary)" }}>midnight UTC</strong>
           <br />
-          Email:{" "}
-          <strong style={{ color: "var(--text-secondary)" }}>
-            {ADMIN_EMAIL}
-          </strong>
+          Email: <strong style={{ color: "var(--text-secondary)" }}>{ADMIN_EMAIL}</strong>
         </div>
       </div>
     </div>

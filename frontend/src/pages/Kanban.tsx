@@ -15,11 +15,7 @@ import {
   type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { jobsApi } from "../api/index";
 import { ScoreBadge } from "../components/ScoreBadge";
@@ -87,14 +83,10 @@ function StatusSelect({
 }
 
 function DraggableKanbanCard({ job }: { job: Job }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: job.id, data: { status: job.status } });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: job.id,
+    data: { status: job.status },
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -103,13 +95,7 @@ function DraggableKanbanCard({ job }: { job: Job }) {
   };
 
   return (
-    <div
-      ref={setNodeRef}
-      className="kanban-card"
-      style={style}
-      {...attributes}
-      {...listeners}
-    >
+    <div ref={setNodeRef} className="kanban-card" style={style} {...attributes} {...listeners}>
       <p
         style={{
           margin: "0 0 8px",
@@ -181,10 +167,7 @@ function MobileKanbanCard({
       >
         <ScoreBadge score={job.score} size="sm" />
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <StatusSelect
-            value={job.status}
-            onChange={(status) => onStatusChange(job.id, status)}
-          />
+          <StatusSelect value={job.status} onChange={(status) => onStatusChange(job.id, status)} />
           {job.url && (
             <a
               href={job.url}
@@ -217,10 +200,7 @@ function DesktopKanbanColumn({
 
   return (
     <div className="kanban-column">
-      <div
-        className="kanban-column-header"
-        style={{ borderBottom: `2px solid ${color}` }}
-      >
+      <div className="kanban-column-header" style={{ borderBottom: `2px solid ${color}` }}>
         <span style={{ fontSize: 12, fontWeight: 600, color }}>{label}</span>
         <span
           style={{
@@ -236,14 +216,8 @@ function DesktopKanbanColumn({
         </span>
       </div>
 
-      <SortableContext
-        items={jobs.map((j) => j.id)}
-        strategy={verticalListSortingStrategy}
-      >
-        <div
-          ref={setNodeRef}
-          className={`kanban-column-body${isOver ? " is-over" : ""}`}
-        >
+      <SortableContext items={jobs.map((j) => j.id)} strategy={verticalListSortingStrategy}>
+        <div ref={setNodeRef} className={`kanban-column-body${isOver ? " is-over" : ""}`}>
           {jobs.length === 0 ? (
             <div
               style={{
@@ -367,9 +341,7 @@ function MobileKanbanBoard({
 
   useEffect(() => {
     if (tabInitialized || jobs.length === 0) return;
-    const firstWithJobs = COLUMNS.find((c) =>
-      jobs.some((j) => j.status === c.status),
-    );
+    const firstWithJobs = COLUMNS.find((c) => jobs.some((j) => j.status === c.status));
     if (firstWithJobs) setMobileColumn(firstWithJobs.status);
     setTabInitialized(true);
   }, [jobs, tabInitialized]);
@@ -448,11 +420,7 @@ function MobileKanbanBoard({
       ) : (
         <div className="kanban-mobile-list">
           {columnJobs.map((job) => (
-            <MobileKanbanCard
-              key={job.id}
-              job={job}
-              onStatusChange={onStatusChange}
-            />
+            <MobileKanbanCard key={job.id} job={job} onStatusChange={onStatusChange} />
           ))}
         </div>
       )}
@@ -482,17 +450,14 @@ export function KanbanPage() {
       if (!old) return old;
       return {
         ...old,
-        jobs: old.jobs.map((j: Job) =>
-          j.id === jobId ? { ...j, status: targetStatus } : j,
-        ),
+        jobs: old.jobs.map((j: Job) => (j.id === jobId ? { ...j, status: targetStatus } : j)),
       };
     });
 
     try {
       await jobsApi.updateStatus(jobId, targetStatus);
       if (targetStatus === "REJECTED") {
-        const q =
-          REJECTION_QUOTES[Math.floor(Math.random() * REJECTION_QUOTES.length)];
+        const q = REJECTION_QUOTES[Math.floor(Math.random() * REJECTION_QUOTES.length)];
         toast(q, { icon: "💪", duration: 4000 });
       } else if (targetStatus === "OFFER") {
         toast.success("Congrats! 🎉 Offer secured!", { duration: 4000 });
@@ -545,8 +510,7 @@ export function KanbanPage() {
             fontSize: 14,
           }}
         >
-          No jobs on your board yet. Move jobs from the Jobs page or search for
-          new roles.
+          No jobs on your board yet. Move jobs from the Jobs page or search for new roles.
         </div>
       ) : isMobile ? (
         <MobileKanbanBoard jobs={jobs} onStatusChange={applyStatusChange} />

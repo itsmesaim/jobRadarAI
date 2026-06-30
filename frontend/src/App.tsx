@@ -10,6 +10,7 @@ import { KanbanPage } from "./pages/Kanban";
 import { SettingsPage } from "./pages/Settings";
 import { AdminPage } from "./pages/Admin";
 import { Navbar } from "./components/Navbar";
+import { WelcomeModal } from "./components/WelcomeModal";
 import { useAuthStore } from "./hooks/useStores";
 import { authApi } from "./api";
 import { useEffect } from "react";
@@ -25,6 +26,7 @@ function Layout({ children }: { children: React.ReactNode }) {
     >
       <Navbar />
       <main style={{ overflowX: "hidden" }}>{children}</main>
+      <WelcomeModal />
     </div>
   );
 }
@@ -50,9 +52,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       {/* <BrowserRouter> */}
-      <BrowserRouter
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />

@@ -1,5 +1,18 @@
 import { Fragment, useEffect, useState } from "react";
-import { Cpu, Zap } from "lucide-react";
+import {
+  Cpu,
+  Zap,
+  Trash2,
+  ChevronDown,
+  ChevronUp,
+  Database,
+  Clock,
+  Star,
+  TrendingDown,
+  Layers,
+  Ban,
+  AlertTriangle,
+} from "lucide-react";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useAuthStore } from "../hooks/useStores";
 import { adminApi } from "../api";
@@ -70,16 +83,8 @@ function formatUsd(n?: number, enabled = true) {
   return `$${(n ?? 0).toFixed(4)}`;
 }
 
-function formatCostLine(
-  tokens?: number,
-  llmCalls?: number,
-  cost?: number,
-  costEnabled = true,
-) {
-  const parts = [
-    `${formatTokens(tokens)} tokens`,
-    `${llmCalls ?? 0} LLM calls`,
-  ];
+function formatCostLine(tokens?: number, llmCalls?: number, cost?: number, costEnabled = true) {
+  const parts = [`${formatTokens(tokens)} tokens`, `${llmCalls ?? 0} LLM calls`];
   if (costEnabled) parts.push(formatUsd(cost, true));
   return parts.join(" · ");
 }
@@ -116,23 +121,14 @@ function formatTokenCap(limit?: number) {
 }
 
 function isUserFullAccess(u: AdminUser) {
-  return (
-    !!u.full_access ||
-    !!(u.full_access_until && new Date(u.full_access_until) > new Date())
-  );
+  return !!u.full_access || !!(u.full_access_until && new Date(u.full_access_until) > new Date());
 }
 
 function DataStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="admin-stat-box">
-      <div
-        style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}
-      >
-        {label}
-      </div>
-      <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text)" }}>
-        {value}
-      </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text)" }}>{value}</div>
     </div>
   );
 }
@@ -471,11 +467,7 @@ function AdminUserCard({
             />
             <UsageStat
               label="AI tokens (today)"
-              used={
-                user.daily_tokens_used ??
-                user.ai_usage?.today?.total_tokens ??
-                0
-              }
+              used={user.daily_tokens_used ?? user.ai_usage?.today?.total_tokens ?? 0}
               limit={user.daily_token_limit ?? DEFAULT_DAILY_TOKEN_LIMIT}
               unlimited={isFull || isUnlimitedTokenCap(user.daily_token_limit)}
               color="var(--accent)"
@@ -504,9 +496,7 @@ function AdminUserCard({
                 }}
               >
                 <Cpu size={13} style={{ color: "var(--accent)" }} />
-                <span style={{ fontWeight: 600, color: "var(--text)" }}>
-                  AI usage
-                </span>
+                <span style={{ fontWeight: 600, color: "var(--text)" }}>AI usage</span>
               </div>
               Today:{" "}
               {formatCostLine(
@@ -516,15 +506,12 @@ function AdminUserCard({
                 user.ai_usage.cost_estimation_enabled,
               )}
               <br />
-              Month: {formatTokens(user.ai_usage.this_month?.total_tokens)}{" "}
-              tokens
+              Month: {formatTokens(user.ai_usage.this_month?.total_tokens)} tokens
               {user.ai_usage.cost_estimation_enabled &&
                 ` · ${formatUsd(user.ai_usage.this_month?.estimated_cost_usd)}`}
               <br />
-              Lifetime: {formatTokens(
-                user.ai_usage.lifetime?.total_tokens,
-              )}{" "}
-              tokens · {user.ai_usage.lifetime?.llm_calls ?? 0} LLM
+              Lifetime: {formatTokens(user.ai_usage.lifetime?.total_tokens)} tokens ·{" "}
+              {user.ai_usage.lifetime?.llm_calls ?? 0} LLM
               {user.ai_usage.cost_estimation_enabled &&
                 ` · ${formatUsd(user.ai_usage.lifetime?.estimated_cost_usd)}`}
             </div>
@@ -555,12 +542,579 @@ function AdminUserCard({
       )}
 
       {editing && (
-        <UserEditForm
-          form={form}
-          setForm={setForm}
-          onSave={onSave}
-          onCancel={onCancel}
-        />
+        <UserEditForm form={form} setForm={setForm} onSave={onSave} onCancel={onCancel} />
+      )}
+    </div>
+  );
+}
+
+const JOB_STATUSES = [
+  "NEW",
+  "SAVED",
+  "APPLIED",
+  "HALF_APPLIED",
+  "INTERVIEWING",
+  "FOLLOWUP",
+  "OFFER",
+  "REJECTED",
+] as const;
+
+type FilterType = "all" | "old" | "unrated" | "low_score" | "by_status" | "auto_rejected";
+
+const FILTER_OPTIONS: {
+  value: FilterType;
+  label: string;
+  desc: string;
+  icon: React.ReactNode;
+  danger?: boolean;
+}[] = [
+  {
+    value: "old",
+    label: "Old jobs",
+    desc: "Crawled more than N days ago",
+    icon: <Clock size={18} />,
+  },
+  { value: "unrated", label: "Unrated", desc: "No AI rating stored yet", icon: <Star size={18} /> },
+  {
+    value: "low_score",
+    label: "Low-scored",
+    desc: "Score ≤ N (pre-filtered junk)",
+    icon: <TrendingDown size={18} />,
+  },
+  {
+    value: "by_status",
+    label: "By status",
+    desc: "Jobs in specific pipeline stages",
+    icon: <Layers size={18} />,
+  },
+  {
+    value: "auto_rejected",
+    label: "Auto-rejected",
+    desc: "Hard disqualifiers flagged by AI",
+    icon: <Ban size={18} />,
+  },
+  {
+    value: "all",
+    label: "All jobs",
+    desc: "Every job crawled by this user",
+    icon: <Database size={18} />,
+    danger: true,
+  },
+];
+
+function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: string }) {
+  const [open, setOpen] = useState(false);
+  const [userId, setUserId] = useState("");
+  const [filterType, setFilterType] = useState<FilterType>("old");
+  const [olderThanDays, setOlderThanDays] = useState(30);
+  const [maxScore, setMaxScore] = useState(3);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(["REJECTED"]);
+  const [preview, setPreview] = useState<{ count: number; email: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+
+  const resetPreview = () => {
+    setPreview(null);
+    setConfirmed(false);
+  };
+
+  const toggleStatus = (s: string) =>
+    setSelectedStatuses((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+
+  const buildPayload = (dry: boolean) => ({
+    user_id: userId,
+    filter_type: filterType,
+    older_than_days: filterType === "old" ? olderThanDays : undefined,
+    max_score: filterType === "low_score" ? maxScore : undefined,
+    statuses: filterType === "by_status" ? selectedStatuses : undefined,
+    dry_run: dry,
+  });
+
+  const handlePreview = async () => {
+    if (!userId) return toast.error("Select a user first");
+    if (filterType === "by_status" && selectedStatuses.length === 0)
+      return toast.error("Select at least one status");
+    setLoading(true);
+    resetPreview();
+    try {
+      const res = await adminApi.cleanupJobs(basePath, buildPayload(true));
+      setPreview({ count: res.would_delete ?? 0, email: res.target_email ?? "" });
+    } catch {
+      toast.error("Preview failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!preview || !confirmed) return;
+    setLoading(true);
+    try {
+      const res = await adminApi.cleanupJobs(basePath, buildPayload(false));
+      toast.success(`Deleted ${res.deleted} jobs for ${res.target_email}`);
+      resetPreview();
+      setConfirmed(false);
+    } catch {
+      toast.error("Deletion failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const selectedOpt = FILTER_OPTIONS.find((o) => o.value === filterType)!;
+
+  return (
+    <div className="card" style={{ padding: 0, marginTop: 24, overflow: "hidden" }}>
+      {/* Header toggle */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "16px 20px",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          gap: 10,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              background: "var(--danger-bg)",
+              border: "1px solid var(--danger-border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <Trash2 size={15} style={{ color: "var(--danger)" }} />
+          </div>
+          <div style={{ textAlign: "left" }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>
+              Job database cleanup
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              Permanently delete jobs — scoped per user, cannot be undone
+            </div>
+          </div>
+        </div>
+        {open ? (
+          <ChevronUp size={16} style={{ color: "var(--text-muted)" }} />
+        ) : (
+          <ChevronDown size={16} style={{ color: "var(--text-muted)" }} />
+        )}
+      </button>
+
+      {open && (
+        <div style={{ borderTop: "1px solid var(--border)" }}>
+          {/* Step 1 — User */}
+          <div style={{ padding: "20px 20px 0" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 10,
+              }}
+            >
+              <span
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: "50%",
+                  background: "var(--accent)",
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                1
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+                Select user
+              </span>
+            </div>
+            <select
+              value={userId}
+              onChange={(e) => {
+                setUserId(e.target.value);
+                resetPreview();
+              }}
+              className="input"
+              style={{ maxWidth: 360 }}
+            >
+              <option value="">— Select a user —</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} · {u.email}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Step 2 — Filter cards */}
+          <div style={{ padding: "20px 20px 0" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 10,
+              }}
+            >
+              <span
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: "50%",
+                  background: "var(--accent)",
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                2
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+                Choose filter
+              </span>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+                gap: 8,
+              }}
+            >
+              {FILTER_OPTIONS.map((opt) => {
+                const active = filterType === opt.value;
+                const borderColor = active
+                  ? opt.danger
+                    ? "var(--danger)"
+                    : "var(--accent)"
+                  : "var(--border)";
+                const bgColor = active
+                  ? opt.danger
+                    ? "var(--danger-bg)"
+                    : "var(--accent-light)"
+                  : "var(--bg-secondary)";
+                const iconColor = active
+                  ? opt.danger
+                    ? "var(--danger)"
+                    : "var(--accent)"
+                  : "var(--text-muted)";
+                const textColor = active
+                  ? opt.danger
+                    ? "var(--danger)"
+                    : "var(--accent)"
+                  : "var(--text)";
+
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => {
+                      setFilterType(opt.value);
+                      resetPreview();
+                    }}
+                    style={{
+                      padding: "12px 14px",
+                      borderRadius: 10,
+                      border: `1.5px solid ${borderColor}`,
+                      background: bgColor,
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    <div style={{ color: iconColor, marginBottom: 6 }}>{opt.icon}</div>
+                    <div
+                      style={{ fontSize: 13, fontWeight: 600, color: textColor, marginBottom: 2 }}
+                    >
+                      {opt.label}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4 }}>
+                      {opt.desc}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Step 3 — Options for selected filter */}
+          <div style={{ padding: "20px 20px 0" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 10,
+              }}
+            >
+              <span
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: "50%",
+                  background: "var(--accent)",
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                3
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+                Configure —{" "}
+                <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>
+                  {selectedOpt.label}
+                </span>
+              </span>
+            </div>
+
+            {filterType === "all" && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: "var(--danger-bg)",
+                  border: "1px solid var(--danger-border)",
+                  marginBottom: 4,
+                }}
+              >
+                <AlertTriangle
+                  size={15}
+                  style={{ color: "var(--danger)", flexShrink: 0, marginTop: 1 }}
+                />
+                <p style={{ margin: 0, fontSize: 13, color: "var(--danger)", lineHeight: 1.5 }}>
+                  This will delete <strong>every</strong> job crawled by the selected user. There is
+                  no undo.
+                </p>
+              </div>
+            )}
+
+            {filterType === "old" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                  Crawled more than
+                </span>
+                <input
+                  type="number"
+                  value={olderThanDays}
+                  min={1}
+                  onChange={(e) => {
+                    setOlderThanDays(parseInt(e.target.value) || 1);
+                    resetPreview();
+                  }}
+                  className="input"
+                  style={{ maxWidth: 80, textAlign: "center" }}
+                />
+                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>days ago</span>
+              </div>
+            )}
+
+            {filterType === "low_score" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>AI score ≤</span>
+                <input
+                  type="number"
+                  value={maxScore}
+                  min={1}
+                  max={9}
+                  onChange={(e) => {
+                    setMaxScore(parseInt(e.target.value) || 1);
+                    resetPreview();
+                  }}
+                  className="input"
+                  style={{ maxWidth: 70, textAlign: "center" }}
+                />
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>out of 10 (1–9)</span>
+              </div>
+            )}
+
+            {filterType === "by_status" && (
+              <div>
+                <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--text-muted)" }}>
+                  Select statuses to include in deletion:
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {JOB_STATUSES.map((s) => {
+                    const checked = selectedStatuses.includes(s);
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => {
+                          toggleStatus(s);
+                          resetPreview();
+                        }}
+                        style={{
+                          padding: "5px 12px",
+                          borderRadius: 20,
+                          border: checked ? "1.5px solid var(--danger)" : "1px solid var(--border)",
+                          background: checked ? "var(--danger-bg)" : "var(--bg-secondary)",
+                          color: checked ? "var(--danger)" : "var(--text-secondary)",
+                          fontSize: 12,
+                          fontWeight: checked ? 600 : 400,
+                          cursor: "pointer",
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        {s.replace("_", " ")}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {(filterType === "unrated" || filterType === "auto_rejected") && (
+              <p style={{ margin: 0, fontSize: 13, color: "var(--text-secondary)" }}>
+                No extra configuration needed. Preview to see how many match.
+              </p>
+            )}
+          </div>
+
+          {/* Step 4 — Preview + confirm */}
+          <div style={{ padding: "20px" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 14,
+              }}
+            >
+              <span
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: "50%",
+                  background: preview && preview.count > 0 ? "var(--danger)" : "var(--accent)",
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                4
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+                Preview & confirm
+              </span>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={handlePreview}
+                disabled={loading || !userId}
+                className="btn btn-secondary"
+                style={{ fontSize: 13 }}
+              >
+                {loading && !preview ? "Checking..." : "Preview count"}
+              </button>
+
+              {preview !== null && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "8px 14px",
+                    borderRadius: 10,
+                    background: preview.count > 0 ? "var(--danger-bg)" : "var(--success-bg)",
+                    border: `1px solid ${preview.count > 0 ? "var(--danger-border)" : "var(--success-border)"}`,
+                  }}
+                >
+                  {preview.count > 0 ? (
+                    <AlertTriangle size={14} style={{ color: "var(--danger)", flexShrink: 0 }} />
+                  ) : null}
+                  <span
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: preview.count > 0 ? "var(--danger)" : "var(--success)",
+                    }}
+                  >
+                    {preview.count === 0
+                      ? "Nothing to delete — filter matches 0 jobs"
+                      : `${preview.count} job${preview.count !== 1 ? "s" : ""} match for ${preview.email}`}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {preview !== null && preview.count > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 10,
+                    cursor: "pointer",
+                    padding: "12px 14px",
+                    borderRadius: 8,
+                    border: `1px solid ${confirmed ? "var(--danger)" : "var(--border)"}`,
+                    background: confirmed ? "var(--danger-bg)" : "var(--bg-secondary)",
+                    transition: "all 0.15s",
+                    marginBottom: 12,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={confirmed}
+                    onChange={(e) => setConfirmed(e.target.checked)}
+                    style={{ marginTop: 2, accentColor: "var(--danger)" }}
+                  />
+                  <span style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>
+                    I understand that deleting {preview.count} job{preview.count !== 1 ? "s" : ""}{" "}
+                    for <strong>{preview.email}</strong> is permanent and cannot be undone.
+                  </span>
+                </label>
+
+                {confirmed && (
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={loading}
+                    className="btn btn-danger"
+                    style={{ width: "100%", justifyContent: "center", gap: 8 }}
+                  >
+                    <Trash2 size={14} />
+                    {loading ? "Deleting..." : `Delete ${preview.count} jobs permanently`}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -672,10 +1226,7 @@ export function AdminPage() {
 
   if (!user?.isAdmin) {
     return (
-      <div
-        className="page-shell"
-        style={{ textAlign: "center", paddingTop: 60 }}
-      >
+      <div className="page-shell" style={{ textAlign: "center", paddingTop: 60 }}>
         Access denied
       </div>
     );
@@ -736,10 +1287,7 @@ export function AdminPage() {
               marginBottom: 10,
             }}
           >
-            <DataStat
-              label="Today tokens"
-              value={formatTokens(aiSummary.today?.total_tokens)}
-            />
+            <DataStat label="Today tokens" value={formatTokens(aiSummary.today?.total_tokens)} />
             <DataStat
               label="Month tokens"
               value={formatTokens(aiSummary.this_month?.total_tokens)}
@@ -749,8 +1297,7 @@ export function AdminPage() {
               value={String(aiSummary.lifetime?.llm_calls ?? 0)}
             />
             {aiSummary.cost_estimation_enabled ? (
-              aiSummary.monthly_budget_usd != null &&
-              aiSummary.monthly_budget_usd > 0 ? (
+              aiSummary.monthly_budget_usd != null && aiSummary.monthly_budget_usd > 0 ? (
                 <DataStat
                   label="Budget left"
                   value={formatUsd(aiSummary.monthly_remaining_usd ?? 0, true)}
@@ -758,10 +1305,7 @@ export function AdminPage() {
               ) : (
                 <DataStat
                   label="Month cost (est.)"
-                  value={formatUsd(
-                    aiSummary.this_month?.estimated_cost_usd,
-                    true,
-                  )}
+                  value={formatUsd(aiSummary.this_month?.estimated_cost_usd, true)}
                 />
               )
             ) : (
@@ -776,8 +1320,7 @@ export function AdminPage() {
               lineHeight: 1.5,
             }}
           >
-            Rating: {aiSummary.providers?.rating_llm} /{" "}
-            {aiSummary.providers?.rating_model}
+            Rating: {aiSummary.providers?.rating_llm} / {aiSummary.providers?.rating_model}
             {aiSummary.cost_estimation_enabled
               ? aiSummary.monthly_budget_usd
                 ? ` · Monthly budget: ${formatUsd(aiSummary.monthly_budget_usd, true)}`
@@ -851,28 +1394,22 @@ export function AdminPage() {
                     borderBottom: "1px solid var(--border)",
                   }}
                 >
-                  {[
-                    "User",
-                    "Status",
-                    "Searches",
-                    "Ratings",
-                    "AI (month)",
-                    "Notes",
-                    "",
-                  ].map((col) => (
-                    <th
-                      key={col}
-                      style={{
-                        textAlign: "left",
-                        padding: "12px 16px",
-                        fontWeight: 600,
-                        color: "var(--text-secondary)",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {col}
-                    </th>
-                  ))}
+                  {["User", "Status", "Searches", "Ratings", "AI (month)", "Notes", ""].map(
+                    (col) => (
+                      <th
+                        key={col}
+                        style={{
+                          textAlign: "left",
+                          padding: "12px 16px",
+                          fontWeight: 600,
+                          color: "var(--text-secondary)",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {col}
+                      </th>
+                    ),
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -886,9 +1423,7 @@ export function AdminPage() {
                     <Fragment key={u.id}>
                       <tr style={{ borderTop: "1px solid var(--border)" }}>
                         <td style={{ padding: "14px 16px", minWidth: 180 }}>
-                          <div style={{ fontWeight: 600 }}>
-                            {u.name || "Unnamed"}
-                          </div>
+                          <div style={{ fontWeight: 600 }}>{u.name || "Unnamed"}</div>
                           <div
                             style={{
                               fontSize: 11,
@@ -910,9 +1445,7 @@ export function AdminPage() {
                               fontWeight: 600,
                             }}
                           >
-                            {isFull
-                              ? "Unlimited"
-                              : `${u.searches_used} / ${u.search_limit}`}
+                            {isFull ? "Unlimited" : `${u.searches_used} / ${u.search_limit}`}
                           </div>
                           {!isFull && (
                             <div className="admin-progress">
@@ -932,9 +1465,7 @@ export function AdminPage() {
                               fontWeight: 600,
                             }}
                           >
-                            {isFull
-                              ? "Unlimited"
-                              : `${u.ratings_used} / ${u.rating_limit}`}
+                            {isFull ? "Unlimited" : `${u.ratings_used} / ${u.rating_limit}`}
                           </div>
                           {!isFull && (
                             <div className="admin-progress">
@@ -966,8 +1497,7 @@ export function AdminPage() {
                               marginTop: 2,
                             }}
                           >
-                            {formatTokens(u.ai_usage?.this_month?.total_tokens)}{" "}
-                            this month
+                            {formatTokens(u.ai_usage?.this_month?.total_tokens)} this month
                             {u.ai_usage?.cost_estimation_enabled &&
                               ` · ${formatUsd(u.ai_usage?.this_month?.estimated_cost_usd, true)}`}
                           </div>
@@ -981,9 +1511,7 @@ export function AdminPage() {
                         >
                           {u.admin_notes || "—"}
                         </td>
-                        <td
-                          style={{ padding: "14px 16px", textAlign: "right" }}
-                        >
+                        <td style={{ padding: "14px 16px", textAlign: "right" }}>
                           {!isEditingThis && (
                             <button
                               type="button"
@@ -1017,6 +1545,8 @@ export function AdminPage() {
         </div>
       )}
 
+      <JobCleanupPanel users={users} basePath={basePath} />
+
       <p
         style={{
           marginTop: 24,
@@ -1026,8 +1556,8 @@ export function AdminPage() {
           maxWidth: 480,
         }}
       >
-        Lifetime limits apply to free users. Use full or temporary options for
-        more access. High numbers (9999) also act as unlimited.
+        Lifetime limits apply to free users. Use full or temporary options for more access. High
+        numbers (9999) also act as unlimited.
       </p>
     </div>
   );

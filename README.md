@@ -325,7 +325,7 @@ In **Settings**, you configure:
 
 - Primary role and secondary roles (e.g. Full Stack Developer, AI Engineer)
 - Preferred locations (e.g. Dublin Ireland)
-- Job types: full-time, internship, contract, remote
+- Job types: full-time, internship, contract, graduate, remote
 - Key skills (used to build search queries)
 - Minimum salary
 
@@ -428,6 +428,11 @@ JobRadar has a three-layer quota system to control API cost:
 - Per-user overrides: `search_limit`, `rating_limit`, `daily_token_limit`, `monthly_token_limit`
 - Full access (permanent or 12h / 24h temporary)
 - Platform AI summary (`GET /ai-summary`) — token totals + optional cost estimates via `AI_COST_PER_1K_*`
+- **Job database cleanup** — delete jobs for any user with 6 filter modes (all, old, unrated, low-scored, by status, auto-rejected); always scoped to that user's crawled jobs; dry-run preview before deletion
+
+**User-facing cleanup** (Settings → Clean up jobs):
+- 3 filter modes: old listings (N days), terminal stages (REJECTED/OFFER/APPLIED), unrated
+- Preview count before deleting; re-crawl warning shown (deleted jobs may reappear after next auto-crawl)
 
 Limits reset daily at **midnight UTC**. See `handoff.md` for implementation notes and troubleshooting.
 
@@ -536,9 +541,12 @@ JobRadar/
 | POST | `/jobs/manual` | Add & rate a pasted JD |
 | GET | `/jobs/{id}/brief` | Export job brief (now includes tailoring tips) |
 | PATCH | `/jobs/{id}/status` | Update Kanban status |
+| POST | `/jobs/cleanup/preview` | Preview how many jobs a cleanup filter would delete (current user) |
+| DELETE | `/jobs/cleanup` | Delete jobs matching a filter (current user) — filter: `old`, `by_status`, `unrated` |
 | GET | `/{ADMIN_SECRET_PATH}/users` | List users + usage (admin only) |
 | PATCH | `/{ADMIN_SECRET_PATH}/users/{id}/access` | Set limits, full access, token caps |
 | GET | `/{ADMIN_SECRET_PATH}/ai-summary` | Platform-wide AI token/cost summary |
+| POST | `/{ADMIN_SECRET_PATH}/jobs/cleanup` | Admin: preview or delete jobs for any user — 6 filter modes, always scoped to `crawled_by` |
 
 ---
 
@@ -575,6 +583,8 @@ API runs at `http://localhost:8000`.
 cd frontend
 npm install
 npm run dev
+npm run format        # format all src/**/*.{ts,tsx,css} with Prettier
+npm run format:check  # check formatting without writing (useful in CI)
 ```
 
 App runs at `http://localhost:5173`.
@@ -605,6 +615,7 @@ See `backend/.env.example`. Important variables:
 | `ADMIN_SECRET_PATH` | Random string for admin URL (e.g. `k9x7p2mQvL4r`) |
 | `JOB_REMINDER_*` | Optional daily high-score apply reminder emails (see `.env.example`) |
 | `FREE_SEARCH_LIMIT` / `FREE_RATING_LIMIT` | Daily search/rating caps (default 3 / 10) |
+| `FREE_CV_UPLOAD_LIMIT` | Daily CV upload cap per user (default 3) |
 | `FREE_DAILY_TOKEN_LIMIT` / `FREE_MONTHLY_TOKEN_LIMIT` | AI token caps per user (0 = unlimited) |
 | `AI_MONTHLY_BUDGET_USD` | Optional platform budget for admin dashboard |
 | `AI_COST_PER_1K_*` | Optional cost estimates in admin |

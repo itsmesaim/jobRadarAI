@@ -31,9 +31,7 @@ export function ResetPasswordPage() {
       toast.success(res.message);
       navigate("/login");
     } catch (err: any) {
-      toast.error(
-        err.response?.data?.detail || "Invalid or expired reset link",
-      );
+      toast.error(err.response?.data?.detail || "Invalid or expired reset link");
     } finally {
       setLoading(false);
     }

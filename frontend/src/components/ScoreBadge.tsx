@@ -70,9 +70,7 @@ export function ScoreBadge({ score, size = "sm" }: Props) {
       }}
     >
       {score}
-      <span style={{ fontSize: dims * 0.7, fontWeight: 500, opacity: 0.65 }}>
-        /10
-      </span>
+      <span style={{ fontSize: dims * 0.7, fontWeight: 500, opacity: 0.65 }}>/10</span>
     </span>
   );
 }

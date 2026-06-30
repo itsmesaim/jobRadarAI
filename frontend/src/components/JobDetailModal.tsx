@@ -1,12 +1,4 @@
-import {
-  X,
-  ExternalLink,
-  Building2,
-  MapPin,
-  Copy,
-  Check,
-  Clock,
-} from "lucide-react";
+import { X, ExternalLink, Building2, MapPin, Copy, Check, Clock } from "lucide-react";
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { ScoreBadge } from "./ScoreBadge";
@@ -255,10 +247,7 @@ export function JobDetailModal({ job, onClose }: Props) {
                 Strengths
               </p>
               {job.matched_strengths.map((s, i) => (
-                <div
-                  key={i}
-                  style={{ display: "flex", gap: 8, marginBottom: 8 }}
-                >
+                <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                   <span
                     style={{
                       color: "var(--success)",
@@ -297,15 +286,8 @@ export function JobDetailModal({ job, onClose }: Props) {
                 Gaps
               </p>
               {job.gaps.map((g, i) => (
-                <div
-                  key={i}
-                  style={{ display: "flex", gap: 8, marginBottom: 8 }}
-                >
-                  <span
-                    style={{ color: "#f97316", fontWeight: 700, flexShrink: 0 }}
-                  >
-                    −
-                  </span>
+                <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <span style={{ color: "#f97316", fontWeight: 700, flexShrink: 0 }}>−</span>
                   <span
                     style={{
                       fontSize: 14,

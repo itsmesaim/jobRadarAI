@@ -163,6 +163,7 @@ async def _reset_if_new_day(user: dict) -> dict:
                 "$set": {
                     "usage.searches": 0,
                     "usage.ratings": 0,
+                    "usage.cv_uploads": 0,
                     "usage.reminder_emails": 0,
                     "usage.last_reset": today,
                     "usage.ai_daily": {
@@ -179,6 +180,7 @@ async def _reset_if_new_day(user: dict) -> dict:
         )
         user.setdefault("usage", {})["searches"] = 0
         user["usage"]["ratings"] = 0
+        user["usage"]["cv_uploads"] = 0
         user["usage"]["reminder_emails"] = 0
         user["usage"]["last_reset"] = today
         user["usage"]["ai_daily"] = {
@@ -427,6 +429,32 @@ async def admin_update_user_limits(
     if updates:
         await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": updates})
     return await get_user_usage(user_id)
+
+
+async def check_and_increment_cv_upload(user: dict) -> tuple[bool, str]:
+    """Prevent CV upload spam — each upload triggers an LLM parse. Returns (allowed, message)."""
+    if _has_unlimited_access(user):
+        return True, ""
+
+    user_id = str(user.get("_id", ""))
+    if user_id:
+        user = await _get_fresh_user(user_id)
+    user = await _reset_if_new_day(user)
+    usage = user.get("usage", {})
+    current = int(usage.get("cv_uploads", 0) or 0)
+    limit = settings.free_cv_upload_limit
+
+    if current >= limit:
+        return (
+            False,
+            f"CV upload limit reached ({limit}/day). Try again tomorrow.",
+        )
+
+    db = get_database()
+    await db.users.update_one(
+        {"_id": ObjectId(user["_id"])}, {"$inc": {"usage.cv_uploads": 1}}
+    )
+    return True, ""
 
 
 async def admin_list_users(page: int = 1, limit: int = 50):

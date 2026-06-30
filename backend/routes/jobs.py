@@ -10,7 +10,8 @@ POST  /jobs/manual       — paste a JD manually and rate it instantly
 """
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from bson import ObjectId
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -50,6 +51,9 @@ VALID_STATUSES = [
 ]
 
 PIPELINE_STATUSES = [s for s in VALID_STATUSES if s != "NEW"]
+
+# Statuses that represent completed/terminal actions — excluded from the default "Active" view
+TERMINAL_STATUSES = ["APPLIED", "REJECTED", "OFFER"]
 
 
 class StatusUpdate(BaseModel):
@@ -103,6 +107,7 @@ def _build_list_query(
     status: str | None,
     source: str | None,
     q: str | None,
+    exclude_terminal: bool = False,
 ) -> dict:
     """Mongo query for per-user job list (score/status/source/text in DB)."""
     hidden_key = f"hidden_{user_id}"
@@ -113,6 +118,8 @@ def _build_list_query(
 
     if status:
         query[status_key] = status
+    elif exclude_terminal:
+        query[status_key] = {"$nin": TERMINAL_STATUSES}
 
     if source:
         query["source"] = source
@@ -302,6 +309,7 @@ async def list_jobs(
     page: int = 1,
     limit: int = 20,
     kanban: bool = False,
+    exclude_terminal: bool = False,
 ):
     db = get_database()
     user_id = str(user["_id"])
@@ -343,10 +351,11 @@ async def list_jobs(
         status=status,
         source=source,
         q=q,
+        exclude_terminal=exclude_terminal,
     )
     all_jobs = (
         await db.jobs.find(mongo_query)
-        .sort("crawled_at", -1)
+        .sort([("posted_at", -1), ("crawled_at", -1)])
         .limit(LIST_SCAN_CAP)
         .to_list(length=LIST_SCAN_CAP)
     )
@@ -593,3 +602,43 @@ async def hide_job(job_id: str, user=Depends(get_current_user)):
         {"_id": ObjectId(job_id)}, {"$set": {f"hidden_{user_id}": True}}
     )
     return {"message": "Job hidden."}
+
+
+# ── User-facing bulk cleanup ──────────────────────────────
+
+
+class UserCleanupRequest(BaseModel):
+    filter_type: Literal["old", "by_status", "unrated"]
+    older_than_days: int | None = 30
+    statuses: list[str] | None = None
+
+
+def _build_user_cleanup_query(user_id: str, req: UserCleanupRequest) -> dict:
+    query: dict = {"crawled_by": user_id}
+    if req.filter_type == "old":
+        days = max(1, req.older_than_days or 30)
+        query["crawled_at"] = {"$lt": datetime.now(timezone.utc) - timedelta(days=days)}
+    elif req.filter_type == "by_status":
+        statuses = req.statuses or ["REJECTED", "APPLIED", "OFFER"]
+        query[f"status_{user_id}"] = {"$in": statuses}
+    elif req.filter_type == "unrated":
+        query[f"ratings.{user_id}"] = {"$exists": False}
+    return query
+
+
+@router.post("/cleanup/preview")
+async def preview_user_cleanup(req: UserCleanupRequest, user=Depends(get_current_user)):
+    db = get_database()
+    user_id = str(user["_id"])
+    query = _build_user_cleanup_query(user_id, req)
+    count = await db.jobs.count_documents(query)
+    return {"count": count, "filter_type": req.filter_type}
+
+
+@router.delete("/cleanup")
+async def execute_user_cleanup(req: UserCleanupRequest, user=Depends(get_current_user)):
+    db = get_database()
+    user_id = str(user["_id"])
+    query = _build_user_cleanup_query(user_id, req)
+    result = await db.jobs.delete_many(query)
+    return {"deleted": result.deleted_count, "filter_type": req.filter_type}

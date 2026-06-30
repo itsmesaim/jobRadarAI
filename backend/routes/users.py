@@ -34,6 +34,7 @@ class JobTypes(BaseModel):
     internship: bool = False
     contract: bool = False
     remote: bool = True
+    graduate: bool = False
 
 
 class WorkMode(BaseModel):

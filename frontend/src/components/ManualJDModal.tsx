@@ -104,12 +104,7 @@ export function ManualJDModal({
         return;
       }
 
-      if (
-        res.score == null ||
-        !res.verdict ||
-        !res.matched_strengths ||
-        !res.gaps
-      ) {
+      if (res.score == null || !res.verdict || !res.matched_strengths || !res.gaps) {
         toast.error(res.detail || "Could not rate this job. Try again later.");
         onAdded();
         return;
@@ -242,11 +237,7 @@ export function ManualJDModal({
                       className="btn btn-primary"
                       style={{ flexShrink: 0 }}
                     >
-                      {scraping ? (
-                        <Loader size={13} className="animate-spin" />
-                      ) : (
-                        "Fetch"
-                      )}
+                      {scraping ? <Loader size={13} className="animate-spin" /> : "Fetch"}
                     </button>
                   </div>
                   <p
@@ -260,9 +251,7 @@ export function ManualJDModal({
                   </p>
                 </div>
               ) : (
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
-                >
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <div
                     style={{
                       display: "grid",
@@ -276,9 +265,7 @@ export function ManualJDModal({
                         className="input"
                         placeholder="Full Stack Engineer"
                         value={form.title}
-                        onChange={(e) =>
-                          setForm({ ...form, title: e.target.value })
-                        }
+                        onChange={(e) => setForm({ ...form, title: e.target.value })}
                       />
                     </div>
                     <div>
@@ -287,9 +274,7 @@ export function ManualJDModal({
                         className="input"
                         placeholder="Stripe"
                         value={form.company}
-                        onChange={(e) =>
-                          setForm({ ...form, company: e.target.value })
-                        }
+                        onChange={(e) => setForm({ ...form, company: e.target.value })}
                       />
                     </div>
                   </div>
@@ -299,9 +284,7 @@ export function ManualJDModal({
                       className="input"
                       placeholder="https://..."
                       value={form.url}
-                      onChange={(e) =>
-                        setForm({ ...form, url: e.target.value })
-                      }
+                      onChange={(e) => setForm({ ...form, url: e.target.value })}
                     />
                   </div>
                   <div>
@@ -310,9 +293,7 @@ export function ManualJDModal({
                       className="input"
                       placeholder="Paste the full job description here..."
                       value={form.jd_text}
-                      onChange={(e) =>
-                        setForm({ ...form, jd_text: e.target.value })
-                      }
+                      onChange={(e) => setForm({ ...form, jd_text: e.target.value })}
                       style={{ height: 160, resize: "vertical" }}
                     />
                     <p
@@ -322,8 +303,7 @@ export function ManualJDModal({
                         marginTop: 4,
                       }}
                     >
-                      {form.jd_text.length} characters — more text = better
-                      rating
+                      {form.jd_text.length} characters — more text = better rating
                     </p>
                   </div>
                   {!canRate && (
@@ -336,11 +316,9 @@ export function ManualJDModal({
                       }}
                     >
                       Daily rating limit reached
-                      {ratingsRemaining != null
-                        ? ` (${ratingsRemaining} left)`
-                        : ""}
-                      . Your job can be saved but won&apos;t be rated until
-                      tomorrow UTC or you get more access from admin.
+                      {ratingsRemaining != null ? ` (${ratingsRemaining} left)` : ""}. Your job can
+                      be saved but won&apos;t be rated until tomorrow UTC or you get more access
+                      from admin.
                     </p>
                   )}
                   <button
@@ -356,8 +334,7 @@ export function ManualJDModal({
                   >
                     {loading ? (
                       <>
-                        <Loader size={13} className="animate-spin" /> Rating
-                        with AI...
+                        <Loader size={13} className="animate-spin" /> Rating with AI...
                       </>
                     ) : canRate ? (
                       "Rate this job"
@@ -409,20 +386,9 @@ export function ManualJDModal({
                     Strengths
                   </div>
                   {result.matched_strengths.map((s, i) => (
-                    <div
-                      key={i}
-                      style={{ display: "flex", gap: 8, marginBottom: 5 }}
-                    >
-                      <span
-                        style={{ color: "var(--success)", fontWeight: 700 }}
-                      >
-                        +
-                      </span>
-                      <span
-                        style={{ fontSize: 12, color: "var(--text-secondary)" }}
-                      >
-                        {s}
-                      </span>
+                    <div key={i} style={{ display: "flex", gap: 8, marginBottom: 5 }}>
+                      <span style={{ color: "var(--success)", fontWeight: 700 }}>+</span>
+                      <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{s}</span>
                     </div>
                   ))}
                 </div>
@@ -443,18 +409,9 @@ export function ManualJDModal({
                     Gaps to address
                   </div>
                   {result.gaps.map((g, i) => (
-                    <div
-                      key={i}
-                      style={{ display: "flex", gap: 8, marginBottom: 5 }}
-                    >
-                      <span style={{ color: "#f97316", fontWeight: 700 }}>
-                        −
-                      </span>
-                      <span
-                        style={{ fontSize: 12, color: "var(--text-secondary)" }}
-                      >
-                        {g}
-                      </span>
+                    <div key={i} style={{ display: "flex", gap: 8, marginBottom: 5 }}>
+                      <span style={{ color: "#f97316", fontWeight: 700 }}>−</span>
+                      <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{g}</span>
                     </div>
                   ))}
                 </div>

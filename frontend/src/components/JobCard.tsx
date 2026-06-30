@@ -32,6 +32,18 @@ function timeAgo(dateStr?: string): string {
   return `${weeks}w ago`;
 }
 
+type Freshness = "today" | "recent" | null;
+
+function getFreshness(crawledAt?: string): Freshness {
+  if (!crawledAt) return null;
+  const d = new Date(crawledAt);
+  if (isNaN(d.getTime())) return null;
+  const diffHours = (Date.now() - d.getTime()) / 36e5;
+  if (diffHours < 24) return "today";
+  if (diffHours < 72) return "recent";
+  return null;
+}
+
 const STATUSES: JobStatus[] = [
   "NEW",
   "SAVED",
@@ -87,6 +99,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
   // @ts-ignore
   const location = job.location as string | undefined;
   const postedTime = timeAgo(job.posted_at || job.crawled_at);
+  const freshness = getFreshness(job.crawled_at);
 
   const handleStatus = async (status: JobStatus) => {
     try {
@@ -94,8 +107,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
       setCurrentStatus(status);
       onStatusChange?.();
       if (status === "REJECTED") {
-        const quote =
-          REJECTION_QUOTES[Math.floor(Math.random() * REJECTION_QUOTES.length)];
+        const quote = REJECTION_QUOTES[Math.floor(Math.random() * REJECTION_QUOTES.length)];
         toast(quote, { icon: "💪", duration: 4500 });
       } else if (status === "OFFER") {
         toast.success("Congrats on the offer! 🎉", { duration: 4000 });
@@ -206,6 +218,41 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                   }}
                 >
                   <Clock size={10} /> {postedTime}
+                </span>
+              )}
+              {freshness === "today" && (
+                <span
+                  style={{
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    color: "var(--success)",
+                    letterSpacing: "0.03em",
+                  }}
+                >
+                  NEW
+                </span>
+              )}
+              {freshness === "recent" && (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontSize: 10.5,
+                    fontWeight: 500,
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: "var(--border-strong)",
+                      display: "inline-block",
+                    }}
+                  />
+                  Recent
                 </span>
               )}
               {isHighScore && (
@@ -431,9 +478,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
         </div>
       </div>
 
-      {showModal && (
-        <JobDetailModal job={job} onClose={() => setShowModal(false)} />
-      )}
+      {showModal && <JobDetailModal job={job} onClose={() => setShowModal(false)} />}
     </>
   );
 }

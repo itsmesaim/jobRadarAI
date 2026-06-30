@@ -14,9 +14,13 @@ import {
   ShieldAlert,
   Skull,
   Mail,
+  Clock,
+  Star,
+  FolderX,
+  AlertTriangle,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { authApi, cvApi, userApi } from "../api/index";
+import { authApi, cvApi, userApi, jobsApi } from "../api/index";
 import { useAuthStore } from "../hooks/useStores";
 import {
   LimitContactModal,
@@ -34,6 +38,7 @@ const DEFAULT_PREFS: UserPreferences = {
     internship: false,
     contract: false,
     remote: true,
+    graduate: false,
   },
   min_salary: 0,
   key_skills: [],
@@ -116,7 +121,12 @@ export function SettingsPage() {
   // sync server prefs into local state once loaded
   useEffect(() => {
     if (prefs) {
-      setLocalPrefs({ ...DEFAULT_PREFS, ...prefs });
+      setLocalPrefs({
+        ...DEFAULT_PREFS,
+        ...prefs,
+        job_types: { ...DEFAULT_PREFS.job_types, ...(prefs.job_types || {}) },
+        work_mode: { ...DEFAULT_PREFS.work_mode, ...(prefs.work_mode || {}) },
+      });
       setDirty(false);
     }
   }, [prefs]);
@@ -132,11 +142,7 @@ export function SettingsPage() {
   });
 
   const addOverrideMutation = useMutation({
-    mutationFn: () =>
-      userApi.addSkillOverride(
-        newOverrideSkill.trim(),
-        newOverrideContext.trim(),
-      ),
+    mutationFn: () => userApi.addSkillOverride(newOverrideSkill.trim(), newOverrideContext.trim()),
     onSuccess: () => {
       refetchOverrides();
       setNewOverrideSkill("");
@@ -174,9 +180,7 @@ export function SettingsPage() {
     onError: (err: any) => {
       const detail = err.response?.data?.detail;
       toast.error(
-        detail === "Incorrect password."
-          ? "Incorrect password."
-          : "Failed to delete account",
+        detail === "Incorrect password." ? "Incorrect password." : "Failed to delete account",
       );
     },
   });
@@ -236,10 +240,7 @@ export function SettingsPage() {
   const addLocation = () => {
     if (!newLocation.trim()) return;
     update({
-      preferred_locations: [
-        ...localPrefs.preferred_locations,
-        newLocation.trim(),
-      ],
+      preferred_locations: [...localPrefs.preferred_locations, newLocation.trim()],
     });
     setNewLocation("");
   };
@@ -266,8 +267,7 @@ export function SettingsPage() {
     setNewIndustry("");
   };
 
-  const overrides: { skill: string; context: string }[] =
-    overridesData?.overrides ?? [];
+  const overrides: { skill: string; context: string }[] = overridesData?.overrides ?? [];
 
   return (
     <div style={{ maxWidth: 700, margin: "0 auto", padding: "24px 16px" }}>
@@ -310,10 +310,7 @@ export function SettingsPage() {
       </div>
 
       {/* CV Section */}
-      <Section
-        title="CV"
-        subtitle="Upload your master CV. Used for job rating and tailoring."
-      >
+      <Section title="CV" subtitle="Upload your master CV. Used for job rating and tailoring.">
         {cv ? (
           <div
             style={{
@@ -354,11 +351,7 @@ export function SettingsPage() {
             </button>
             <button
               onClick={() => {
-                if (
-                  window.confirm(
-                    "Delete your CV from JobRadar? You can upload again later.",
-                  )
-                ) {
+                if (window.confirm("Delete your CV from JobRadar? You can upload again later.")) {
                   deleteCvMutation.mutate();
                 }
               }}
@@ -369,8 +362,7 @@ export function SettingsPage() {
               <Trash2 size={13} /> Delete CV
             </button>
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              {cv.structured?.skills?.length} skills ·{" "}
-              {cv.structured?.projects?.length} projects ·{" "}
+              {cv.structured?.skills?.length} skills · {cv.structured?.projects?.length} projects ·{" "}
               {cv.structured?.experience?.length} roles
             </span>
           </div>
@@ -393,24 +385,14 @@ export function SettingsPage() {
           >
             {uploading ? (
               <>
-                <Loader
-                  size={20}
-                  className="animate-spin"
-                  style={{ color: "var(--accent)" }}
-                />
-                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                  Uploading...
-                </span>
+                <Loader size={20} className="animate-spin" style={{ color: "var(--accent)" }} />
+                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Uploading...</span>
               </>
             ) : (
               <>
                 <Upload size={20} style={{ color: "var(--text-muted)" }} />
-                <span style={{ fontSize: 13, color: "var(--text)" }}>
-                  Click to upload your CV
-                </span>
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                  PDF · Max 5MB
-                </span>
+                <span style={{ fontSize: 13, color: "var(--text)" }}>Click to upload your CV</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>PDF · Max 5MB</span>
               </>
             )}
           </button>
@@ -444,9 +426,7 @@ export function SettingsPage() {
           <input
             type="checkbox"
             checked={localPrefs.email_reminders_enabled}
-            onChange={(e) =>
-              update({ email_reminders_enabled: e.target.checked })
-            }
+            onChange={(e) => update({ email_reminders_enabled: e.target.checked })}
             style={{ marginTop: 3, accentColor: "var(--accent)" }}
           />
           <span>
@@ -471,8 +451,8 @@ export function SettingsPage() {
                 lineHeight: 1.5,
               }}
             >
-              Requires SMTP on the server. Lists your top matches with scores
-              and links. Disable anytime here.
+              Requires SMTP on the server. Lists your top matches with scores and links. Disable
+              anytime here.
             </span>
           </span>
         </label>
@@ -520,9 +500,7 @@ export function SettingsPage() {
                 label={r}
                 onRemove={() =>
                   update({
-                    secondary_roles: localPrefs.secondary_roles.filter(
-                      (x) => x !== r,
-                    ),
+                    secondary_roles: localPrefs.secondary_roles.filter((x) => x !== r),
                   })
                 }
               />
@@ -554,12 +532,8 @@ export function SettingsPage() {
                   padding: "10px 14px",
                   borderRadius: 8,
                   cursor: "pointer",
-                  border: active
-                    ? "1.5px solid var(--accent)"
-                    : "1px solid var(--border)",
-                  background: active
-                    ? "var(--accent-light)"
-                    : "var(--bg-secondary)",
+                  border: active ? "1.5px solid var(--accent)" : "1px solid var(--border)",
+                  background: active ? "var(--accent-light)" : "var(--bg-secondary)",
                   textAlign: "left",
                   transition: "all 0.15s",
                 }}
@@ -607,10 +581,7 @@ export function SettingsPage() {
             marginTop: 8,
           }}
         >
-          <Info
-            size={13}
-            style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }}
-          />
+          <Info size={13} style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }} />
           <p
             style={{
               fontSize: 11.5,
@@ -619,8 +590,8 @@ export function SettingsPage() {
               lineHeight: 1.5,
             }}
           >
-            Be specific — "Stamp 1G, no sponsorship needed" works much better
-            than just "Irish work visa."
+            Be specific — "Stamp 1G, no sponsorship needed" works much better than just "Irish work
+            visa."
           </p>
         </div>
       </Section>
@@ -630,18 +601,14 @@ export function SettingsPage() {
         title="Locations"
         subtitle="Every location gets its own separate search. Add as many as you want."
       >
-        <div
-          style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}
-        >
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
           {localPrefs.preferred_locations.map((l) => (
             <Tag
               key={l}
               label={l}
               onRemove={() =>
                 update({
-                  preferred_locations: localPrefs.preferred_locations.filter(
-                    (x) => x !== l,
-                  ),
+                  preferred_locations: localPrefs.preferred_locations.filter((x) => x !== l),
                 })
               }
             />
@@ -665,32 +632,29 @@ export function SettingsPage() {
             Quick add:
           </p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-            {LOCATION_EXAMPLES.filter(
-              (ex) => !localPrefs.preferred_locations.includes(ex),
-            ).map((ex) => (
-              <button
-                key={ex}
-                onClick={() =>
-                  update({
-                    preferred_locations: [
-                      ...localPrefs.preferred_locations,
-                      ex,
-                    ],
-                  })
-                }
-                style={{
-                  fontSize: 11,
-                  padding: "3px 9px",
-                  borderRadius: 20,
-                  cursor: "pointer",
-                  border: "1px dashed var(--border)",
-                  background: "transparent",
-                  color: "var(--text-muted)",
-                }}
-              >
-                + {ex}
-              </button>
-            ))}
+            {LOCATION_EXAMPLES.filter((ex) => !localPrefs.preferred_locations.includes(ex)).map(
+              (ex) => (
+                <button
+                  key={ex}
+                  onClick={() =>
+                    update({
+                      preferred_locations: [...localPrefs.preferred_locations, ex],
+                    })
+                  }
+                  style={{
+                    fontSize: 11,
+                    padding: "3px 9px",
+                    borderRadius: 20,
+                    cursor: "pointer",
+                    border: "1px dashed var(--border)",
+                    background: "transparent",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  + {ex}
+                </button>
+              ),
+            )}
           </div>
         </div>
       </Section>
@@ -724,11 +688,7 @@ export function SettingsPage() {
                   })
                 }
               />
-              <span
-                style={{ color: "var(--text)", textTransform: "capitalize" }}
-              >
-                {mode}
-              </span>
+              <span style={{ color: "var(--text)", textTransform: "capitalize" }}>{mode}</span>
             </label>
           ))}
         </div>
@@ -737,40 +697,36 @@ export function SettingsPage() {
       {/* Job types */}
       <Section title="Job types" subtitle="What types of roles to include?">
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {(
-            Object.keys(
-              localPrefs.job_types,
-            ) as (keyof typeof localPrefs.job_types)[]
-          ).map((key) => (
-            <label
-              key={key}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                cursor: "pointer",
-                fontSize: 13,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={localPrefs.job_types[key]}
-                onChange={(e) =>
-                  update({
-                    job_types: {
-                      ...localPrefs.job_types,
-                      [key]: e.target.checked,
-                    },
-                  })
-                }
-              />
-              <span
-                style={{ color: "var(--text)", textTransform: "capitalize" }}
+          {(Object.keys(localPrefs.job_types) as (keyof typeof localPrefs.job_types)[])
+            .filter((key) => key !== "remote")
+            .map((key) => (
+              <label
+                key={key}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
               >
-                {key.replace("_", " ")}
-              </span>
-            </label>
-          ))}
+                <input
+                  type="checkbox"
+                  checked={localPrefs.job_types[key]}
+                  onChange={(e) =>
+                    update({
+                      job_types: {
+                        ...localPrefs.job_types,
+                        [key]: e.target.checked,
+                      },
+                    })
+                  }
+                />
+                <span style={{ color: "var(--text)", textTransform: "capitalize" }}>
+                  {key.replace("_", " ")}
+                </span>
+              </label>
+            ))}
         </div>
       </Section>
 
@@ -779,18 +735,14 @@ export function SettingsPage() {
         title="Industries to avoid"
         subtitle="Jobs in these sectors will be flagged even if technically a skills fit."
       >
-        <div
-          style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}
-        >
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
           {localPrefs.avoid_industries.map((ind) => (
             <Tag
               key={ind}
               label={ind}
               onRemove={() =>
                 update({
-                  avoid_industries: localPrefs.avoid_industries.filter(
-                    (x) => x !== ind,
-                  ),
+                  avoid_industries: localPrefs.avoid_industries.filter((x) => x !== ind),
                 })
               }
               color="var(--danger-bg)"
@@ -807,13 +759,8 @@ export function SettingsPage() {
       </Section>
 
       {/* Key skills */}
-      <Section
-        title="Key skills"
-        subtitle="Used to generate personalised search queries."
-      >
-        <div
-          style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}
-        >
+      <Section title="Key skills" subtitle="Used to generate personalised search queries.">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
           {localPrefs.key_skills.map((s) => (
             <Tag
               key={s}
@@ -865,14 +812,10 @@ export function SettingsPage() {
             className="input"
             type="number"
             value={localPrefs.min_salary}
-            onChange={(e) =>
-              update({ min_salary: parseInt(e.target.value) || 0 })
-            }
+            onChange={(e) => update({ min_salary: parseInt(e.target.value) || 0 })}
             style={{ maxWidth: 140 }}
           />
-          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
-            per year
-          </span>
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>per year</span>
         </div>
         <div
           style={{
@@ -882,10 +825,7 @@ export function SettingsPage() {
             marginTop: 8,
           }}
         >
-          <Info
-            size={13}
-            style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }}
-          />
+          <Info size={13} style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }} />
           <p
             style={{
               fontSize: 11.5,
@@ -894,9 +834,8 @@ export function SettingsPage() {
               lineHeight: 1.5,
             }}
           >
-            €40-70k is mid-level in Ireland · ₹20-40 LPA is strong in India ·
-            AED 15-25k/mo is good in UAE (tax-free, higher real value than EUR
-            equivalent).
+            €40-70k is mid-level in Ireland · ₹20-40 LPA is strong in India · AED 15-25k/mo is good
+            in UAE (tax-free, higher real value than EUR equivalent).
           </p>
         </div>
       </Section>
@@ -1009,11 +948,8 @@ export function SettingsPage() {
                 }
               />
             </div>
-            <p
-              style={{ fontSize: 11.5, color: "var(--text-muted)", margin: 0 }}
-            >
-              e.g. "plotly" → "used in BEng for ML model visualisation across 3
-              projects"
+            <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: 0 }}>
+              e.g. "plotly" → "used in BEng for ML model visualisation across 3 projects"
             </p>
             <div style={{ display: "flex", gap: 8 }}>
               <button
@@ -1052,9 +988,7 @@ export function SettingsPage() {
               className="input"
               type="password"
               value={pwForm.current}
-              onChange={(e) =>
-                setPwForm({ ...pwForm, current: e.target.value })
-              }
+              onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })}
             />
           </div>
           <div>
@@ -1073,9 +1007,7 @@ export function SettingsPage() {
               className="input"
               type="password"
               value={pwForm.confirm}
-              onChange={(e) =>
-                setPwForm({ ...pwForm, confirm: e.target.value })
-              }
+              onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
             />
           </div>
           <button
@@ -1094,16 +1026,11 @@ export function SettingsPage() {
               }
               setChangingPassword(true);
               try {
-                const res = await authApi.changePassword(
-                  pwForm.current,
-                  pwForm.next,
-                );
+                const res = await authApi.changePassword(pwForm.current, pwForm.next);
                 toast.success(res.message);
                 setPwForm({ current: "", next: "", confirm: "" });
               } catch (err: any) {
-                toast.error(
-                  err.response?.data?.detail || "Could not change password",
-                );
+                toast.error(err.response?.data?.detail || "Could not change password");
               } finally {
                 setChangingPassword(false);
               }
@@ -1120,16 +1047,15 @@ export function SettingsPage() {
         </div>
       </Section>
 
+      {/* Job cleanup */}
+      <JobCleanupSection />
+
       {/* Data & privacy */}
       <DataPrivacySection
         summary={dataSummary}
         onExport={handleExportData}
         onDeleteCv={() => {
-          if (
-            window.confirm(
-              "Delete your CV from JobRadar? You can upload again later.",
-            )
-          ) {
+          if (window.confirm("Delete your CV from JobRadar? You can upload again later.")) {
             deleteCvMutation.mutate();
           }
         }}
@@ -1173,9 +1099,7 @@ export function SettingsPage() {
               }}
             >
               <Skull size={22} style={{ color: "var(--danger)" }} />
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
-                Delete everything?
-              </h3>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Delete everything?</h3>
             </div>
             <p
               style={{
@@ -1185,8 +1109,8 @@ export function SettingsPage() {
                 lineHeight: 1.55,
               }}
             >
-              This permanently deletes your account, CV, preferences, skill
-              overrides, and all saved jobs. No undo. No backup. Gone.
+              This permanently deletes your account, CV, preferences, skill overrides, and all saved
+              jobs. No undo. No backup. Gone.
             </p>
             <p
               style={{
@@ -1217,16 +1141,12 @@ export function SettingsPage() {
               <button
                 onClick={() => deleteAccountMutation.mutate()}
                 disabled={
-                  deleteConfirm !== "DELETE" ||
-                  !deletePassword ||
-                  deleteAccountMutation.isPending
+                  deleteConfirm !== "DELETE" || !deletePassword || deleteAccountMutation.isPending
                 }
                 className="btn btn-danger"
                 style={{ flex: 1 }}
               >
-                {deleteAccountMutation.isPending
-                  ? "Deleting..."
-                  : "Yes, delete my account"}
+                {deleteAccountMutation.isPending ? "Deleting..." : "Yes, delete my account"}
               </button>
               <button
                 onClick={() => {
@@ -1265,9 +1185,7 @@ export function SettingsPage() {
           <div style={{ display: "flex", gap: 8 }}>
             <button
               onClick={() => {
-                setLocalPrefs(
-                  prefs ? { ...DEFAULT_PREFS, ...prefs } : DEFAULT_PREFS,
-                );
+                setLocalPrefs(prefs ? { ...DEFAULT_PREFS, ...prefs } : DEFAULT_PREFS);
                 setDirty(false);
               }}
               className="btn btn-ghost"
@@ -1288,12 +1206,339 @@ export function SettingsPage() {
       )}
 
       {limitModalKind && (
-        <LimitContactModal
-          kind={limitModalKind}
-          onClose={() => setLimitModalKind(null)}
-        />
+        <LimitContactModal kind={limitModalKind} onClose={() => setLimitModalKind(null)} />
       )}
     </div>
+  );
+}
+
+type UserFilterType = "old" | "by_status" | "unrated";
+
+const USER_CLEANUP_OPTIONS: {
+  value: UserFilterType;
+  label: string;
+  desc: string;
+  icon: React.ReactNode;
+}[] = [
+  {
+    value: "old",
+    label: "Old listings",
+    desc: "Jobs crawled more than N days ago",
+    icon: <Clock size={18} />,
+  },
+  {
+    value: "by_status",
+    label: "Terminal stages",
+    desc: "REJECTED, OFFER, or APPLIED jobs you're done with",
+    icon: <FolderX size={18} />,
+  },
+  {
+    value: "unrated",
+    label: "Unrated jobs",
+    desc: "Jobs with no AI rating yet (reduces clutter)",
+    icon: <Star size={18} />,
+  },
+];
+
+const TERMINAL_STATUSES = ["REJECTED", "OFFER", "APPLIED"] as const;
+
+function JobCleanupSection() {
+  const [filterType, setFilterType] = useState<UserFilterType>("old");
+  const [olderThanDays, setOlderThanDays] = useState(30);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(["REJECTED"]);
+  const [preview, setPreview] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+
+  const resetPreview = () => {
+    setPreview(null);
+    setConfirmed(false);
+  };
+
+  const toggleStatus = (s: string) =>
+    setSelectedStatuses((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+
+  const buildReq = () => ({
+    filter_type: filterType,
+    older_than_days: filterType === "old" ? olderThanDays : undefined,
+    statuses: filterType === "by_status" ? selectedStatuses : undefined,
+  });
+
+  const handlePreview = async () => {
+    if (filterType === "by_status" && selectedStatuses.length === 0) {
+      return toast.error("Select at least one status");
+    }
+    setLoading(true);
+    resetPreview();
+    try {
+      const res = await jobsApi.previewCleanup(buildReq());
+      setPreview(res.count);
+    } catch {
+      toast.error("Preview failed — try again");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (preview === null || !confirmed) return;
+    setLoading(true);
+    try {
+      const res = await jobsApi.executeCleanup(buildReq());
+      toast.success(`Removed ${res.deleted} job${res.deleted !== 1 ? "s" : ""}`);
+      resetPreview();
+    } catch {
+      toast.error("Deletion failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Section
+      title="Clean up jobs"
+      subtitle="Remove old or irrelevant jobs from your list. The auto-crawler may re-add them in the next scheduled run."
+    >
+      {/* Re-crawl warning */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+          padding: "10px 14px",
+          borderRadius: 8,
+          background: "var(--warning-bg)",
+          border: "1px solid var(--warning-border)",
+          marginBottom: 16,
+        }}
+      >
+        <AlertTriangle size={14} style={{ color: "var(--warning)", flexShrink: 0, marginTop: 2 }} />
+        <p
+          style={{
+            margin: 0,
+            fontSize: 12,
+            color: "var(--text-secondary)",
+            lineHeight: 1.5,
+          }}
+        >
+          Deleted jobs may reappear after the next auto-crawl if they're still live on job boards.
+          This only removes them from your list, not the source.
+        </p>
+      </div>
+
+      {/* Option cards */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+          gap: 8,
+          marginBottom: 16,
+        }}
+      >
+        {USER_CLEANUP_OPTIONS.map((opt) => {
+          const active = filterType === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => {
+                setFilterType(opt.value);
+                resetPreview();
+              }}
+              style={{
+                padding: "12px 14px",
+                borderRadius: 10,
+                border: `1.5px solid ${active ? "var(--accent)" : "var(--border)"}`,
+                background: active ? "var(--accent-light)" : "var(--bg-secondary)",
+                cursor: "pointer",
+                textAlign: "left",
+                transition: "all 0.15s",
+              }}
+            >
+              <div
+                style={{
+                  color: active ? "var(--accent)" : "var(--text-muted)",
+                  marginBottom: 6,
+                }}
+              >
+                {opt.icon}
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: active ? "var(--accent)" : "var(--text)",
+                  marginBottom: 2,
+                }}
+              >
+                {opt.label}
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                  lineHeight: 1.4,
+                }}
+              >
+                {opt.desc}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Config for selected filter */}
+      {filterType === "old" && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 14,
+          }}
+        >
+          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Older than</span>
+          <input
+            type="number"
+            value={olderThanDays}
+            min={1}
+            onChange={(e) => {
+              setOlderThanDays(parseInt(e.target.value) || 1);
+              resetPreview();
+            }}
+            className="input"
+            style={{ maxWidth: 80, textAlign: "center" }}
+          />
+          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>days</span>
+        </div>
+      )}
+
+      {filterType === "by_status" && (
+        <div style={{ marginBottom: 14 }}>
+          <p
+            style={{
+              margin: "0 0 8px",
+              fontSize: 12,
+              color: "var(--text-muted)",
+            }}
+          >
+            Include these stages:
+          </p>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {TERMINAL_STATUSES.map((s) => {
+              const checked = selectedStatuses.includes(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => {
+                    toggleStatus(s);
+                    resetPreview();
+                  }}
+                  style={{
+                    padding: "5px 14px",
+                    borderRadius: 20,
+                    border: checked ? "1.5px solid var(--accent)" : "1px solid var(--border)",
+                    background: checked ? "var(--accent-light)" : "var(--bg-secondary)",
+                    color: checked ? "var(--accent)" : "var(--text-secondary)",
+                    fontSize: 12,
+                    fontWeight: checked ? 600 : 400,
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Preview + confirm */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <button
+          type="button"
+          onClick={handlePreview}
+          disabled={loading}
+          className="btn btn-secondary"
+          style={{ fontSize: 13 }}
+        >
+          {loading && preview === null ? "Checking..." : "Preview count"}
+        </button>
+
+        {preview !== null && (
+          <span
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 12px",
+              borderRadius: 8,
+              background: preview > 0 ? "var(--warning-bg)" : "var(--success-bg)",
+              border: `1px solid ${preview > 0 ? "var(--warning-border)" : "var(--success-border)"}`,
+              fontSize: 13,
+              fontWeight: 600,
+              color: preview > 0 ? "var(--warning)" : "var(--success)",
+            }}
+          >
+            {preview === 0
+              ? "No jobs match"
+              : `${preview} job${preview !== 1 ? "s" : ""} will be removed`}
+          </span>
+        )}
+      </div>
+
+      {preview !== null && preview > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+              cursor: "pointer",
+              padding: "12px 14px",
+              borderRadius: 8,
+              border: `1px solid ${confirmed ? "var(--danger)" : "var(--border)"}`,
+              background: confirmed ? "var(--danger-bg)" : "var(--bg-secondary)",
+              marginBottom: 10,
+              transition: "all 0.15s",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(e) => setConfirmed(e.target.checked)}
+              style={{ marginTop: 3, accentColor: "var(--danger)" }}
+            />
+            <span style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>
+              I understand these {preview} jobs will be permanently deleted. They may reappear after
+              the next crawl.
+            </span>
+          </label>
+
+          {confirmed && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={loading}
+              className="btn btn-danger"
+              style={{ fontSize: 13, gap: 6 }}
+            >
+              <Trash2 size={13} />
+              {loading ? "Deleting..." : `Delete ${preview} jobs`}
+            </button>
+          )}
+        </div>
+      )}
+    </Section>
   );
 }
 
@@ -1311,10 +1556,7 @@ function DataPrivacySection({
   onDeleteAccount: () => void;
 }) {
   return (
-    <Section
-      title="Your data"
-      subtitle="What we store, who sees it, and how to nuke it."
-    >
+    <Section title="Your data" subtitle="What we store, who sees it, and how to nuke it.">
       <div
         style={{
           background: "var(--warning-bg)",
@@ -1331,10 +1573,7 @@ function DataPrivacySection({
             alignItems: "flex-start",
           }}
         >
-          <Skull
-            size={18}
-            style={{ color: "var(--warning)", flexShrink: 0, marginTop: 2 }}
-          />
+          <Skull size={18} style={{ color: "var(--warning)", flexShrink: 0, marginTop: 2 }} />
           <div>
             <p
               style={{
@@ -1345,8 +1584,7 @@ function DataPrivacySection({
                 lineHeight: 1.45,
               }}
             >
-              {summary?.roast ??
-                "Yes, we store your data. No, we're not pretending otherwise."}
+              {summary?.roast ?? "Yes, we store your data. No, we're not pretending otherwise."}
             </p>
             <p
               style={{
@@ -1387,10 +1625,7 @@ function DataPrivacySection({
             <DataStat label="Jobs saved" value={String(summary.jobs.total)} />
             <DataStat label="Jobs rated" value={String(summary.jobs.rated)} />
             <DataStat label="CV uploaded" value={summary.cv ? "Yes" : "No"} />
-            <DataStat
-              label="Skill overrides"
-              value={String(summary.skill_overrides_count)}
-            />
+            <DataStat label="Skill overrides" value={String(summary.skill_overrides_count)} />
           </div>
 
           {summary.cv && (
@@ -1402,9 +1637,8 @@ function DataPrivacySection({
                 lineHeight: 1.5,
               }}
             >
-              CV: <strong>{summary.cv.filename}</strong> —{" "}
-              {summary.cv.skills_count} skills, {summary.cv.experience_count}{" "}
-              roles, {summary.cv.projects_count} projects
+              CV: <strong>{summary.cv.filename}</strong> — {summary.cv.skills_count} skills,{" "}
+              {summary.cv.experience_count} roles, {summary.cv.projects_count} projects
             </p>
           )}
 
@@ -1434,9 +1668,7 @@ function DataPrivacySection({
                     width: 8,
                     height: 8,
                     borderRadius: "50%",
-                    background: item.stored
-                      ? "var(--success)"
-                      : "var(--border)",
+                    background: item.stored ? "var(--success)" : "var(--border)",
                     flexShrink: 0,
                   }}
                 />
@@ -1463,9 +1695,7 @@ function DataPrivacySection({
           </ul>
         </>
       ) : (
-        <p
-          style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}
-        >
+        <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
           Loading your data summary...
         </p>
       )}
@@ -1496,14 +1726,8 @@ function DataPrivacySection({
 function DataStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="admin-stat-box">
-      <div
-        style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}
-      >
-        {label}
-      </div>
-      <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text)" }}>
-        {value}
-      </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text)" }}>{value}</div>
     </div>
   );
 }
@@ -1529,11 +1753,7 @@ function Section({
       >
         {title}
       </h3>
-      <p
-        style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 14px" }}
-      >
-        {subtitle}
-      </p>
+      <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 14px" }}>{subtitle}</p>
       {children}
     </div>
   );
@@ -1603,11 +1823,7 @@ function TagInput({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && onAdd()}
       />
-      <button
-        onClick={onAdd}
-        className="btn btn-secondary"
-        style={{ flexShrink: 0 }}
-      >
+      <button onClick={onAdd} className="btn btn-secondary" style={{ flexShrink: 0 }}>
         <Plus size={13} />
       </button>
     </div>

@@ -678,6 +678,18 @@
     }
   }
 
+  @keyframes fresh-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.45;
+      transform: scale(1.3);
+    }
+  }
+
   .admin-user-card {
     padding: 14px;
     background: var(--bg-card);

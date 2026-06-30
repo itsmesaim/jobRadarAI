@@ -38,19 +38,8 @@ export function LogoMark({ size = 32 }: { size?: number }) {
         </linearGradient>
       </defs>
       <rect width="32" height="32" rx="8" fill={BRAND} />
-      <circle
-        cx="16"
-        cy="16"
-        r="9.5"
-        fill="none"
-        stroke="#ffffff"
-        strokeWidth="2"
-        opacity="0.28"
-      />
-      <path
-        d="M16 16 L16 6.5 A9.5 9.5 0 0 1 24.2 10.8 Z"
-        fill={`url(#sweep-${uid})`}
-      />
+      <circle cx="16" cy="16" r="9.5" fill="none" stroke="#ffffff" strokeWidth="2" opacity="0.28" />
+      <path d="M16 16 L16 6.5 A9.5 9.5 0 0 1 24.2 10.8 Z" fill={`url(#sweep-${uid})`} />
       <line
         x1="16"
         y1="16"

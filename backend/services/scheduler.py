@@ -36,9 +36,25 @@ async def _auto_crawl_and_rate():
         "[scheduler] This will crawl new jobs then rate any unrated ones (respecting per-user limits)."
     )
 
+    # Skip users crawled within the last (interval - 1) hours.
+    # This prevents a crash-restart loop from firing redundant LLM rating cycles
+    # 2 minutes after each boot for users already processed in the current window.
+    min_gap = timedelta(hours=max(1, settings.auto_crawl_interval_hours - 1))
+    now_utc = datetime.now(timezone.utc)
+
     for user in users:
         user_id = str(user["_id"])
         email = user.get("email", user_id)
+
+        last_crawl = user.get("last_crawl_at")
+        if last_crawl:
+            if isinstance(last_crawl, datetime) and last_crawl.tzinfo is None:
+                last_crawl = last_crawl.replace(tzinfo=timezone.utc)
+            if isinstance(last_crawl, datetime) and (now_utc - last_crawl) < min_gap:
+                print(
+                    f"[scheduler] [{email}] Skipped — crawled {int((now_utc - last_crawl).total_seconds() // 3600)}h ago (min gap {int(min_gap.total_seconds() // 3600)}h)"
+                )
+                continue
 
         try:
             max_stored = settings.auto_crawl_max_stored_per_cycle

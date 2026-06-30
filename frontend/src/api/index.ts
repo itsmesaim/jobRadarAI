@@ -49,6 +49,7 @@ export const jobsApi = {
     page?: number;
     limit?: number;
     kanban?: boolean;
+    exclude_terminal?: boolean;
   }) => {
     const res = await api.get("/jobs", { params });
     return res.data as JobsResponse;
@@ -64,12 +65,7 @@ export const jobsApi = {
     return res.data;
   },
 
-  addManual: async (payload: {
-    title: string;
-    company: string;
-    url?: string;
-    jd_text: string;
-  }) => {
+  addManual: async (payload: { title: string; company: string; url?: string; jd_text: string }) => {
     const res = await api.post("/jobs/manual", payload);
     return res.data;
   },
@@ -92,6 +88,24 @@ export const jobsApi = {
   hide: async (id: string) => {
     const res = await api.delete(`/jobs/${id}`);
     return res.data;
+  },
+
+  previewCleanup: async (req: {
+    filter_type: "old" | "by_status" | "unrated";
+    older_than_days?: number;
+    statuses?: string[];
+  }) => {
+    const res = await api.post("/jobs/cleanup/preview", req);
+    return res.data as { count: number; filter_type: string };
+  },
+
+  executeCleanup: async (req: {
+    filter_type: "old" | "by_status" | "unrated";
+    older_than_days?: number;
+    statuses?: string[];
+  }) => {
+    const res = await api.delete("/jobs/cleanup", { data: req });
+    return res.data as { deleted: number; filter_type: string };
   },
 };
 
@@ -143,9 +157,7 @@ export const userApi = {
     return res.data;
   },
   deleteSkillOverride: async (skill: string) => {
-    const res = await api.delete(
-      `/users/skill-overrides/${encodeURIComponent(skill)}`,
-    );
+    const res = await api.delete(`/users/skill-overrides/${encodeURIComponent(skill)}`);
     return res.data;
   },
 
@@ -194,6 +206,26 @@ export const adminApi = {
   ) => {
     const res = await api.patch(`${basePath}/users/${userId}/access`, data);
     return res.data;
+  },
+  cleanupJobs: async (
+    basePath: string,
+    payload: {
+      user_id: string;
+      filter_type: "all" | "old" | "unrated" | "low_score" | "by_status" | "auto_rejected";
+      older_than_days?: number;
+      max_score?: number;
+      statuses?: string[];
+      dry_run: boolean;
+    },
+  ) => {
+    const res = await api.post(`${basePath}/jobs/cleanup`, payload);
+    return res.data as {
+      dry_run: boolean;
+      would_delete?: number;
+      deleted?: number;
+      filter_type: string;
+      target_email?: string;
+    };
   },
 };
 

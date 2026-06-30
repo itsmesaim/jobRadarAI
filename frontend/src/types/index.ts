@@ -38,14 +38,7 @@ export interface Job {
 }
 
 export type JobStatus =
-  | "NEW"
-  | "SAVED"
-  | "APPLIED"
-  | "INTERVIEWING"
-  | "OFFER"
-  | "REJECTED"
-  | "FOLLOWUP"
-  | "HALF_APPLIED";
+  "NEW" | "SAVED" | "APPLIED" | "INTERVIEWING" | "OFFER" | "REJECTED" | "FOLLOWUP" | "HALF_APPLIED";
 
 export type JobRatingFilter = "all" | "rated" | "unrated";
 
@@ -72,6 +65,7 @@ export interface UserPreferences {
     internship: boolean;
     contract: boolean;
     remote: boolean;
+    graduate: boolean;
   };
   min_salary: number;
   key_skills: string[];

@@ -125,9 +125,7 @@ export function LoginPage() {
               style={errors.email ? { borderColor: "var(--danger)" } : {}}
             />
             {errors.email && (
-              <p style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>
-                {errors.email}
-              </p>
+              <p style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>{errors.email}</p>
             )}
           </div>
 
@@ -136,9 +134,7 @@ export function LoginPage() {
             <input
               className="input"
               type="password"
-              placeholder={
-                mode === "register" ? "Min. 8 characters" : "Your password"
-              }
+              placeholder={mode === "register" ? "Min. 8 characters" : "Your password"}
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
@@ -176,11 +172,7 @@ export function LoginPage() {
               fontSize: 14,
             }}
           >
-            {loading
-              ? "Please wait..."
-              : mode === "login"
-                ? "Sign in"
-                : "Create account"}
+            {loading ? "Please wait..." : mode === "login" ? "Sign in" : "Create account"}
           </button>
         </div>
       </div>

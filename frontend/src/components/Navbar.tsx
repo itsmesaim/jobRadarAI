@@ -86,14 +86,9 @@ export function Navbar() {
                   borderRadius: 8,
                   fontSize: 14,
                   fontWeight: 500,
-                  color:
-                    location.pathname === "/admin"
-                      ? "var(--accent)"
-                      : "var(--text-secondary)",
+                  color: location.pathname === "/admin" ? "var(--accent)" : "var(--text-secondary)",
                   background:
-                    location.pathname === "/admin"
-                      ? "var(--accent-light)"
-                      : "transparent",
+                    location.pathname === "/admin" ? "var(--accent-light)" : "transparent",
                 }}
               >
                 <Shield size={15} />
