@@ -22,7 +22,7 @@ import {
   type LimitKind,
 } from "../components/LimitContactModal";
 import { jobsApi, crawlerApi } from "../api/index";
-import { useAuthStore } from "../hooks/useStores";
+import { useAuthStore, useCrawlStore } from "../hooks/useStores";
 
 type ScoreFilterId = "6plus" | "7plus" | "8plus" | "below6" | "unrated" | "all";
 type ViewMode = "active" | "all";
@@ -224,6 +224,7 @@ function FilterChip({
 
 export function Dashboard() {
   const { user } = useAuthStore();
+  const { isCrawling, setIsCrawling } = useCrawlStore();
   const [scoreFilter, setScoreFilter] = useState<ScoreFilterId>("6plus");
   const [viewMode, setViewMode] = useState<ViewMode>("active");
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
@@ -336,7 +337,11 @@ export function Dashboard() {
   });
 
   const crawlMutation = useMutation({
-    mutationFn: crawlerApi.search,
+    mutationFn: async () => {
+      if (isCrawling) throw new Error("already_crawling");
+      setIsCrawling(true);
+      return crawlerApi.search();
+    },
     onSuccess: async (res) => {
       toast.success(`Found ${res.found} jobs, ${res.stored} new`);
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
@@ -388,8 +393,11 @@ export function Dashboard() {
           toast.error(detail);
         }
       }
+      setIsCrawling(false);
     },
     onError: (err: any) => {
+      if (err.message === "already_crawling") return;
+      setIsCrawling(false);
       const detail = err.response?.data?.detail || "Search failed";
       if (detail.toLowerCase().includes("limit")) {
         toast.error(detail, { duration: 6000 });
@@ -698,11 +706,11 @@ export function Dashboard() {
             }
             crawlMutation.mutate();
           }}
-          disabled={crawlMutation.isPending}
+          disabled={isCrawling}
           className="btn btn-primary"
         >
           <Search size={14} />
-          {crawlMutation.isPending
+          {isCrawling
             ? "Searching..."
             : isFull
               ? "Search jobs"
@@ -983,8 +991,14 @@ export function Dashboard() {
               : "No jobs found. Search to discover new roles."}
           </p>
           {!hasActiveFilters ? (
-            <button onClick={() => crawlMutation.mutate()} className="btn btn-primary">
-              <Search size={14} /> Search for jobs
+            <button
+              onClick={() => {
+                if (!isCrawling) crawlMutation.mutate();
+              }}
+              disabled={isCrawling}
+              className="btn btn-primary"
+            >
+              <Search size={14} /> {isCrawling ? "Searching..." : "Search for jobs"}
             </button>
           ) : (
             <div

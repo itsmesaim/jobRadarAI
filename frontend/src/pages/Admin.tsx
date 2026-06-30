@@ -124,6 +124,26 @@ function isUserFullAccess(u: AdminUser) {
   return !!u.full_access || !!(u.full_access_until && new Date(u.full_access_until) > new Date());
 }
 
+function UnlimitedBadge() {
+  return (
+    <span
+      style={{
+        fontSize: 10,
+        fontWeight: 700,
+        color: "var(--success)",
+        background: "var(--success-bg)",
+        border: "1px solid var(--success-border)",
+        borderRadius: 20,
+        padding: "1px 6px",
+        lineHeight: 1.6,
+        fontFamily: "sans-serif",
+      }}
+    >
+      ∞
+    </span>
+  );
+}
+
 function DataStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="admin-stat-box">
@@ -149,24 +169,30 @@ function UsageStat({
   const pct = getPct(used, limit);
   return (
     <div className="admin-stat-box">
-      <div
-        style={{
-          fontSize: 11,
-          color: "var(--text-muted)",
-          marginBottom: 4,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontFamily: "monospace",
-          fontWeight: 600,
-          fontSize: 14,
-          color: "var(--text)",
-        }}
-      >
-        {unlimited ? "Unlimited" : `${used} / ${limit}`}
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <span
+          style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 14, color: "var(--text)" }}
+        >
+          {formatTokens(used)}
+          {!unlimited && ` / ${formatTokens(limit)}`}
+        </span>
+        {unlimited && (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: "var(--success)",
+              background: "var(--success-bg)",
+              border: "1px solid var(--success-border)",
+              borderRadius: 20,
+              padding: "1px 6px",
+              lineHeight: 1.6,
+            }}
+          >
+            ∞
+          </span>
+        )}
       </div>
       {!unlimited && (
         <div className="admin-progress">
@@ -1441,19 +1467,26 @@ export function AdminPage() {
                         <td style={{ padding: "14px 16px", minWidth: 120 }}>
                           <div
                             style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 5,
                               fontFamily: "monospace",
                               fontWeight: 600,
                             }}
                           >
-                            {isFull ? "Unlimited" : `${u.searches_used} / ${u.search_limit}`}
+                            {u.searches_used}
+                            {isFull ? (
+                              <UnlimitedBadge />
+                            ) : (
+                              <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+                                / {u.search_limit}
+                              </span>
+                            )}
                           </div>
                           {!isFull && (
                             <div className="admin-progress">
                               <span
-                                style={{
-                                  width: `${searchPct}%`,
-                                  background: "var(--success)",
-                                }}
+                                style={{ width: `${searchPct}%`, background: "var(--success)" }}
                               />
                             </div>
                           )}
@@ -1461,19 +1494,26 @@ export function AdminPage() {
                         <td style={{ padding: "14px 16px", minWidth: 120 }}>
                           <div
                             style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 5,
                               fontFamily: "monospace",
                               fontWeight: 600,
                             }}
                           >
-                            {isFull ? "Unlimited" : `${u.ratings_used} / ${u.rating_limit}`}
+                            {u.ratings_used}
+                            {isFull ? (
+                              <UnlimitedBadge />
+                            ) : (
+                              <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+                                / {u.rating_limit}
+                              </span>
+                            )}
                           </div>
                           {!isFull && (
                             <div className="admin-progress">
                               <span
-                                style={{
-                                  width: `${ratingPct}%`,
-                                  background: "var(--warning)",
-                                }}
+                                style={{ width: `${ratingPct}%`, background: "var(--warning)" }}
                               />
                             </div>
                           )}
@@ -1481,22 +1521,25 @@ export function AdminPage() {
                         <td style={{ padding: "14px 16px", minWidth: 130 }}>
                           <div
                             style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 5,
                               fontFamily: "monospace",
                               fontWeight: 600,
                               fontSize: 12,
                             }}
                           >
-                            {isFull || isUnlimitedTokenCap(u.daily_token_limit)
-                              ? `${formatTokens(u.daily_tokens_used ?? u.ai_usage?.today?.total_tokens)} today`
-                              : `${formatTokens(u.daily_tokens_used ?? u.ai_usage?.today?.total_tokens)} / ${formatTokenCap(u.daily_token_limit)}`}
+                            {formatTokens(u.daily_tokens_used ?? u.ai_usage?.today?.total_tokens)}{" "}
+                            today
+                            {isFull || isUnlimitedTokenCap(u.daily_token_limit) ? (
+                              <UnlimitedBadge />
+                            ) : (
+                              <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+                                / {formatTokenCap(u.daily_token_limit)}
+                              </span>
+                            )}
                           </div>
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: "var(--text-muted)",
-                              marginTop: 2,
-                            }}
-                          >
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
                             {formatTokens(u.ai_usage?.this_month?.total_tokens)} this month
                             {u.ai_usage?.cost_estimation_enabled &&
                               ` · ${formatUsd(u.ai_usage?.this_month?.estimated_cost_usd, true)}`}

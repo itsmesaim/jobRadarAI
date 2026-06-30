@@ -678,7 +678,7 @@ JobRadar is a **personal/small-team tool**, not a hardened enterprise product. T
 5. Get scores + **tailoring tips** + track in Kanban
 6. Admin panel for limits & access control
 
-**Major current capabilities**:
+**Major current capabilities** (as of latest session):
 - Separate main LLM vs Rating LLM (configurable in `.env` only)
 - Fast bulk rating via cosine pre-filter + concurrency
 - **Three-layer freemium**: searches, ratings, AI tokens — admin-overridable per user
@@ -687,6 +687,8 @@ JobRadar is a **personal/small-team tool**, not a hardened enterprise product. T
 - Platform + per-user AI token tracking in admin
 - Job posted date on cards, Kanban (desktop DnD + mobile tabs)
 - User data export and account/CV deletion in Settings
+- **Duplicate search guard** — crawl-in-progress state stored in Zustand; navigating away and back keeps the button disabled until the search fully completes, preventing double-fires and wasted quota
+- **Admin token display** — all usage columns always show real numbers; unlimited users get a small ∞ badge instead of the word "Unlimited" replacing the count
 
 **Ops + security:** see the **Security** section above and `backend/.env.example` for production checklist.
 
