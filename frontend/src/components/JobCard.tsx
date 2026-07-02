@@ -206,8 +206,8 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                       : job.source === "jobsapi-linkedin"
                         ? "LinkedIn"
                         : job.source === "adzuna"
-                        ? "Adzuna"
-                        : "Auto"}
+                          ? "Adzuna"
+                          : "Auto"}
               </span>
               {postedTime && (
                 <span
@@ -343,10 +343,20 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                       gap: 4,
                       fontSize: 12,
                       color: "var(--text-secondary)",
+                      minWidth: 0,
+                      flex: "1 1 auto",
                     }}
                   >
                     <MapPin size={11} style={{ flexShrink: 0 }} />
-                    {location}
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {location}
+                    </span>
                   </span>
                 )}
               </div>

@@ -751,11 +751,10 @@ export function Dashboard() {
             setSearchQuery(e.target.value);
             setPage(1);
           }}
-          className="input"
-          style={{ maxWidth: 220 }}
+          className="input dash-search-input"
         />
 
-        <div style={{ flex: 1 }} />
+        <div className="dash-toolbar-spacer" />
 
         <button onClick={() => setShowFilters(!showFilters)} className="btn btn-ghost">
           <SlidersHorizontal size={13} />

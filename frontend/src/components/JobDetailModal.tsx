@@ -76,11 +76,11 @@ export function JobDetailModal({ job, onClose }: Props) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="card"
+        className="card job-detail-modal"
         style={{
           width: "100%",
           maxWidth: 680,
-          maxHeight: "88vh",
+          maxHeight: "88dvh",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",

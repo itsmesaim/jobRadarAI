@@ -105,6 +105,8 @@
 
   html {
     font-size: 16px;
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
@@ -115,6 +117,7 @@
     line-height: 1.65;
     letter-spacing: -0.01em;
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
     transition:
       background 0.2s,
       color 0.2s;
@@ -583,6 +586,108 @@
     border-bottom: 1px solid var(--border);
   }
 
+  .dash-toolbar-spacer {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .dash-search-input {
+    flex: 1 1 180px;
+    max-width: 220px;
+    min-width: 0;
+  }
+
+  .settings-page {
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 24px 16px 32px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .settings-page.has-unsaved {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+
+  .settings-title {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text);
+  }
+
+  .settings-unsaved-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--warning);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+  }
+
+  .settings-save-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 45;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg-card);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.08);
+  }
+
+  .settings-save-bar-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    min-width: 0;
+  }
+
+  .settings-save-bar-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .settings-exp-levels {
+    display: flex;
+    gap: 8px;
+  }
+
+  .settings-tag-input {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+    max-width: 320px;
+    min-width: 0;
+  }
+
+  .settings-field-narrow {
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .settings-section-card {
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
   .jobs-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
@@ -751,7 +856,7 @@
     }
 
     .page-shell {
-      padding: 20px 12px;
+      padding: 16px 12px 28px;
     }
 
     .nav-inner {
@@ -760,7 +865,7 @@
     }
 
     .nav-brand {
-      margin-right: 12px !important;
+      margin-right: 8px !important;
     }
 
     .kanban-board {
@@ -769,6 +874,73 @@
 
     .kanban-column {
       max-height: calc(100dvh - 152px);
+    }
+
+    .dash-toolbar {
+      gap: 8px;
+    }
+
+    .dash-toolbar-spacer {
+      display: none;
+    }
+
+    .dash-search-input {
+      flex: 1 1 100%;
+      max-width: none;
+      order: 10;
+    }
+
+    .dash-toolbar .btn {
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+
+    .jobs-grid {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .settings-page {
+      padding: 16px 12px 24px;
+    }
+
+    .settings-page.has-unsaved {
+      padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .settings-save-bar {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+    }
+
+    .settings-save-bar-actions {
+      width: 100%;
+    }
+
+    .settings-save-bar-actions .btn {
+      flex: 1;
+      justify-content: center;
+    }
+
+    .settings-exp-levels {
+      flex-direction: column;
+    }
+
+    .settings-tag-input,
+    .settings-field-narrow {
+      max-width: none;
+    }
+
+    .settings-section-card {
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .job-detail-modal {
+      max-height: 92dvh !important;
+      border-bottom-left-radius: 0 !important;
+      border-bottom-right-radius: 0 !important;
     }
   }
 }

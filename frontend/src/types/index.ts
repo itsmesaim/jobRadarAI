@@ -22,13 +22,7 @@ export interface Job {
   snippet: string;
   crawled_at: string;
   posted_at?: string; // actual job posting date from source when available
-  source:
-    | "tavily"
-    | "manual"
-    | "jooble"
-    | "adzuna"
-    | "jobsapi-indeed"
-    | "jobsapi-linkedin";
+  source: "tavily" | "manual" | "jooble" | "adzuna" | "jobsapi-indeed" | "jobsapi-linkedin";
   score: number | null;
   matched_strengths: string[];
   gaps: string[];

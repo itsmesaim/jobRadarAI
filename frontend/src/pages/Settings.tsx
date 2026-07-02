@@ -269,44 +269,25 @@ export function SettingsPage() {
 
   const overrides: { skill: string; context: string }[] = overridesData?.overrides ?? [];
 
+  const discardChanges = () => {
+    if (prefs) {
+      setLocalPrefs({
+        ...DEFAULT_PREFS,
+        ...prefs,
+        job_types: { ...DEFAULT_PREFS.job_types, ...(prefs.job_types || {}) },
+        work_mode: { ...DEFAULT_PREFS.work_mode, ...(prefs.work_mode || {}) },
+      });
+    } else {
+      setLocalPrefs(DEFAULT_PREFS);
+    }
+    setDirty(false);
+  };
+
   return (
-    <div style={{ maxWidth: 700, margin: "0 auto", padding: "24px 16px" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 24,
-        }}
-      >
-        <h2
-          style={{
-            fontSize: 17,
-            fontWeight: 600,
-            margin: 0,
-            color: "var(--text)",
-          }}
-        >
-          Settings
-        </h2>
-        {dirty && (
-          <button
-            onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending}
-            className="btn btn-primary"
-            style={{ fontSize: 13 }}
-          >
-            {saveMutation.isPending ? (
-              <>
-                <Loader size={13} className="animate-spin" /> Saving...
-              </>
-            ) : (
-              <>
-                <Save size={13} /> Save changes
-              </>
-            )}
-          </button>
-        )}
+    <div className={`settings-page${dirty ? " has-unsaved" : ""}`}>
+      <div className="settings-header">
+        <h2 className="settings-title">Settings</h2>
+        {dirty && <span className="settings-unsaved-pill">Unsaved changes</span>}
       </div>
 
       {/* CV Section */}
@@ -478,10 +459,9 @@ export function SettingsPage() {
         <div style={{ marginBottom: 12 }}>
           <label className="label">Primary role</label>
           <input
-            className="input"
+            className="input settings-field-narrow"
             value={localPrefs.primary_role}
             onChange={(e) => update({ primary_role: e.target.value })}
-            style={{ maxWidth: 320 }}
           />
         </div>
         <div>
@@ -520,7 +500,7 @@ export function SettingsPage() {
         title="Experience level"
         subtitle="Helps the rating engine catch seniority mismatches (e.g. a role requiring 'lead a team' when you're IC)."
       >
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="settings-exp-levels">
           {EXPERIENCE_LEVELS.map((lvl) => {
             const active = localPrefs.experience_level === lvl.value;
             return (
@@ -1163,43 +1143,28 @@ export function SettingsPage() {
         </div>
       )}
 
-      {/* Floating save bar */}
       {dirty && (
-        <div
-          style={{
-            position: "sticky",
-            bottom: 16,
-            background: "var(--bg-card)",
-            border: "1px solid var(--border)",
-            borderRadius: 10,
-            padding: "12px 16px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            boxShadow: "var(--shadow-md)",
-          }}
-        >
-          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-            You have unsaved changes
-          </span>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              onClick={() => {
-                setLocalPrefs(prefs ? { ...DEFAULT_PREFS, ...prefs } : DEFAULT_PREFS);
-                setDirty(false);
-              }}
-              className="btn btn-ghost"
-              style={{ fontSize: 12 }}
-            >
+        <div className="settings-save-bar" role="region" aria-label="Unsaved changes">
+          <span className="settings-save-bar-label">You have unsaved changes</span>
+          <div className="settings-save-bar-actions">
+            <button onClick={discardChanges} className="btn btn-ghost" style={{ fontSize: 13 }}>
               Discard
             </button>
             <button
               onClick={() => saveMutation.mutate()}
               disabled={saveMutation.isPending}
               className="btn btn-primary"
-              style={{ fontSize: 12 }}
+              style={{ fontSize: 13 }}
             >
-              {saveMutation.isPending ? "Saving..." : "Save changes"}
+              {saveMutation.isPending ? (
+                <>
+                  <Loader size={13} className="animate-spin" /> Saving...
+                </>
+              ) : (
+                <>
+                  <Save size={13} /> Save changes
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -1742,7 +1707,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+    <div className="card settings-section-card">
       <h3
         style={{
           fontSize: 14,
@@ -1815,7 +1780,7 @@ function TagInput({
   placeholder: string;
 }) {
   return (
-    <div style={{ display: "flex", gap: 6, maxWidth: 320 }}>
+    <div className="settings-tag-input">
       <input
         className="input"
         placeholder={placeholder}
