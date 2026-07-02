@@ -101,6 +101,7 @@ const SOURCE_OPTS: { label: string; value: string | undefined }[] = [
   { label: "All sources", value: undefined },
   { label: "Jooble", value: "jooble" },
   { label: "Indeed", value: "jobsapi-indeed" },
+  { label: "LinkedIn", value: "jobsapi-linkedin" },
   { label: "Manual", value: "manual" },
 ];
 

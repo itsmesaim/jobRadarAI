@@ -119,6 +119,18 @@ async def lifespan(app: FastAPI):
             "(set in .env for admin panel)"
         )
 
+    if not settings.jooble_api_key:
+        print(
+            "[startup] WARNING: JOOBLE_API_KEY unset — Jooble crawler will not fetch jobs"
+        )
+    if not settings.jobsapi_key:
+        print(
+            "[startup] WARNING: JOBSAPI_KEY unset — Indeed/LinkedIn crawlers "
+            "(jobs-api14 RapidAPI) will not fetch jobs"
+        )
+    else:
+        print("[startup] JobsAPI (Indeed + LinkedIn) key configured")
+
     if smtp_configured():
         print(
             f"[startup] SMTP ready (from {settings.smtp_from_name} "

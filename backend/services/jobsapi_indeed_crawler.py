@@ -126,9 +126,30 @@ def _detect_location_string(location: str) -> str:
     return location
 
 
+def _jobsapi_headers() -> dict:
+    return {
+        "X-RapidAPI-Key": settings.jobsapi_key,
+        "X-RapidAPI-Host": "jobs-api14.p.rapidapi.com",
+    }
+
+
+def _skip_jobsapi(max_stored: int | None, label: str) -> dict | None:
+    if not settings.jobsapi_key:
+        print(f"[{label}] SKIPPED — JOBSAPI_KEY not set in server .env")
+        return {"found": 0, "stored": 0, "skipped": 0}
+    if max_stored is not None and max_stored <= 0:
+        print(f"[{label}] SKIPPED — storage cap already reached this cycle")
+        return {"found": 0, "stored": 0, "skipped": 0}
+    return None
+
+
 async def crawl_jobs_for_user_jobsapi(
     user: dict, max_stored: int | None = None
 ) -> dict:
+    skipped_early = _skip_jobsapi(max_stored, "jobsapi-indeed")
+    if skipped_early:
+        return skipped_early
+
     db = get_database()
 
     # always fetch fresh preferences
@@ -139,10 +160,7 @@ async def crawl_jobs_for_user_jobsapi(
     search_terms = _build_search_terms(user)
     locations = user.get("preferred_locations", ["Dublin Ireland"])
 
-    headers = {
-        "X-RapidAPI-Key": settings.jobsapi_key,
-        "X-RapidAPI-Host": "jobs-api14.p.rapidapi.com",
-    }
+    headers = _jobsapi_headers()
 
     found = 0
     stored = 0
@@ -177,6 +195,13 @@ async def crawl_jobs_for_user_jobsapi(
                     )
                     resp.raise_for_status()
                     data = resp.json()
+                except httpx.HTTPStatusError as e:
+                    body = e.response.text[:200] if e.response is not None else ""
+                    print(
+                        f"[jobsapi-indeed] HTTP {e.response.status_code} for "
+                        f"'{term}' @ '{raw_location}' ({country_code}): {body}"
+                    )
+                    continue
                 except Exception as e:
                     print(
                         f"[jobsapi-indeed] Error for '{term}' @ '{raw_location}' ({country_code}): {e}"
@@ -288,3 +313,155 @@ def _is_relevant_job(full_text: str, user: dict) -> bool:
             return False
 
     return True
+
+
+def _linkedin_description(job: dict) -> str:
+    """LinkedIn search results omit JD text — build a minimal stub for storage/rating."""
+    title = job.get("title", "Unknown Role")
+    company = job.get("companyName", "")
+    location = job.get("location", "")
+    posted = job.get("datePosted") or job.get("postedTimeAgo") or ""
+    url = job.get("linkedinUrl", "")
+    return (
+        f"Job title: {title}\n"
+        f"Company: {company}\n"
+        f"Location: {location}\n"
+        f"Posted: {posted}\n\n"
+        f"Source listing: {url}"
+    )
+
+
+async def crawl_jobs_for_user_jobsapi_linkedin(
+    user: dict, max_stored: int | None = None
+) -> dict:
+    skipped_early = _skip_jobsapi(max_stored, "jobsapi-linkedin")
+    if skipped_early:
+        return skipped_early
+
+    db = get_database()
+
+    fresh_user = await db.users.find_one({"_id": ObjectId(user["_id"])})
+    if fresh_user:
+        user = fresh_user
+
+    search_terms = _build_search_terms(user)
+    locations = user.get("preferred_locations", ["Dublin Ireland"])
+    headers = _jobsapi_headers()
+
+    found = 0
+    stored = 0
+    skipped = 0
+
+    def _at_cap() -> bool:
+        return max_stored is not None and stored >= max_stored
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        for term in search_terms:
+            if _at_cap():
+                break
+            for raw_location in locations:
+                if _at_cap():
+                    break
+                location_str = _detect_location_string(raw_location)
+                await asyncio.sleep(1.5)
+
+                try:
+                    resp = await client.get(
+                        f"{BASE_URL}/v2/linkedin/search",
+                        headers=headers,
+                        params={
+                            "query": term,
+                            "location": location_str,
+                            "page": "1",
+                        },
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                except httpx.HTTPStatusError as e:
+                    body = e.response.text[:200] if e.response is not None else ""
+                    print(
+                        f"[jobsapi-linkedin] HTTP {e.response.status_code} for "
+                        f"'{term}' @ '{raw_location}': {body}"
+                    )
+                    continue
+                except Exception as e:
+                    print(
+                        f"[jobsapi-linkedin] Error for '{term}' @ '{raw_location}': {e}"
+                    )
+                    continue
+
+                jobs = data.get("data", [])
+                print(
+                    f"[jobsapi-linkedin] '{term}' @ '{raw_location}' → {len(jobs)} results"
+                )
+
+                for job in jobs:
+                    if _at_cap():
+                        break
+                    found += 1
+                    url = job.get("linkedinUrl", "")
+                    if not url:
+                        skipped += 1
+                        continue
+
+                    title = job.get("title", "Unknown Role")
+                    company = job.get("companyName", "")
+                    job_location = job.get("location", raw_location)
+                    user_id = str(user["_id"])
+
+                    if await job_exists_for_user(
+                        db,
+                        user_id=user_id,
+                        url=url,
+                        title=title,
+                        company=company,
+                        location=job_location,
+                    ):
+                        skipped += 1
+                        continue
+
+                    full_text = _linkedin_description(job)
+                    if not _is_relevant_job(full_text, user):
+                        skipped += 1
+                        continue
+
+                    posted_at = None
+                    posted = job.get("datePosted")
+                    if posted:
+                        try:
+                            if len(str(posted)) == 10:
+                                posted_at = f"{posted}T00:00:00+00:00"
+                            else:
+                                posted_at = datetime.fromisoformat(
+                                    str(posted).replace("Z", "+00:00")
+                                ).isoformat()
+                        except Exception:
+                            posted_at = None
+
+                    doc = {
+                        "title": title,
+                        "url": url,
+                        "url_hash": hash_url(url),
+                        "content_fingerprint": content_fingerprint(
+                            title, company, job_location
+                        ),
+                        "snippet": full_text[:400],
+                        "full_text": full_text,
+                        "company": company,
+                        "location": job_location,
+                        "source": "jobsapi-linkedin",
+                        "query": term,
+                        "search_location": raw_location,
+                        "crawled_at": datetime.now(timezone.utc),
+                        "posted_at": posted_at,
+                        "crawled_by": user_id,
+                        "ratings": {},
+                    }
+
+                    await db.jobs.insert_one(doc)
+                    stored += 1
+                    print(
+                        f"[jobsapi-linkedin] Stored: {doc['title']} @ {doc['company']} ({raw_location})"
+                    )
+
+    return {"found": found, "stored": stored, "skipped": skipped}

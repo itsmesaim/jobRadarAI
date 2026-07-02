@@ -203,7 +203,9 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                     ? "Jooble"
                     : job.source === "jobsapi-indeed"
                       ? "Indeed"
-                      : job.source === "adzuna"
+                      : job.source === "jobsapi-linkedin"
+                        ? "LinkedIn"
+                        : job.source === "adzuna"
                         ? "Adzuna"
                         : "Auto"}
               </span>

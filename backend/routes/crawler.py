@@ -14,7 +14,10 @@ from database import get_database
 from deps import get_current_user
 from services.adzuna_crawler import crawl_jobs_for_user_adzuna
 from services.jooble_crawler import crawl_jobs_for_user_jooble
-from services.jobsapi_indeed_crawler import crawl_jobs_for_user_jobsapi
+from services.jobsapi_indeed_crawler import (
+    crawl_jobs_for_user_jobsapi,
+    crawl_jobs_for_user_jobsapi_linkedin,
+)
 from services.limits import check_and_increment_search, get_user_usage
 
 
@@ -39,17 +42,21 @@ async def manual_search(user=Depends(get_current_user)):
     # run crawl (legacy counter still updated for backward compat)
     result_jooble = await crawl_jobs_for_user_jooble(user)
     result_jobsapi = await crawl_jobs_for_user_jobsapi(user)
+    result_linkedin = await crawl_jobs_for_user_jobsapi_linkedin(user)
     result_adzuna = {"found": 0, "stored": 0, "skipped": 0}
 
     result = {
         "found": result_jooble["found"]
         + result_jobsapi["found"]
+        + result_linkedin["found"]
         + result_adzuna["found"],
         "stored": result_jooble["stored"]
         + result_jobsapi["stored"]
+        + result_linkedin["stored"]
         + result_adzuna["stored"],
         "skipped": result_jooble["skipped"]
         + result_jobsapi["skipped"]
+        + result_linkedin["skipped"]
         + result_adzuna["skipped"],
     }
 
