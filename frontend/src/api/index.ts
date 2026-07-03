@@ -85,6 +85,11 @@ export const jobsApi = {
     return res.data as { brief: string };
   },
 
+  getApplyPack: async (id: string) => {
+    const res = await api.get(`/jobs/${id}/apply-pack`);
+    return res.data as { pack: string; apply_packs_remaining: number };
+  },
+
   hide: async (id: string) => {
     const res = await api.delete(`/jobs/${id}`);
     return res.data;

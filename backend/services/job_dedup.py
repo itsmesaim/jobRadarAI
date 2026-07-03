@@ -76,6 +76,30 @@ def content_fingerprint(title: str, company: str, location: str = "") -> str:
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
+async def find_duplicate_job(
+    db,
+    *,
+    user_id: str,
+    url: str,
+    title: str = "",
+    company: str = "",
+    location: str = "",
+) -> dict | None:
+    """Return the existing job doc if this user already has an equivalent listing."""
+    url_hash = hash_url(url)
+    existing = await db.jobs.find_one({"crawled_by": user_id, "url_hash": url_hash})
+    if existing:
+        return existing
+
+    if not _normalize_text(title) and not _normalize_text(company):
+        return None
+
+    fp = content_fingerprint(title, company, location)
+    return await db.jobs.find_one(
+        {"crawled_by": user_id, "content_fingerprint": fp},
+    )
+
+
 async def job_exists_for_user(
     db,
     *,
@@ -86,21 +110,13 @@ async def job_exists_for_user(
     location: str = "",
 ) -> bool:
     """Return True if this user already has an equivalent job stored."""
-    url_hash = hash_url(url)
-    existing = await db.jobs.find_one(
-        {"crawled_by": user_id, "url_hash": url_hash},
-        {"_id": 1},
-    )
-    if existing:
-        return True
-
-    if not _normalize_text(title) and not _normalize_text(company):
-        return False
-
-    fp = content_fingerprint(title, company, location)
-
-    existing = await db.jobs.find_one(
-        {"crawled_by": user_id, "content_fingerprint": fp},
-        {"_id": 1},
-    )
-    return existing is not None
+    return (
+        await find_duplicate_job(
+            db,
+            user_id=user_id,
+            url=url,
+            title=title,
+            company=company,
+            location=location,
+        )
+    ) is not None

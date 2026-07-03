@@ -129,6 +129,8 @@ class Settings(BaseSettings):
     free_search_limit: int = 3
     free_rating_limit: int = 10  # number of jobs that can be rated per period
     free_cv_upload_limit: int = 3  # CV parses cost an LLM call each time
+    # Apply pack (ATS keywords + XYZ bullets + LaTeX). 0 = premium only; 1 = one free/day.
+    free_apply_pack_limit: int = 1
     # AI token caps for free users (0 = unlimited). Resets daily / monthly via usage.ai_daily / usage.ai_month.
     free_daily_token_limit: int = 250_000
     free_monthly_token_limit: int = (

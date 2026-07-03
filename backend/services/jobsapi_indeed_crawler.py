@@ -12,10 +12,11 @@ from bson import ObjectId
 
 from config import settings
 from database import get_database
-from services.job_dedup import content_fingerprint, hash_url, job_exists_for_user
+from services.jd_text import MIN_JD_LENGTH, is_incomplete_jd
+from services.job_dedup import content_fingerprint, find_duplicate_job, hash_url
 
 BASE_URL = "https://jobs-api14.p.rapidapi.com"
-MIN_CONTENT_LENGTH = 200
+MIN_CONTENT_LENGTH = MIN_JD_LENGTH
 
 
 def _build_search_terms(user: dict) -> list[str]:
@@ -229,23 +230,50 @@ async def crawl_jobs_for_user_jobsapi(
                     job_location = location_obj.get("location", raw_location)
                     user_id = str(user["_id"])
 
-                    if await job_exists_for_user(
+                    full_text = job.get("description", "")
+                    if is_incomplete_jd(full_text):
+                        skipped += 1
+                        continue
+
+                    existing = await find_duplicate_job(
                         db,
                         user_id=user_id,
                         url=url,
                         title=title,
                         company=company,
                         location=job_location,
-                    ):
-                        skipped += 1
+                    )
+                    if existing:
+                        old_text = existing.get("full_text", "")
+                        if len(full_text) > len(old_text) + 100 and is_incomplete_jd(
+                            old_text
+                        ):
+                            await db.jobs.update_one(
+                                {"_id": existing["_id"]},
+                                {
+                                    "$set": {
+                                        "full_text": full_text,
+                                        "snippet": full_text[:400],
+                                        "source": "jobsapi-indeed",
+                                        "url": url,
+                                        "url_hash": hash_url(url),
+                                        "company": company_obj.get("name", ""),
+                                        "location": location_obj.get(
+                                            "location", raw_location
+                                        ),
+                                    },
+                                    "$unset": {f"ratings.{user_id}": ""},
+                                },
+                            )
+                            stored += 1
+                            print(
+                                f"[jobsapi-indeed] Upgraded thin JD: {title} @ {company}"
+                            )
+                        else:
+                            skipped += 1
                         continue
 
                     url_hash = hash_url(url)
-
-                    full_text = job.get("description", "")
-                    if len(full_text) < MIN_CONTENT_LENGTH:
-                        skipped += 1
-                        continue
 
                     # Relevance filter — avoid storing clearly off-target jobs
                     if not _is_relevant_job(full_text, user):
@@ -315,153 +343,12 @@ def _is_relevant_job(full_text: str, user: dict) -> bool:
     return True
 
 
-def _linkedin_description(job: dict) -> str:
-    """LinkedIn search results omit JD text — build a minimal stub for storage/rating."""
-    title = job.get("title", "Unknown Role")
-    company = job.get("companyName", "")
-    location = job.get("location", "")
-    posted = job.get("datePosted") or job.get("postedTimeAgo") or ""
-    url = job.get("linkedinUrl", "")
-    return (
-        f"Job title: {title}\n"
-        f"Company: {company}\n"
-        f"Location: {location}\n"
-        f"Posted: {posted}\n\n"
-        f"Source listing: {url}"
-    )
-
-
 async def crawl_jobs_for_user_jobsapi_linkedin(
     user: dict, max_stored: int | None = None
 ) -> dict:
-    skipped_early = _skip_jobsapi(max_stored, "jobsapi-linkedin")
-    if skipped_early:
-        return skipped_early
-
-    db = get_database()
-
-    fresh_user = await db.users.find_one({"_id": ObjectId(user["_id"])})
-    if fresh_user:
-        user = fresh_user
-
-    search_terms = _build_search_terms(user)
-    locations = user.get("preferred_locations", ["Dublin Ireland"])
-    headers = _jobsapi_headers()
-
-    found = 0
-    stored = 0
-    skipped = 0
-
-    def _at_cap() -> bool:
-        return max_stored is not None and stored >= max_stored
-
-    async with httpx.AsyncClient(timeout=15) as client:
-        for term in search_terms:
-            if _at_cap():
-                break
-            for raw_location in locations:
-                if _at_cap():
-                    break
-                location_str = _detect_location_string(raw_location)
-                await asyncio.sleep(1.5)
-
-                try:
-                    resp = await client.get(
-                        f"{BASE_URL}/v2/linkedin/search",
-                        headers=headers,
-                        params={
-                            "query": term,
-                            "location": location_str,
-                            "page": "1",
-                        },
-                    )
-                    resp.raise_for_status()
-                    data = resp.json()
-                except httpx.HTTPStatusError as e:
-                    body = e.response.text[:200] if e.response is not None else ""
-                    print(
-                        f"[jobsapi-linkedin] HTTP {e.response.status_code} for "
-                        f"'{term}' @ '{raw_location}': {body}"
-                    )
-                    continue
-                except Exception as e:
-                    print(
-                        f"[jobsapi-linkedin] Error for '{term}' @ '{raw_location}': {e}"
-                    )
-                    continue
-
-                jobs = data.get("data", [])
-                print(
-                    f"[jobsapi-linkedin] '{term}' @ '{raw_location}' → {len(jobs)} results"
-                )
-
-                for job in jobs:
-                    if _at_cap():
-                        break
-                    found += 1
-                    url = job.get("linkedinUrl", "")
-                    if not url:
-                        skipped += 1
-                        continue
-
-                    title = job.get("title", "Unknown Role")
-                    company = job.get("companyName", "")
-                    job_location = job.get("location", raw_location)
-                    user_id = str(user["_id"])
-
-                    if await job_exists_for_user(
-                        db,
-                        user_id=user_id,
-                        url=url,
-                        title=title,
-                        company=company,
-                        location=job_location,
-                    ):
-                        skipped += 1
-                        continue
-
-                    full_text = _linkedin_description(job)
-                    if not _is_relevant_job(full_text, user):
-                        skipped += 1
-                        continue
-
-                    posted_at = None
-                    posted = job.get("datePosted")
-                    if posted:
-                        try:
-                            if len(str(posted)) == 10:
-                                posted_at = f"{posted}T00:00:00+00:00"
-                            else:
-                                posted_at = datetime.fromisoformat(
-                                    str(posted).replace("Z", "+00:00")
-                                ).isoformat()
-                        except Exception:
-                            posted_at = None
-
-                    doc = {
-                        "title": title,
-                        "url": url,
-                        "url_hash": hash_url(url),
-                        "content_fingerprint": content_fingerprint(
-                            title, company, job_location
-                        ),
-                        "snippet": full_text[:400],
-                        "full_text": full_text,
-                        "company": company,
-                        "location": job_location,
-                        "source": "jobsapi-linkedin",
-                        "query": term,
-                        "search_location": raw_location,
-                        "crawled_at": datetime.now(timezone.utc),
-                        "posted_at": posted_at,
-                        "crawled_by": user_id,
-                        "ratings": {},
-                    }
-
-                    await db.jobs.insert_one(doc)
-                    stored += 1
-                    print(
-                        f"[jobsapi-linkedin] Stored: {doc['title']} @ {doc['company']} ({raw_location})"
-                    )
-
-    return {"found": found, "stored": stored, "skipped": skipped}
+    """Disabled — LinkedIn search API returns metadata only (no JD text)."""
+    print(
+        "[jobsapi-linkedin] SKIPPED — API has no job descriptions; "
+        "storing listings caused empty JDs and blocked Indeed dedup upgrades"
+    )
+    return {"found": 0, "stored": 0, "skipped": 0}

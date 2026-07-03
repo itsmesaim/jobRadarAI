@@ -1,9 +1,23 @@
-import { X, ExternalLink, Building2, MapPin, Copy, Check, Clock } from "lucide-react";
+import {
+  X,
+  ExternalLink,
+  Building2,
+  MapPin,
+  Check,
+  Clock,
+  Loader,
+  Sparkles,
+  ClipboardCopy,
+} from "lucide-react";
 import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { ScoreBadge } from "./ScoreBadge";
-import { jobsApi } from "../api/index";
+import { jobsApi, crawlerApi } from "../api/index";
+import { LimitContactModal } from "./LimitContactModal";
 import type { Job } from "../types";
+
+const MIN_APPLY_PACK_SCORE = 6;
 
 function timeAgo(dateStr?: string): string {
   if (!dateStr) return "";
@@ -42,21 +56,80 @@ function cleanTitle(job: Job): string {
 }
 
 export function JobDetailModal({ job, onClose }: Props) {
-  const [copied, setCopied] = useState(false);
+  const queryClient = useQueryClient();
+  const [copiedBrief, setCopiedBrief] = useState(false);
+  const [copiedPack, setCopiedPack] = useState(false);
+  const [packLoading, setPackLoading] = useState(false);
+  const [showApplyPackLimit, setShowApplyPackLimit] = useState(false);
+
   const company = extractCompany(job);
   const title = cleanTitle(job);
   // @ts-ignore
   const location = job.location as string | undefined;
 
+  const { data: usage } = useQuery({
+    queryKey: ["crawl-status"],
+    queryFn: crawlerApi.status,
+    staleTime: 30_000,
+  });
+
+  const isPro = !!(
+    usage &&
+    (usage.is_admin ||
+      usage.token_quota_unlimited ||
+      usage.full_access ||
+      (usage.full_access_until && new Date(usage.full_access_until) > new Date()) ||
+      (usage.apply_pack_limit ?? 0) >= 9999)
+  );
+  const applyPacksRemaining = isPro
+    ? 9999
+    : Math.max(0, (usage?.apply_pack_limit ?? 0) - (usage?.apply_packs_used ?? 0));
+  const canApplyPack =
+    (job.score ?? 0) >= MIN_APPLY_PACK_SCORE && (isPro || applyPacksRemaining > 0);
+
   const handleCopyBrief = async () => {
     try {
       const { brief } = await jobsApi.getBrief(job.id);
       await navigator.clipboard.writeText(brief);
-      setCopied(true);
-      toast.success("Job details copied");
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error("Could not copy brief");
+      setCopiedBrief(true);
+      toast.success("Fit summary copied");
+      setTimeout(() => setCopiedBrief(false), 2000);
+    } catch (err: unknown) {
+      const ax = err as { response?: { status?: number; data?: { detail?: string } } };
+      const detail = ax.response?.data?.detail;
+      if (ax.response?.status === 409 && detail) {
+        toast(detail, { duration: 8000, icon: "ℹ️" });
+      } else {
+        toast.error(detail || "Could not copy fit summary");
+      }
+    }
+  };
+
+  const handleApplyPack = async () => {
+    if (!canApplyPack) {
+      setShowApplyPackLimit(true);
+      return;
+    }
+    setPackLoading(true);
+    try {
+      const { pack } = await jobsApi.getApplyPack(job.id);
+      await navigator.clipboard.writeText(pack);
+      setCopiedPack(true);
+      toast.success("Apply pack copied");
+      queryClient.invalidateQueries({ queryKey: ["crawl-status"] });
+      setTimeout(() => setCopiedPack(false), 2000);
+    } catch (err: unknown) {
+      const ax = err as { response?: { status?: number; data?: { detail?: string } } };
+      const detail = ax.response?.data?.detail;
+      if (ax.response?.status === 429) {
+        setShowApplyPackLimit(true);
+      } else if (ax.response?.status === 409 && detail) {
+        toast(detail, { duration: 8000, icon: "ℹ️" });
+      } else {
+        toast.error(detail || "Could not generate apply pack");
+      }
+    } finally {
+      setPackLoading(false);
     }
   };
 
@@ -115,9 +188,17 @@ export function JobDetailModal({ job, onClose }: Props) {
                   color: "var(--text-muted)",
                 }}
               >
-                {job.source === "manual" ? "Manual" : job.source}
+                {job.source === "manual"
+                  ? "Manual"
+                  : job.source === "jooble"
+                    ? "Jooble"
+                    : job.source === "jobsapi-indeed"
+                      ? "Indeed"
+                      : job.source === "jobsapi-linkedin"
+                        ? "LinkedIn"
+                        : "Auto"}
               </span>
-              {timeAgo(job.posted_at || job.crawled_at) && (
+              {job.crawled_at && (
                 <span
                   style={{
                     fontSize: 11,
@@ -127,17 +208,17 @@ export function JobDetailModal({ job, onClose }: Props) {
                     gap: 4,
                   }}
                 >
-                  <Clock size={11} /> {timeAgo(job.posted_at || job.crawled_at)}
+                  <Clock size={11} /> {timeAgo(job.crawled_at)}
                 </span>
               )}
             </div>
             <h2
               style={{
-                fontSize: 19,
-                fontWeight: 700,
+                fontSize: 18,
+                fontWeight: 600,
+                margin: "0 0 6px",
+                lineHeight: 1.35,
                 color: "var(--text)",
-                margin: "0 0 8px",
-                lineHeight: 1.3,
               }}
             >
               {title}
@@ -145,94 +226,57 @@ export function JobDetailModal({ job, onClose }: Props) {
             <div
               style={{
                 display: "flex",
-                alignItems: "center",
-                gap: 16,
                 flexWrap: "wrap",
+                gap: 12,
+                fontSize: 13,
+                color: "var(--text-secondary)",
               }}
             >
               {company && (
-                <span
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontSize: 14,
-                    color: "var(--text-secondary)",
-                  }}
-                >
-                  <Building2 size={14} /> {company}
+                <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <Building2 size={13} /> {company}
                 </span>
               )}
               {location && (
-                <span
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontSize: 14,
-                    color: "var(--text-secondary)",
-                  }}
-                >
-                  <MapPin size={14} /> {location}
+                <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <MapPin size={13} /> {location}
                 </span>
               )}
             </div>
           </div>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "flex-end",
-              gap: 10,
-              flexShrink: 0,
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <ScoreBadge score={job.score} size="lg" />
             <button
               onClick={onClose}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "var(--text-muted)",
-                display: "flex",
-              }}
+              className="btn btn-ghost"
+              style={{ padding: "8px 10px" }}
+              aria-label="Close"
             >
-              <X size={20} />
+              <X size={16} />
             </button>
           </div>
         </div>
 
-        {/* Scrollable body */}
-        <div style={{ overflowY: "auto", padding: "20px 24px", flex: 1 }}>
+        {/* Body — scrollable */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
           {job.verdict && job.verdict !== "Not rated yet" && (
-            <div style={{ marginBottom: 20 }}>
-              <p
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: "var(--text-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                  marginBottom: 6,
-                }}
-              >
-                Verdict
-              </p>
-              <p
-                style={{
-                  fontSize: 14,
-                  color: "var(--text)",
-                  lineHeight: 1.6,
-                  margin: 0,
-                }}
-              >
-                {job.verdict}
-              </p>
-            </div>
+            <p
+              style={{
+                fontSize: 14,
+                color: "var(--text-secondary)",
+                lineHeight: 1.65,
+                margin: "0 0 20px",
+                padding: "12px 14px",
+                background: "var(--bg-secondary)",
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+              }}
+            >
+              {job.verdict}
+            </p>
           )}
 
-          {job.matched_strengths.length > 0 && (
+          {job.matched_strengths && job.matched_strengths.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <p
                 style={{
@@ -271,7 +315,7 @@ export function JobDetailModal({ job, onClose }: Props) {
             </div>
           )}
 
-          {job.gaps.length > 0 && (
+          {job.gaps && job.gaps.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <p
                 style={{
@@ -332,37 +376,74 @@ export function JobDetailModal({ job, onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 10,
-            padding: "16px 24px",
-            borderTop: "1px solid var(--border)",
-          }}
-        >
-          {job.url ? (
-            <a
-              href={job.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-secondary"
-            >
-              <ExternalLink size={13} /> View original posting
-            </a>
-          ) : (
-            <span />
-          )}
+        {job.score !== null && job.score > 0 && (
+          <div className="job-modal-footer">
+            {(job.score ?? 0) >= MIN_APPLY_PACK_SCORE && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleApplyPack}
+                  disabled={packLoading}
+                  className="btn btn-primary job-modal-apply-pack"
+                >
+                  {packLoading ? (
+                    <Loader size={15} className="animate-spin" />
+                  ) : copiedPack ? (
+                    <Check size={15} />
+                  ) : (
+                    <Sparkles size={15} />
+                  )}
+                  {packLoading
+                    ? "Building your apply pack…"
+                    : copiedPack
+                      ? "Copied — paste into ChatGPT / Claude"
+                      : "Copy apply pack for LLM"}
+                </button>
+                <p className="job-modal-pack-hint">
+                  {isPro
+                    ? "Unlimited · ATS keywords, full LaTeX CV boilerplate, MASTER CV + JD context"
+                    : applyPacksRemaining > 0
+                      ? `${applyPacksRemaining} free today · one prompt: tailored CV .tex + cover note`
+                      : "Daily limit used — upgrade for unlimited apply packs"}
+                </p>
+              </>
+            )}
 
-          {job.score !== null && job.score > 0 && (
-            <button onClick={handleCopyBrief} className="btn btn-primary">
-              {copied ? <Check size={13} /> : <Copy size={13} />}
-              {copied ? "Copied" : "Copy details"}
-            </button>
-          )}
-        </div>
+            <div className="job-modal-footer-actions">
+              {job.url && (
+                <a
+                  href={job.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-ghost job-modal-action-btn"
+                >
+                  <ExternalLink size={14} /> View posting
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={handleCopyBrief}
+                className="btn btn-ghost job-modal-action-btn"
+                title="Copy fit score, gaps, and job context for your LLM"
+              >
+                {copiedBrief ? (
+                  <>
+                    <Check size={14} /> Copied
+                  </>
+                ) : (
+                  <>
+                    <ClipboardCopy size={14} /> Copy fit summary
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {showApplyPackLimit && (
+        <LimitContactModal kind="apply_pack" onClose={() => setShowApplyPackLimit(false)} />
+      )}
     </div>
   );
 }

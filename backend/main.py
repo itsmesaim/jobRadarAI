@@ -125,11 +125,11 @@ async def lifespan(app: FastAPI):
         )
     if not settings.jobsapi_key:
         print(
-            "[startup] WARNING: JOBSAPI_KEY unset — Indeed/LinkedIn crawlers "
+            "[startup] WARNING: JOBSAPI_KEY unset — Indeed crawler "
             "(jobs-api14 RapidAPI) will not fetch jobs"
         )
     else:
-        print("[startup] JobsAPI (Indeed + LinkedIn) key configured")
+        print("[startup] JobsAPI (Indeed) key configured")
 
     if smtp_configured():
         print(

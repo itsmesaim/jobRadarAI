@@ -1,14 +1,5 @@
 import { useState } from "react";
-import {
-  ExternalLink,
-  Copy,
-  Check,
-  Building2,
-  MapPin,
-  EyeOff,
-  Maximize2,
-  Clock,
-} from "lucide-react";
+import { ExternalLink, Building2, MapPin, EyeOff, Maximize2, Clock } from "lucide-react";
 import toast from "react-hot-toast";
 import { ScoreBadge } from "./ScoreBadge";
 import { JobDetailModal } from "./JobDetailModal";
@@ -91,7 +82,7 @@ function cleanTitle(job: Job): string {
 
 export function JobCard({ job, onStatusChange, onHidden }: Props) {
   const [showModal, setShowModal] = useState(false);
-  const [copied, setCopied] = useState(false);
+
   const [currentStatus, setCurrentStatus] = useState<JobStatus>(job.status);
 
   const company = extractCompany(job);
@@ -116,19 +107,6 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
       }
     } catch {
       toast.error("Failed to update");
-    }
-  };
-
-  const handleCopyBrief = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      const { brief } = await jobsApi.getBrief(job.id);
-      await navigator.clipboard.writeText(brief);
-      setCopied(true);
-      toast.success("Job details copied");
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error("Could not copy brief");
     }
   };
 
@@ -460,16 +438,6 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
               flexShrink: 0,
             }}
           >
-            {job.score !== null && job.score > 0 && (
-              <button
-                onClick={handleCopyBrief}
-                className="btn btn-ghost"
-                style={{ padding: "5px 8px", fontSize: 11.5 }}
-              >
-                {copied ? <Check size={11} /> : <Copy size={11} />}
-                {copied ? "Copied" : "Copy"}
-              </button>
-            )}
             <button
               onClick={handleHide}
               className="btn btn-ghost"

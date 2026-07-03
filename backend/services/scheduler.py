@@ -18,10 +18,7 @@ from bson import ObjectId
 from database import get_database
 from services.job_reminders import send_job_apply_reminders
 from services.jooble_crawler import crawl_jobs_for_user_jooble
-from services.jobsapi_indeed_crawler import (
-    crawl_jobs_for_user_jobsapi,
-    crawl_jobs_for_user_jobsapi_linkedin,
-)
+from services.jobsapi_indeed_crawler import crawl_jobs_for_user_jobsapi
 from services.rating import rate_all_jobs_for_user
 
 scheduler = AsyncIOScheduler()
@@ -61,25 +58,16 @@ async def _auto_crawl_and_rate():
 
         try:
             max_stored = settings.auto_crawl_max_stored_per_cycle
-            # Fixed split so Jooble cannot consume the entire cap before paid APIs run.
-            jooble_cap = max_stored // 3
-            linkedin_cap = max_stored // 3
-            indeed_cap = max_stored - jooble_cap - linkedin_cap
+            # Jooble + Indeed only (LinkedIn API has no JD text).
+            jooble_cap = max_stored // 2
+            indeed_cap = max_stored - jooble_cap
             print(
                 f"[scheduler] [{email}] → Starting crawl "
-                f"(cap {max_stored}/cycle: jooble={jooble_cap}, "
-                f"indeed={indeed_cap}, linkedin={linkedin_cap})..."
+                f"(cap {max_stored}/cycle: jooble={jooble_cap}, indeed={indeed_cap})..."
             )
             res_j = await crawl_jobs_for_user_jooble(user, max_stored=jooble_cap)
             res_i = await crawl_jobs_for_user_jobsapi(user, max_stored=indeed_cap)
-            res_l = await crawl_jobs_for_user_jobsapi_linkedin(
-                user, max_stored=linkedin_cap
-            )
-            stored = (
-                (res_j or {}).get("stored", 0)
-                + (res_i or {}).get("stored", 0)
-                + (res_l or {}).get("stored", 0)
-            )
+            stored = (res_j or {}).get("stored", 0) + (res_i or {}).get("stored", 0)
             print(f"[scheduler] [{email}] Crawl done: stored={stored} new jobs")
 
             await db.users.update_one(

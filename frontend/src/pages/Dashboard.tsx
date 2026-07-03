@@ -12,6 +12,8 @@ import {
   Cpu,
   ChevronLeft,
   ChevronRight,
+  Briefcase,
+  Sparkles,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { JobCard } from "../components/JobCard";
@@ -109,6 +111,39 @@ function formatTokens(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
   return String(n);
+}
+
+function timeGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function formatLastCrawl(iso?: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const diffH = (Date.now() - d.getTime()) / 36e5;
+  if (diffH < 1) return "Last search: just now";
+  if (diffH < 24) return `Last search: ${Math.floor(diffH)}h ago`;
+  const diffD = Math.floor(diffH / 24);
+  return `Last search: ${diffD}d ago`;
+}
+
+function JobsSkeleton() {
+  return (
+    <div className="jobs-grid">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="dash-skeleton-card" aria-hidden="true">
+          <div className="dash-skeleton-line w-30" />
+          <div className="dash-skeleton-line w-80" />
+          <div className="dash-skeleton-line w-55" />
+          <div className="dash-skeleton-line w-100" />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function Pagination({
@@ -353,7 +388,13 @@ export function Dashboard() {
 
       try {
         const status = await crawlerApi.status();
-        const isFullAccess = !!status.full_access;
+        const isFullAccess = !!(
+          user?.isAdmin ||
+          status.is_admin ||
+          status.token_quota_unlimited ||
+          status.full_access ||
+          (status.full_access_until && new Date(status.full_access_until) > new Date())
+        );
         const ratingsLeft = isFullAccess
           ? 999
           : Math.max(0, (status.rating_limit ?? 0) - (status.ratings_used ?? 0));
@@ -416,10 +457,13 @@ export function Dashboard() {
   });
 
   const usage = statusQ.data;
-  const isFull =
-    usage &&
-    (usage.full_access ||
-      (usage.full_access_until && new Date(usage.full_access_until) > new Date()));
+  const isFull = !!(
+    user?.isAdmin ||
+    usage?.is_admin ||
+    usage?.token_quota_unlimited ||
+    usage?.full_access ||
+    (usage?.full_access_until && new Date(usage.full_access_until) > new Date())
+  );
   const ratingsUsed = usage?.ratings_used ?? 0;
   const ratingsLimit = usage?.rating_limit ?? 10;
   const ratingsRemaining = isFull ? 999 : Math.max(0, ratingsLimit - ratingsUsed);
@@ -452,11 +496,13 @@ export function Dashboard() {
   const jobs = data?.jobs ?? [];
   const totalPages = data?.pages ?? 1;
 
-  const highScoreUnapplied = jobs.filter((j) => (j.score ?? 0) >= 8 && j.status === "NEW");
-  const showReminder = !reminderDismissed && highScoreUnapplied.length >= 2;
-
-  const strongOnPage = jobs.filter((j) => (j.score ?? 0) >= 7).length;
-  const appliedOnPage = jobs.filter((j) => j.status === "APPLIED").length;
+  const applySoonCount = usage?.apply_soon_count ?? 0;
+  const strongMatchesCount = usage?.strong_matches_count ?? 0;
+  const unratedCount = usage?.unrated_count ?? 0;
+  const activeAccountCount = usage?.active_count ?? data?.account_total ?? 0;
+  const showReminder = !reminderDismissed && applySoonCount >= 2;
+  const lastCrawlLabel = formatLastCrawl(usage?.last_crawl_at);
+  const firstName = user?.name?.trim().split(/\s+/)[0] || "there";
   const searchUsedPct = isFull ? 0 : Math.round((searchesUsed / Math.max(searchesLimit, 1)) * 100);
   const ratingUsedPct = isFull ? 0 : Math.round((ratingsUsed / Math.max(ratingsLimit, 1)) * 100);
   const tokenUsedPct =
@@ -480,53 +526,84 @@ export function Dashboard() {
     setPage(1);
   };
 
+  const showApplySoon = () => {
+    setScoreFilter("8plus");
+    setStatusFilter("NEW");
+    setViewMode("all");
+    setPage(1);
+  };
+
+  const showUnrated = () => {
+    setScoreFilter("unrated");
+    setStatusFilter(undefined);
+    setViewMode("all");
+    setPage(1);
+  };
+
+  const showStrongMatches = () => {
+    setScoreFilter("7plus");
+    setStatusFilter(undefined);
+    setViewMode("active");
+    setPage(1);
+  };
+
   return (
     <div className="page-shell">
-      <div className="dash-header">
-        <h1 className="page-title">Jobs</h1>
-        <p className="page-subtitle">
-          {viewMode === "active"
-            ? "Active opportunities — Applied, Rejected, and Offers are hidden. Switch to All to see them."
-            : "All your saved jobs — filter by score, status, or keyword."}
-        </p>
-      </div>
-
-      {data && (
-        <div className="dash-metrics">
-          <div className="dash-metric">
-            <span className="dash-metric-label">
-              {hasActiveFilters
-                ? "Matching filters"
-                : viewMode === "active"
-                  ? "Active jobs"
-                  : "Total saved"}
-            </span>
-            <span className="dash-metric-value">{data.total}</span>
-            <span className="dash-metric-hint">
-              {data.account_total != null ? `of ${data.account_total} in account` : "All time"}
-            </span>
-          </div>
-          <div className="dash-metric">
-            <span className="dash-metric-label">Strong on page</span>
-            <span className="dash-metric-value is-success">{strongOnPage}</span>
-            <span className="dash-metric-hint">Score 7+ in view</span>
-          </div>
-          <div className="dash-metric">
-            <span className="dash-metric-label">Apply soon</span>
-            <span
-              className={`dash-metric-value${highScoreUnapplied.length > 0 ? " is-warning" : ""}`}
-            >
-              {highScoreUnapplied.length}
-            </span>
-            <span className="dash-metric-hint">8+ still marked New</span>
-          </div>
-          <div className="dash-metric">
-            <span className="dash-metric-label">Applied on page</span>
-            <span className="dash-metric-value">{appliedOnPage}</span>
-            <span className="dash-metric-hint">In your pipeline</span>
-          </div>
+      <div className="dash-hero">
+        <div className="dash-header">
+          <p className="dash-greeting">
+            {timeGreeting()}, {firstName}
+          </p>
+          <h1 className="page-title">Your job pipeline</h1>
+          <p className="page-subtitle">
+            {viewMode === "active"
+              ? "Active opportunities — applied and rejected roles are hidden unless you switch to All."
+              : "All saved jobs — filter by score, status, or keyword."}
+            {lastCrawlLabel && <span className="dash-last-crawl"> · {lastCrawlLabel}</span>}
+          </p>
         </div>
-      )}
+
+        {usage && (
+          <div className="dash-metrics">
+            <div className="dash-metric">
+              <span className="dash-metric-label">
+                {hasActiveFilters ? "Matching filters" : "Active pipeline"}
+              </span>
+              <span className="dash-metric-value">
+                {hasActiveFilters ? (data?.total ?? "—") : activeAccountCount}
+              </span>
+              <span className="dash-metric-hint">
+                {hasActiveFilters
+                  ? `of ${activeAccountCount} active in account`
+                  : `${usage.my_jobs ?? 0} total saved`}
+              </span>
+            </div>
+            <button type="button" className="dash-metric is-clickable" onClick={showStrongMatches}>
+              <span className="dash-metric-label">Strong matches</span>
+              <span className="dash-metric-value is-success">{strongMatchesCount}</span>
+              <span className="dash-metric-hint">Score 7+ · tap to filter</span>
+            </button>
+            <button
+              type="button"
+              className={`dash-metric is-clickable${applySoonCount > 0 ? " is-highlight" : ""}`}
+              onClick={showApplySoon}
+            >
+              <span className="dash-metric-label">Apply soon</span>
+              <span className={`dash-metric-value${applySoonCount > 0 ? " is-warning" : ""}`}>
+                {applySoonCount}
+              </span>
+              <span className="dash-metric-hint">8+ still New · tap to view</span>
+            </button>
+            <button type="button" className="dash-metric is-clickable" onClick={showUnrated}>
+              <span className="dash-metric-label">Needs rating</span>
+              <span className={`dash-metric-value${unratedCount > 0 ? " is-accent" : ""}`}>
+                {unratedCount}
+              </span>
+              <span className="dash-metric-hint">Waiting for AI · tap to filter</span>
+            </button>
+          </div>
+        )}
+      </div>
 
       {usage && !user?.isAdmin && (
         <div className="dash-usage">
@@ -659,19 +736,14 @@ export function Dashboard() {
 
       {showReminder && (
         <div className="dash-reminder">
-          <AlertCircle size={18} style={{ color: "var(--warning)", flexShrink: 0 }} />
+          <Sparkles size={18} style={{ color: "var(--warning)", flexShrink: 0 }} />
           <p className="dash-reminder-text">
-            <strong>Hey!</strong> {highScoreUnapplied.length} jobs scoring 8+/10 are sitting
-            unapplied. Don&apos;t let good opportunities slip by.
+            <strong>{applySoonCount} top matches</strong> scoring 8+/10 are still marked New. Open
+            one and use <em>Copy apply pack for LLM</em> to tailor your CV fast.
           </p>
           <div className="dash-reminder-actions">
             <button
-              onClick={() => {
-                setScoreFilter("8plus");
-                setStatusFilter("NEW");
-                setViewMode("all");
-                setPage(1);
-              }}
+              onClick={showApplySoon}
               className="btn btn-secondary"
               style={{ fontSize: 13, padding: "6px 12px", flexShrink: 0 }}
             >
@@ -965,30 +1037,21 @@ export function Dashboard() {
       )}
 
       {isLoading ? (
-        <div
-          style={{
-            textAlign: "center",
-            padding: "80px 0",
-            color: "var(--text-muted)",
-            fontSize: 14,
-          }}
-        >
-          Loading jobs...
-        </div>
+        <JobsSkeleton />
       ) : jobs.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "80px 0" }}>
-          <p
-            style={{
-              color: "var(--text-muted)",
-              fontSize: 15,
-              marginBottom: 18,
-            }}
-          >
+        <div className="dash-empty">
+          <div className="dash-empty-icon">
+            {hasActiveFilters ? <SlidersHorizontal size={28} /> : <Briefcase size={28} />}
+          </div>
+          <h2 className="dash-empty-title">
+            {hasActiveFilters ? "No jobs match these filters" : "Your pipeline is empty"}
+          </h2>
+          <p className="dash-empty-text">
             {hasActiveFilters
               ? viewMode === "active"
-                ? "No active jobs match these filters. Try switching to All to include Applied and Rejected, or clear filters."
-                : "No jobs match your current filters. Try clearing filters or broadening the score range."
-              : "No jobs found. Search to discover new roles."}
+                ? "Try switching to All to include applied and rejected roles, or clear filters."
+                : "Broaden the score range or clear filters to see more roles."
+              : "Run a search to crawl Indeed and Jooble against your CV, then rate matches with AI."}
           </p>
           {!hasActiveFilters ? (
             <button

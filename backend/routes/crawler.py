@@ -14,10 +14,7 @@ from database import get_database
 from deps import get_current_user
 from services.adzuna_crawler import crawl_jobs_for_user_adzuna
 from services.jooble_crawler import crawl_jobs_for_user_jooble
-from services.jobsapi_indeed_crawler import (
-    crawl_jobs_for_user_jobsapi,
-    crawl_jobs_for_user_jobsapi_linkedin,
-)
+from services.jobsapi_indeed_crawler import crawl_jobs_for_user_jobsapi
 from services.limits import check_and_increment_search, get_user_usage
 
 
@@ -42,21 +39,17 @@ async def manual_search(user=Depends(get_current_user)):
     # run crawl (legacy counter still updated for backward compat)
     result_jooble = await crawl_jobs_for_user_jooble(user)
     result_jobsapi = await crawl_jobs_for_user_jobsapi(user)
-    result_linkedin = await crawl_jobs_for_user_jobsapi_linkedin(user)
     result_adzuna = {"found": 0, "stored": 0, "skipped": 0}
 
     result = {
         "found": result_jooble["found"]
         + result_jobsapi["found"]
-        + result_linkedin["found"]
         + result_adzuna["found"],
         "stored": result_jooble["stored"]
         + result_jobsapi["stored"]
-        + result_linkedin["stored"]
         + result_adzuna["stored"],
         "skipped": result_jooble["skipped"]
         + result_jobsapi["skipped"]
-        + result_linkedin["skipped"]
         + result_adzuna["skipped"],
     }
 
@@ -79,12 +72,48 @@ async def manual_search(user=Depends(get_current_user)):
 @router.get("/status")
 async def crawl_status(user=Depends(get_current_user)):
     db = get_database()
-    total_jobs = await db.jobs.count_documents({"crawled_by": str(user["_id"])})
-    usage = await get_user_usage(str(user["_id"]))
-    is_full = usage.get("full_access") or (
-        usage.get("full_access_until")
-        and datetime.now(timezone.utc)
-        < datetime.fromisoformat(usage.get("full_access_until").replace("Z", "+00:00"))
+    user_id = str(user["_id"])
+    hidden_key = f"hidden_{user_id}"
+    rating_key = f"ratings.{user_id}.score"
+    status_key = f"status_{user_id}"
+    base_filter = {"crawled_by": user_id, hidden_key: {"$ne": True}}
+
+    total_jobs = await db.jobs.count_documents(base_filter)
+    apply_soon_count = await db.jobs.count_documents(
+        {
+            **base_filter,
+            rating_key: {"$gte": 8},
+            "$or": [{status_key: {"$exists": False}}, {status_key: "NEW"}],
+        }
+    )
+    active_status = {
+        "$or": [
+            {status_key: {"$exists": False}},
+            {status_key: {"$nin": ["APPLIED", "REJECTED", "OFFER"]}},
+        ]
+    }
+    strong_matches_count = await db.jobs.count_documents(
+        {**base_filter, rating_key: {"$gte": 7}, **active_status}
+    )
+    unrated_count = await db.jobs.count_documents(
+        {
+            **base_filter,
+            f"ratings.{user_id}": {"$exists": False},
+        }
+    )
+    active_count = await db.jobs.count_documents({**base_filter, **active_status})
+
+    usage = await get_user_usage(user_id)
+    is_full = (
+        usage.get("full_access")
+        or usage.get("is_admin")
+        or (
+            usage.get("full_access_until")
+            and datetime.now(timezone.utc)
+            < datetime.fromisoformat(
+                usage.get("full_access_until").replace("Z", "+00:00")
+            )
+        )
     )
     token_unlimited = is_full or usage.get("unlimited")
     return {
@@ -93,6 +122,17 @@ async def crawl_status(user=Depends(get_current_user)):
         "search_limit": 9999 if is_full else usage.get("search_limit", 0),
         "ratings_used": usage.get("ratings_used", 0),
         "rating_limit": 9999 if is_full else usage.get("rating_limit", 0),
+        "apply_packs_used": usage.get("apply_packs_used", 0),
+        "apply_pack_limit": 9999 if is_full else usage.get("apply_pack_limit", 0),
+        "apply_packs_remaining": (
+            9999
+            if is_full
+            else max(
+                0,
+                int(usage.get("apply_pack_limit", 0) or 0)
+                - int(usage.get("apply_packs_used", 0) or 0),
+            )
+        ),
         "daily_tokens_used": usage.get("daily_tokens_used", 0),
         "monthly_tokens_used": usage.get("monthly_tokens_used", 0),
         "daily_token_limit": (
@@ -108,4 +148,8 @@ async def crawl_status(user=Depends(get_current_user)):
         "full_access_until": usage.get("full_access_until"),
         "my_jobs": total_jobs,
         "is_admin": usage.get("is_admin", False),
+        "apply_soon_count": apply_soon_count,
+        "strong_matches_count": strong_matches_count,
+        "unrated_count": unrated_count,
+        "active_count": active_count,
     }

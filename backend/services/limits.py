@@ -164,6 +164,7 @@ async def _reset_if_new_day(user: dict) -> dict:
                     "usage.searches": 0,
                     "usage.ratings": 0,
                     "usage.cv_uploads": 0,
+                    "usage.apply_packs": 0,
                     "usage.reminder_emails": 0,
                     "usage.last_reset": today,
                     "usage.ai_daily": {
@@ -181,6 +182,7 @@ async def _reset_if_new_day(user: dict) -> dict:
         user.setdefault("usage", {})["searches"] = 0
         user["usage"]["ratings"] = 0
         user["usage"]["cv_uploads"] = 0
+        user["usage"]["apply_packs"] = 0
         user["usage"]["reminder_emails"] = 0
         user["usage"]["last_reset"] = today
         user["usage"]["ai_daily"] = {
@@ -338,6 +340,76 @@ async def check_and_increment_rating(
     return True, "", remaining
 
 
+def apply_pack_limit_message(limit: int) -> str:
+    if limit <= 0:
+        return "Apply pack is a premium feature. Contact us for full access."
+    return (
+        f"Free apply pack limit reached ({limit}/day). "
+        "Contact us for premium access."
+    )
+
+
+async def get_remaining_apply_packs(user: dict) -> int:
+    if _has_unlimited_access(user):
+        return 9999
+    user_id = str(user.get("_id", ""))
+    if user_id:
+        user = await _get_fresh_user(user_id)
+    user = await _reset_if_new_day(user)
+    overrides = user.get("admin_overrides", {})
+    limit = overrides.get("apply_pack_limit", settings.free_apply_pack_limit)
+    if limit <= 0:
+        return 0
+    used = int(user.get("usage", {}).get("apply_packs", 0) or 0)
+    return max(0, limit - used)
+
+
+async def check_and_increment_apply_pack(user: dict) -> tuple[bool, str, int]:
+    """Returns (allowed, message, remaining). Premium = unlimited."""
+    if _has_unlimited_access(user):
+        return True, "", -1
+
+    token_ok, token_msg = await check_ai_token_quota(user)
+    if not token_ok:
+        return False, token_msg, 0
+
+    user_id = str(user.get("_id", ""))
+    if user_id:
+        user = await _get_fresh_user(user_id)
+    user = await _reset_if_new_day(user)
+    usage = user.get("usage", {})
+    overrides = user.get("admin_overrides", {})
+    limit = int(overrides.get("apply_pack_limit", settings.free_apply_pack_limit) or 0)
+    current = int(usage.get("apply_packs", 0) or 0)
+
+    if limit <= 0:
+        return False, apply_pack_limit_message(0), 0
+
+    if current >= limit:
+        return False, apply_pack_limit_message(limit), 0
+
+    db = get_database()
+    await db.users.update_one(
+        {"_id": ObjectId(user["_id"])}, {"$inc": {"usage.apply_packs": 1}}
+    )
+    remaining = limit - (current + 1)
+    return True, "", remaining
+
+
+async def refund_apply_pack(user_id: str) -> None:
+    """Refund quota if generation failed after increment."""
+    if not user_id:
+        return
+    db = get_database()
+    user = await db.users.find_one({"_id": ObjectId(user_id)}, {"usage.apply_packs": 1})
+    current = int((user or {}).get("usage", {}).get("apply_packs", 0) or 0)
+    if current > 0:
+        await db.users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$inc": {"usage.apply_packs": -1}},
+        )
+
+
 async def refund_rating(user_id: str, count: int = 1) -> None:
     """Undo a rating quota increment when a reserved slot did not produce a billable rating."""
     if not user_id or count <= 0:
@@ -372,7 +444,11 @@ async def get_user_usage(user_id: str) -> dict:
         "ratings_used": ratings_used,
         "search_limit": overrides.get("search_limit", settings.free_search_limit),
         "rating_limit": overrides.get("rating_limit", settings.free_rating_limit),
-        "full_access": bool(overrides.get("full_access")),
+        "apply_packs_used": usage.get("apply_packs", 0),
+        "apply_pack_limit": overrides.get(
+            "apply_pack_limit", settings.free_apply_pack_limit
+        ),
+        "full_access": bool(overrides.get("full_access")) or _is_admin(user),
         "full_access_until": overrides.get("full_access_until"),
         "is_admin": _is_admin(user),
         "last_reset": usage.get("last_reset"),

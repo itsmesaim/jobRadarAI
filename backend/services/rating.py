@@ -335,7 +335,7 @@ def is_billable_rating(rating: dict) -> bool:
 
 
 def unrated_jobs_filter(user_id: str) -> dict:
-    """Jobs eligible for bulk rating: never rated, or only failed (score ≤ 0)."""
+    """Jobs eligible for bulk rating: never rated, failed (score ≤ 0), or thin JD re-rate."""
     rating_path = f"ratings.{user_id}"
     score_path = f"{rating_path}.score"
     verdict_path = f"{rating_path}.verdict"
@@ -345,6 +345,13 @@ def unrated_jobs_filter(user_id: str) -> dict:
         "$or": [
             {rating_path: {"$exists": False}},
             {score_path: {"$lte": 0}},
+            {
+                "full_text": {
+                    "$regex": r"^Job title:",
+                    "$options": "i",
+                },
+                score_path: {"$gt": 0},
+            },
         ],
     }
 
@@ -359,6 +366,8 @@ def _existing_rating_score(job: dict, user_id: str) -> int | None:
 
 def _should_skip_rating(job: dict, user_id: str) -> bool:
     """Skip jobs already scored > 0 or currently being rated by another worker."""
+    from services.jd_text import is_incomplete_jd
+
     rating = (job.get("ratings") or {}).get(user_id)
     if not rating:
         return False
@@ -366,7 +375,12 @@ def _should_skip_rating(job: dict, user_id: str) -> bool:
     if verdict == _RATING_IN_PROGRESS:
         return True
     score = rating.get("score")
-    return isinstance(score, int) and score > 0
+    if isinstance(score, int) and score > 0:
+        # Re-rate listings that were scored on stub LinkedIn metadata only.
+        if is_incomplete_jd(job.get("full_text", "")):
+            return False
+        return True
+    return False
 
 
 # ── Main rating function ──────────────────────────────────────────────────────
@@ -399,13 +413,15 @@ Education: {json.dumps(structured.get('education', []))}
     overrides_block = _build_overrides_block(user)
     constraints_block = _build_constraints_block(user)
 
+    from services.jd_text import is_incomplete_jd
+
     jd_text = job.get("full_text") or job.get("snippet", "")
-    if len(jd_text) < 200:
+    if is_incomplete_jd(jd_text):
         return {
             "score": 0,
             "matched_strengths": [],
             "gaps": [],
-            "verdict": "JD text too short to rate accurately — likely a listing page, not a real posting.",
+            "verdict": "JD text too short to rate accurately — open the job URL and paste the full description, or re-crawl after Indeed upgrades this listing.",
             "auto_reject": False,
         }
 
@@ -966,6 +982,17 @@ async def generate_job_brief(job: dict, user: dict, rating: dict) -> str:
     about_me = user.get("about_me", "").strip()
     constraints_text = _build_constraints_block(user)
 
+    from services.jd_text import is_incomplete_jd
+
+    jd_body = job.get("full_text", "")[:6000]
+    jd_warning = ""
+    if is_incomplete_jd(jd_body):
+        jd_warning = (
+            "⚠️  JD WARNING: The stored job description is incomplete (title/company only). "
+            "Scores and gap analysis below may be unreliable until you paste the full JD "
+            "via 'Paste JD' or open the URL and re-rate.\n\n"
+        )
+
     brief = f"""
 JOB BRIEF
 ==============================
@@ -974,6 +1001,7 @@ COMPANY:    {job.get('company', 'Unknown')}
 URL:        {job.get('url', 'N/A')}
 FIT SCORE:  {rating.get('score', 'N/A')}/10
 STRUCTURAL MISMATCH: {rating.get('structural_mismatch', False)}
+{jd_warning}
 
 MATCHED STRENGTHS:
 {chr(10).join(f"  • {s}" for s in rating.get('matched_strengths', []))}
@@ -1015,7 +1043,7 @@ EDUCATION:
 ==============================
 FULL JOB DESCRIPTION
 ==============================
-{job.get('full_text', '')[:6000]}
+{jd_body if jd_body.strip() else '(not available — listing had no description text stored)'}
 ==============================
 """.strip()
 

@@ -1,6 +1,6 @@
 import { AlertCircle, Mail } from "lucide-react";
 
-export type LimitKind = "rating" | "search" | "token_daily" | "token_monthly";
+export type LimitKind = "rating" | "search" | "token_daily" | "token_monthly" | "apply_pack";
 
 const ADMIN_EMAIL = "saimkaskar1@gmail.com";
 
@@ -57,12 +57,30 @@ const COPY: Record<
     ),
     subject: "JobRadar - Request more AI credits",
   },
+  apply_pack: {
+    title: "Apply pack — Pro feature",
+    subtitle: "You've used your free apply pack for today (or need premium access).",
+    body: (
+      <>
+        <strong>Apply pack</strong> generates ATS keywords, Google XYZ bullets, a cover note opener,
+        and a LaTeX snippet tailored to each job.
+        <br />
+        <br />
+        Free accounts get <strong>1 apply pack per day</strong>. Premium (full access) is unlimited
+        — email the admin to upgrade.
+      </>
+    ),
+    subject: "JobRadar - Request Apply pack / premium access",
+  },
 };
 
 export function parseLimitKindFromDetail(detail: string): LimitKind {
   const lower = detail.toLowerCase();
   if (lower.includes("token")) {
     return lower.includes("/month") || lower.includes("monthly") ? "token_monthly" : "token_daily";
+  }
+  if (lower.includes("apply pack") || lower.includes("premium feature")) {
+    return "apply_pack";
   }
   if (lower.includes("search")) return "search";
   return "rating";

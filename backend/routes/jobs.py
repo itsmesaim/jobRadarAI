@@ -27,12 +27,15 @@ from services.rating import (
     unrated_jobs_filter,
     rate_job_for_user,
 )
+from services.apply_pack import MIN_APPLY_PACK_SCORE, generate_apply_pack
 from services.limits import (
     check_ai_token_quota,
+    check_and_increment_apply_pack,
     check_and_increment_rating,
     get_remaining_ratings,
     get_user_usage,
     rating_limit_message,
+    refund_apply_pack,
     refund_rating,
 )
 from services.url_fetch import fetch_job_page_text
@@ -535,8 +538,96 @@ async def get_job_brief(job_id: str, user=Depends(get_current_user)):
             status_code=400, detail="Job not rated yet. Run /jobs/rate-all first."
         )
 
+    from services.jd_text import enrich_jd_from_url, is_incomplete_jd
+
+    if is_incomplete_jd(job.get("full_text", "")):
+        enriched = await enrich_jd_from_url(job.get("url", ""))
+        if enriched:
+            await db.jobs.update_one(
+                {"_id": ObjectId(job_id)},
+                {
+                    "$set": {
+                        "full_text": enriched,
+                        "snippet": enriched[:400],
+                    },
+                    "$unset": {f"ratings.{user_id}": ""},
+                },
+            )
+            job = await db.jobs.find_one({"_id": ObjectId(job_id)})
+            raise HTTPException(
+                status_code=409,
+                detail="Job description was refreshed from the listing URL. Run Rate now again, then copy the brief.",
+            )
+
     brief = await generate_job_brief(job, user, rating)
     return {"brief": brief}
+
+
+@router.get("/{job_id}/apply-pack")
+async def get_job_apply_pack(job_id: str, user=Depends(get_current_user)):
+    db = get_database()
+    user_id = str(user["_id"])
+
+    try:
+        job = await db.jobs.find_one({"_id": ObjectId(job_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid job ID.")
+
+    if not job or job.get("crawled_by") != user_id:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    rating = job.get("ratings", {}).get(user_id, {})
+    if not rating:
+        raise HTTPException(
+            status_code=400, detail="Job not rated yet. Run Rate now first."
+        )
+
+    score = rating.get("score") or 0
+    if score < MIN_APPLY_PACK_SCORE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Apply pack is for jobs scoring {MIN_APPLY_PACK_SCORE}+. This job is {score}/10.",
+        )
+
+    from services.jd_text import enrich_jd_from_url, is_incomplete_jd
+
+    if is_incomplete_jd(job.get("full_text", "")):
+        enriched = await enrich_jd_from_url(job.get("url", ""))
+        if enriched:
+            await db.jobs.update_one(
+                {"_id": ObjectId(job_id)},
+                {
+                    "$set": {"full_text": enriched, "snippet": enriched[:400]},
+                    "$unset": {f"ratings.{user_id}": ""},
+                },
+            )
+            raise HTTPException(
+                status_code=409,
+                detail="Job description was refreshed. Run Rate now again, then request the apply pack.",
+            )
+        raise HTTPException(
+            status_code=400,
+            detail="Job description is incomplete. Paste the full JD before using Apply pack.",
+        )
+
+    allowed, message, remaining = await check_and_increment_apply_pack(user)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message
+        )
+
+    try:
+        pack = await generate_apply_pack(job, user, rating)
+    except ValueError as exc:
+        await refund_apply_pack(user_id)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        await refund_apply_pack(user_id)
+        raise HTTPException(
+            status_code=500, detail="Failed to generate apply pack. Try again."
+        ) from exc
+
+    return {"pack": pack, "apply_packs_remaining": remaining}
 
 
 # ── STATUS — must be before /{job_id} ────────────────────

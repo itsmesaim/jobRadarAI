@@ -19,6 +19,25 @@ from services.email import (
 from services.limits import _reset_if_new_day
 
 
+def _high_score_unapplied_filter(user_id: str, *, min_score: int) -> dict:
+    rating_key = f"ratings.{user_id}.score"
+    status_key = f"status_{user_id}"
+    hidden_key = f"hidden_{user_id}"
+    return {
+        "crawled_by": user_id,
+        hidden_key: {"$ne": True},
+        rating_key: {"$gte": min_score},
+        "$or": [{status_key: {"$exists": False}}, {status_key: "NEW"}],
+    }
+
+
+async def count_high_score_unapplied_jobs(user_id: str, *, min_score: int) -> int:
+    db = get_database()
+    return await db.jobs.count_documents(
+        _high_score_unapplied_filter(user_id, min_score=min_score)
+    )
+
+
 async def get_high_score_unapplied_jobs(
     user_id: str,
     *,
@@ -28,18 +47,9 @@ async def get_high_score_unapplied_jobs(
     """Return NEW/unapplied jobs rated >= min_score, highest score first."""
     db = get_database()
     rating_key = f"ratings.{user_id}.score"
-    status_key = f"status_{user_id}"
-    hidden_key = f"hidden_{user_id}"
 
     jobs = (
-        await db.jobs.find(
-            {
-                "crawled_by": user_id,
-                hidden_key: {"$ne": True},
-                rating_key: {"$gte": min_score},
-                "$or": [{status_key: {"$exists": False}}, {status_key: "NEW"}],
-            }
-        )
+        await db.jobs.find(_high_score_unapplied_filter(user_id, min_score=min_score))
         .sort(rating_key, -1)
         .limit(limit)
         .to_list(length=limit)
@@ -48,6 +58,7 @@ async def get_high_score_unapplied_jobs(
     results: list[dict] = []
     for job in jobs:
         rating = job.get("ratings", {}).get(user_id, {})
+        strengths = rating.get("matched_strengths") or []
         results.append(
             {
                 "id": str(job["_id"]),
@@ -57,6 +68,7 @@ async def get_high_score_unapplied_jobs(
                 "score": rating.get("score"),
                 "url": job.get("url") or "",
                 "verdict": rating.get("verdict") or "",
+                "top_strength": strengths[0] if strengths else "",
             }
         )
     return results
@@ -88,17 +100,22 @@ async def _try_send_reminder_for_user(user: dict) -> dict:
     if sent_today >= settings.job_reminder_max_per_day:
         return {"email": email, "skipped": "daily_cap"}
 
+    total_count = await count_high_score_unapplied_jobs(
+        user_id,
+        min_score=settings.job_reminder_min_score,
+    )
+    if total_count < settings.job_reminder_min_jobs:
+        return {
+            "email": email,
+            "skipped": "not_enough_jobs",
+            "count": total_count,
+        }
+
     jobs = await get_high_score_unapplied_jobs(
         user_id,
         min_score=settings.job_reminder_min_score,
         limit=settings.job_reminder_email_job_limit,
     )
-    if len(jobs) < settings.job_reminder_min_jobs:
-        return {
-            "email": email,
-            "skipped": "not_enough_jobs",
-            "count": len(jobs),
-        }
 
     dashboard_url = f"{settings.frontend_url.rstrip('/')}/"
     settings_url = f"{settings.frontend_url.rstrip('/')}/settings"
@@ -118,7 +135,7 @@ async def _try_send_reminder_for_user(user: dict) -> dict:
             to_email=email,
             user_name=name,
             jobs=jobs,
-            total_count=len(jobs),
+            total_count=total_count,
             min_score=settings.job_reminder_min_score,
             dashboard_url=dashboard_url,
             settings_url=settings_url,
