@@ -18,6 +18,11 @@ import {
   Star,
   FolderX,
   AlertTriangle,
+  UserCircle,
+  SlidersHorizontal,
+  Bell,
+  KeyRound,
+  DatabaseZap,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { authApi, cvApi, userApi, jobsApi } from "../api/index";
@@ -71,6 +76,31 @@ const LOCATION_EXAMPLES = [
   "Berlin Germany",
 ];
 
+const SETTINGS_GROUPS: {
+  id: string;
+  icon: React.ElementType;
+  label: string;
+}[] = [
+  { id: "profile", icon: UserCircle, label: "Profile & CV" },
+  { id: "preferences", icon: SlidersHorizontal, label: "Job search" },
+  { id: "notifications", icon: Bell, label: "Notifications" },
+  { id: "account", icon: KeyRound, label: "Account" },
+  { id: "data", icon: DatabaseZap, label: "Data & privacy" },
+];
+
+function SettingsJumpNav() {
+  return (
+    <nav className="settings-jump-nav" aria-label="Settings sections">
+      {SETTINGS_GROUPS.map(({ id, icon: Icon, label }) => (
+        <a key={id} href={`#${id}`} className="settings-jump-pill">
+          <Icon size={13} />
+          {label}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
 export function SettingsPage() {
   const queryClient = useQueryClient();
   const logout = useAuthStore((s) => s.logout);
@@ -93,6 +123,10 @@ export function SettingsPage() {
   const [newRole, setNewRole] = useState("");
   const [newIndustry, setNewIndustry] = useState("");
   const [salaryCurrency, setSalaryCurrency] = useState("EUR");
+  // Raw text for the salary field so it can be genuinely emptied while
+  // typing — binding straight to a number forces it back to "0" on every
+  // keystroke once cleared, making it impossible to type a fresh value.
+  const [minSalaryInput, setMinSalaryInput] = useState<string>(String(DEFAULT_PREFS.min_salary));
   const [newOverrideSkill, setNewOverrideSkill] = useState("");
   const [newOverrideContext, setNewOverrideContext] = useState("");
   const [addingOverride, setAddingOverride] = useState(false);
@@ -127,6 +161,7 @@ export function SettingsPage() {
         job_types: { ...DEFAULT_PREFS.job_types, ...(prefs.job_types || {}) },
         work_mode: { ...DEFAULT_PREFS.work_mode, ...(prefs.work_mode || {}) },
       });
+      setMinSalaryInput(String(prefs.min_salary ?? DEFAULT_PREFS.min_salary));
       setDirty(false);
     }
   }, [prefs]);
@@ -290,398 +325,373 @@ export function SettingsPage() {
         {dirty && <span className="settings-unsaved-pill">Unsaved changes</span>}
       </div>
 
-      {/* CV Section */}
-      <Section title="CV" subtitle="Upload your master CV. Used for job rating and tailoring.">
-        {cv ? (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              flexWrap: "wrap",
-            }}
-          >
+      <SettingsJumpNav />
+
+      <SectionGroup id="profile" icon={UserCircle} label="Profile & CV">
+        {/* CV Section */}
+        <Section title="CV" subtitle="Upload your master CV. Used for job rating and tailoring.">
+          {cv ? (
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
-                background: "var(--success-bg)",
-                border: "1px solid var(--success)",
-                borderRadius: 7,
-                padding: "8px 14px",
+                gap: 12,
+                flexWrap: "wrap",
               }}
             >
-              <Check size={14} style={{ color: "var(--success)" }} />
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  background: "var(--success-bg)",
+                  border: "1px solid var(--success)",
+                  borderRadius: 7,
+                  padding: "8px 14px",
+                }}
+              >
+                <Check size={14} style={{ color: "var(--success)" }} />
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: "var(--success)",
+                    fontWeight: 500,
+                  }}
+                >
+                  {cv.filename}
+                </span>
+              </div>
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="btn btn-ghost"
+                style={{ fontSize: 12 }}
+              >
+                <Upload size={13} /> Replace
+              </button>
+              <button
+                onClick={() => {
+                  if (window.confirm("Delete your CV from JobRadar? You can upload again later.")) {
+                    deleteCvMutation.mutate();
+                  }
+                }}
+                disabled={deleteCvMutation.isPending}
+                className="btn btn-ghost"
+                style={{ fontSize: 12, color: "var(--danger)" }}
+              >
+                <Trash2 size={13} /> Delete CV
+              </button>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                {cv.structured?.skills?.length} skills · {cv.structured?.projects?.length} projects
+                · {cv.structured?.experience?.length} roles
+              </span>
+            </div>
+          ) : (
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                width: "100%",
+                padding: "32px 20px",
+                border: "2px dashed var(--border)",
+                borderRadius: 10,
+                background: "var(--bg-secondary)",
+                cursor: "pointer",
+                gap: 8,
+              }}
+            >
+              {uploading ? (
+                <>
+                  <Loader size={20} className="animate-spin" style={{ color: "var(--accent)" }} />
+                  <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Uploading...</span>
+                </>
+              ) : (
+                <>
+                  <Upload size={20} style={{ color: "var(--text-muted)" }} />
+                  <span style={{ fontSize: 13, color: "var(--text)" }}>
+                    Click to upload your CV
+                  </span>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>PDF · Max 5MB</span>
+                </>
+              )}
+            </button>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".pdf"
+            style={{ display: "none" }}
+            onChange={handleUpload}
+          />
+        </Section>
+
+        {/* About you — NEW */}
+        <Section
+          title="About you"
+          subtitle="Career context fed directly to the rating engine. Pivot goals, constraints, priorities — injected before the JD so the LLM factors it into strengths, not just gaps."
+        >
+          <textarea
+            className="input"
+            placeholder="e.g. Looking to move from backend into AI engineering. Built production LangChain apps but PyTorch isn't on my CV — comfortable learning on the job. Not interested in pure enterprise Java roles."
+            value={localPrefs.about_me}
+            onChange={(e) => update({ about_me: e.target.value })}
+            rows={4}
+            style={{ resize: "vertical", lineHeight: 1.6 }}
+          />
+        </Section>
+      </SectionGroup>
+
+      <SectionGroup id="notifications" icon={Bell} label="Notifications">
+        {/* Email reminders */}
+        <Section
+          title="Email reminders"
+          subtitle="Get up to 2 emails per day when you have unapplied jobs scoring 8+/10 — same nudge as the dashboard banner."
+        >
+          <label
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 12,
+              cursor: "pointer",
+              padding: "12px 14px",
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "var(--bg-secondary)",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={localPrefs.email_reminders_enabled}
+              onChange={(e) => update({ email_reminders_enabled: e.target.checked })}
+              style={{ marginTop: 3, accentColor: "var(--accent)" }}
+            />
+            <span>
+              <span
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: "var(--text)",
+                  marginBottom: 4,
+                }}
+              >
+                <Mail size={15} />
+                Remind me to apply to high-scoring jobs
+              </span>
               <span
                 style={{
                   fontSize: 13,
-                  color: "var(--success)",
-                  fontWeight: 500,
+                  color: "var(--text-muted)",
+                  lineHeight: 1.5,
                 }}
               >
-                {cv.filename}
+                Requires SMTP on the server. Lists your top matches with scores and links. Disable
+                anytime here.
               </span>
-            </div>
-            <button
-              onClick={() => fileRef.current?.click()}
-              className="btn btn-ghost"
-              style={{ fontSize: 12 }}
-            >
-              <Upload size={13} /> Replace
-            </button>
-            <button
-              onClick={() => {
-                if (window.confirm("Delete your CV from JobRadar? You can upload again later.")) {
-                  deleteCvMutation.mutate();
-                }
-              }}
-              disabled={deleteCvMutation.isPending}
-              className="btn btn-ghost"
-              style={{ fontSize: 12, color: "var(--danger)" }}
-            >
-              <Trash2 size={13} /> Delete CV
-            </button>
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              {cv.structured?.skills?.length} skills · {cv.structured?.projects?.length} projects ·{" "}
-              {cv.structured?.experience?.length} roles
             </span>
-          </div>
-        ) : (
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              width: "100%",
-              padding: "32px 20px",
-              border: "2px dashed var(--border)",
-              borderRadius: 10,
-              background: "var(--bg-secondary)",
-              cursor: "pointer",
-              gap: 8,
-            }}
-          >
-            {uploading ? (
-              <>
-                <Loader size={20} className="animate-spin" style={{ color: "var(--accent)" }} />
-                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Uploading...</span>
-              </>
-            ) : (
-              <>
-                <Upload size={20} style={{ color: "var(--text-muted)" }} />
-                <span style={{ fontSize: 13, color: "var(--text)" }}>Click to upload your CV</span>
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>PDF · Max 5MB</span>
-              </>
-            )}
-          </button>
-        )}
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".pdf"
-          style={{ display: "none" }}
-          onChange={handleUpload}
-        />
-      </Section>
+          </label>
+        </Section>
+      </SectionGroup>
 
-      {/* Email reminders */}
-      <Section
-        title="Email reminders"
-        subtitle="Get up to 2 emails per day when you have unapplied jobs scoring 8+/10 — same nudge as the dashboard banner."
-      >
-        <label
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 12,
-            cursor: "pointer",
-            padding: "12px 14px",
-            borderRadius: 8,
-            border: "1px solid var(--border)",
-            background: "var(--bg-secondary)",
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={localPrefs.email_reminders_enabled}
-            onChange={(e) => update({ email_reminders_enabled: e.target.checked })}
-            style={{ marginTop: 3, accentColor: "var(--accent)" }}
-          />
-          <span>
-            <span
+      <SectionGroup id="preferences" icon={SlidersHorizontal} label="Job search preferences">
+        {/* Role */}
+        <Section title="Role" subtitle="What roles should we search for?">
+          <div style={{ marginBottom: 12 }}>
+            <label className="label">Primary role</label>
+            <input
+              className="input settings-field-narrow"
+              value={localPrefs.primary_role}
+              onChange={(e) => update({ primary_role: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="label">Also search for</label>
+            <div
               style={{
                 display: "flex",
-                alignItems: "center",
+                flexWrap: "wrap",
                 gap: 6,
-                fontSize: 14,
-                fontWeight: 600,
-                color: "var(--text)",
-                marginBottom: 4,
+                marginBottom: 8,
               }}
             >
-              <Mail size={15} />
-              Remind me to apply to high-scoring jobs
-            </span>
-            <span
-              style={{
-                fontSize: 13,
-                color: "var(--text-muted)",
-                lineHeight: 1.5,
-              }}
-            >
-              Requires SMTP on the server. Lists your top matches with scores and links. Disable
-              anytime here.
-            </span>
-          </span>
-        </label>
-      </Section>
+              {localPrefs.secondary_roles.map((r) => (
+                <Tag
+                  key={r}
+                  label={r}
+                  onRemove={() =>
+                    update({
+                      secondary_roles: localPrefs.secondary_roles.filter((x) => x !== r),
+                    })
+                  }
+                />
+              ))}
+            </div>
+            <TagInput
+              value={newRole}
+              onChange={setNewRole}
+              onAdd={addRole}
+              placeholder="e.g. AI Engineer"
+            />
+          </div>
+        </Section>
 
-      {/* About you — NEW */}
-      <Section
-        title="About you"
-        subtitle="Career context fed directly to the rating engine. Pivot goals, constraints, priorities — injected before the JD so the LLM factors it into strengths, not just gaps."
-      >
-        <textarea
-          className="input"
-          placeholder="e.g. Looking to move from backend into AI engineering. Built production LangChain apps but PyTorch isn't on my CV — comfortable learning on the job. Not interested in pure enterprise Java roles."
-          value={localPrefs.about_me}
-          onChange={(e) => update({ about_me: e.target.value })}
-          rows={4}
-          style={{ resize: "vertical", lineHeight: 1.6 }}
-        />
-      </Section>
+        {/* Experience level */}
+        <Section
+          title="Experience level"
+          subtitle="Helps the rating engine catch seniority mismatches (e.g. a role requiring 'lead a team' when you're IC)."
+        >
+          <div className="settings-exp-levels">
+            {EXPERIENCE_LEVELS.map((lvl) => {
+              const active = localPrefs.experience_level === lvl.value;
+              return (
+                <button
+                  key={lvl.value}
+                  onClick={() => update({ experience_level: lvl.value })}
+                  style={{
+                    flex: 1,
+                    padding: "10px 14px",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    border: active ? "1.5px solid var(--accent)" : "1px solid var(--border)",
+                    background: active ? "var(--accent-light)" : "var(--bg-secondary)",
+                    textAlign: "left",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: active ? "var(--accent)" : "var(--text)",
+                    }}
+                  >
+                    {lvl.label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      marginTop: 2,
+                    }}
+                  >
+                    {lvl.hint}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </Section>
 
-      {/* Role */}
-      <Section title="Role" subtitle="What roles should we search for?">
-        <div style={{ marginBottom: 12 }}>
-          <label className="label">Primary role</label>
+        {/* Work authorization */}
+        <Section
+          title="Work authorization"
+          subtitle="Used to flag jobs requiring sponsorship you don't have, or citizenship you can't meet."
+        >
           <input
-            className="input settings-field-narrow"
-            value={localPrefs.primary_role}
-            onChange={(e) => update({ primary_role: e.target.value })}
+            className="input"
+            placeholder="e.g. Stamp 1G, Ireland — no sponsorship needed"
+            value={localPrefs.work_authorization}
+            onChange={(e) => update({ work_authorization: e.target.value })}
           />
-        </div>
-        <div>
-          <label className="label">Also search for</label>
           <div
             style={{
               display: "flex",
-              flexWrap: "wrap",
+              alignItems: "flex-start",
               gap: 6,
-              marginBottom: 8,
+              marginTop: 8,
             }}
           >
-            {localPrefs.secondary_roles.map((r) => (
+            <Info size={13} style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }} />
+            <p
+              style={{
+                fontSize: 11.5,
+                color: "var(--text-muted)",
+                margin: 0,
+                lineHeight: 1.5,
+              }}
+            >
+              Be specific — "Stamp 1G, no sponsorship needed" works much better than just "Irish
+              work visa."
+            </p>
+          </div>
+        </Section>
+
+        {/* Locations */}
+        <Section
+          title="Locations"
+          subtitle="Every location gets its own separate search. Add as many as you want."
+        >
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+            {localPrefs.preferred_locations.map((l) => (
               <Tag
-                key={r}
-                label={r}
+                key={l}
+                label={l}
                 onRemove={() =>
                   update({
-                    secondary_roles: localPrefs.secondary_roles.filter((x) => x !== r),
+                    preferred_locations: localPrefs.preferred_locations.filter((x) => x !== l),
                   })
                 }
               />
             ))}
           </div>
           <TagInput
-            value={newRole}
-            onChange={setNewRole}
-            onAdd={addRole}
-            placeholder="e.g. AI Engineer"
+            value={newLocation}
+            onChange={setNewLocation}
+            onAdd={addLocation}
+            placeholder="e.g. Dublin Ireland"
           />
-        </div>
-      </Section>
-
-      {/* Experience level */}
-      <Section
-        title="Experience level"
-        subtitle="Helps the rating engine catch seniority mismatches (e.g. a role requiring 'lead a team' when you're IC)."
-      >
-        <div className="settings-exp-levels">
-          {EXPERIENCE_LEVELS.map((lvl) => {
-            const active = localPrefs.experience_level === lvl.value;
-            return (
-              <button
-                key={lvl.value}
-                onClick={() => update({ experience_level: lvl.value })}
-                style={{
-                  flex: 1,
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  cursor: "pointer",
-                  border: active ? "1.5px solid var(--accent)" : "1px solid var(--border)",
-                  background: active ? "var(--accent-light)" : "var(--bg-secondary)",
-                  textAlign: "left",
-                  transition: "all 0.15s",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: active ? "var(--accent)" : "var(--text)",
-                  }}
-                >
-                  {lvl.label}
-                </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--text-muted)",
-                    marginTop: 2,
-                  }}
-                >
-                  {lvl.hint}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </Section>
-
-      {/* Work authorization */}
-      <Section
-        title="Work authorization"
-        subtitle="Used to flag jobs requiring sponsorship you don't have, or citizenship you can't meet."
-      >
-        <input
-          className="input"
-          placeholder="e.g. Stamp 1G, Ireland — no sponsorship needed"
-          value={localPrefs.work_authorization}
-          onChange={(e) => update({ work_authorization: e.target.value })}
-        />
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 6,
-            marginTop: 8,
-          }}
-        >
-          <Info size={13} style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }} />
-          <p
-            style={{
-              fontSize: 11.5,
-              color: "var(--text-muted)",
-              margin: 0,
-              lineHeight: 1.5,
-            }}
-          >
-            Be specific — "Stamp 1G, no sponsorship needed" works much better than just "Irish work
-            visa."
-          </p>
-        </div>
-      </Section>
-
-      {/* Locations */}
-      <Section
-        title="Locations"
-        subtitle="Every location gets its own separate search. Add as many as you want."
-      >
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-          {localPrefs.preferred_locations.map((l) => (
-            <Tag
-              key={l}
-              label={l}
-              onRemove={() =>
-                update({
-                  preferred_locations: localPrefs.preferred_locations.filter((x) => x !== l),
-                })
-              }
-            />
-          ))}
-        </div>
-        <TagInput
-          value={newLocation}
-          onChange={setNewLocation}
-          onAdd={addLocation}
-          placeholder="e.g. Dublin Ireland"
-        />
-        {/* quick-add examples */}
-        <div style={{ marginTop: 10 }}>
-          <p
-            style={{
-              fontSize: 11.5,
-              color: "var(--text-muted)",
-              margin: "0 0 6px",
-            }}
-          >
-            Quick add:
-          </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-            {LOCATION_EXAMPLES.filter((ex) => !localPrefs.preferred_locations.includes(ex)).map(
-              (ex) => (
-                <button
-                  key={ex}
-                  onClick={() =>
-                    update({
-                      preferred_locations: [...localPrefs.preferred_locations, ex],
-                    })
-                  }
-                  style={{
-                    fontSize: 11,
-                    padding: "3px 9px",
-                    borderRadius: 20,
-                    cursor: "pointer",
-                    border: "1px dashed var(--border)",
-                    background: "transparent",
-                    color: "var(--text-muted)",
-                  }}
-                >
-                  + {ex}
-                </button>
-              ),
-            )}
-          </div>
-        </div>
-      </Section>
-
-      {/* Work mode */}
-      <Section
-        title="Work mode"
-        subtitle="Onsite-only roles will be flagged as a mismatch if not selected here."
-      >
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          {(["remote", "hybrid", "onsite"] as const).map((mode) => (
-            <label
-              key={mode}
+          {/* quick-add examples */}
+          <div style={{ marginTop: 10 }}>
+            <p
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                cursor: "pointer",
-                fontSize: 13,
+                fontSize: 11.5,
+                color: "var(--text-muted)",
+                margin: "0 0 6px",
               }}
             >
-              <input
-                type="checkbox"
-                checked={localPrefs.work_mode[mode]}
-                onChange={(e) =>
-                  update({
-                    work_mode: {
-                      ...localPrefs.work_mode,
-                      [mode]: e.target.checked,
-                    },
-                  })
-                }
-              />
-              <span style={{ color: "var(--text)", textTransform: "capitalize" }}>{mode}</span>
-            </label>
-          ))}
-        </div>
-      </Section>
+              Quick add:
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+              {LOCATION_EXAMPLES.filter((ex) => !localPrefs.preferred_locations.includes(ex)).map(
+                (ex) => (
+                  <button
+                    key={ex}
+                    onClick={() =>
+                      update({
+                        preferred_locations: [...localPrefs.preferred_locations, ex],
+                      })
+                    }
+                    style={{
+                      fontSize: 11,
+                      padding: "3px 9px",
+                      borderRadius: 20,
+                      cursor: "pointer",
+                      border: "1px dashed var(--border)",
+                      background: "transparent",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    + {ex}
+                  </button>
+                ),
+              )}
+            </div>
+          </div>
+        </Section>
 
-      {/* Job types */}
-      <Section title="Job types" subtitle="What types of roles to include?">
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {(Object.keys(localPrefs.job_types) as (keyof typeof localPrefs.job_types)[])
-            .filter((key) => key !== "remote")
-            .map((key) => (
+        {/* Work mode */}
+        <Section
+          title="Work mode"
+          subtitle="Onsite-only roles will be flagged as a mismatch if not selected here."
+        >
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            {(["remote", "hybrid", "onsite"] as const).map((mode) => (
               <label
-                key={key}
+                key={mode}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -692,356 +702,405 @@ export function SettingsPage() {
               >
                 <input
                   type="checkbox"
-                  checked={localPrefs.job_types[key]}
+                  checked={localPrefs.work_mode[mode]}
                   onChange={(e) =>
                     update({
-                      job_types: {
-                        ...localPrefs.job_types,
-                        [key]: e.target.checked,
+                      work_mode: {
+                        ...localPrefs.work_mode,
+                        [mode]: e.target.checked,
                       },
                     })
                   }
                 />
-                <span style={{ color: "var(--text)", textTransform: "capitalize" }}>
-                  {key.replace("_", " ")}
-                </span>
+                <span style={{ color: "var(--text)", textTransform: "capitalize" }}>{mode}</span>
               </label>
             ))}
-        </div>
-      </Section>
+          </div>
+        </Section>
 
-      {/* Avoid industries */}
-      <Section
-        title="Industries to avoid"
-        subtitle="Jobs in these sectors will be flagged even if technically a skills fit."
-      >
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-          {localPrefs.avoid_industries.map((ind) => (
-            <Tag
-              key={ind}
-              label={ind}
-              onRemove={() =>
-                update({
-                  avoid_industries: localPrefs.avoid_industries.filter((x) => x !== ind),
-                })
-              }
-              color="var(--danger-bg)"
-              textColor="var(--danger)"
-            />
-          ))}
-        </div>
-        <TagInput
-          value={newIndustry}
-          onChange={setNewIndustry}
-          onAdd={addIndustry}
-          placeholder="e.g. Payments, Healthcare compliance"
-        />
-      </Section>
+        {/* Job types */}
+        <Section title="Job types" subtitle="What types of roles to include?">
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {(Object.keys(localPrefs.job_types) as (keyof typeof localPrefs.job_types)[])
+              .filter((key) => key !== "remote")
+              .map((key) => (
+                <label
+                  key={key}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    cursor: "pointer",
+                    fontSize: 13,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={localPrefs.job_types[key]}
+                    onChange={(e) =>
+                      update({
+                        job_types: {
+                          ...localPrefs.job_types,
+                          [key]: e.target.checked,
+                        },
+                      })
+                    }
+                  />
+                  <span style={{ color: "var(--text)", textTransform: "capitalize" }}>
+                    {key.replace("_", " ")}
+                  </span>
+                </label>
+              ))}
+          </div>
+        </Section>
 
-      {/* Key skills */}
-      <Section title="Key skills" subtitle="Used to generate personalised search queries.">
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-          {localPrefs.key_skills.map((s) => (
-            <Tag
-              key={s}
-              label={s}
-              onRemove={() =>
-                update({
-                  key_skills: localPrefs.key_skills.filter((x) => x !== s),
-                })
-              }
-              color="var(--accent-light)"
-              textColor="var(--accent)"
-            />
-          ))}
-        </div>
-        <TagInput
-          value={newSkill}
-          onChange={setNewSkill}
-          onAdd={addSkill}
-          placeholder="e.g. React"
-        />
-      </Section>
-
-      {/* Minimum salary */}
-      <Section
-        title="Minimum salary"
-        subtitle="Jobs below this are flagged. Pick the currency that matches your target market."
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            flexWrap: "wrap",
-          }}
+        {/* Avoid industries */}
+        <Section
+          title="Industries to avoid"
+          subtitle="Jobs in these sectors will be flagged even if technically a skills fit."
         >
-          <select
-            value={salaryCurrency}
-            onChange={(e) => setSalaryCurrency(e.target.value)}
-            className="input"
-            style={{ maxWidth: 90, cursor: "pointer" }}
-          >
-            {CURRENCIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+            {localPrefs.avoid_industries.map((ind) => (
+              <Tag
+                key={ind}
+                label={ind}
+                onRemove={() =>
+                  update({
+                    avoid_industries: localPrefs.avoid_industries.filter((x) => x !== ind),
+                  })
+                }
+                color="var(--danger-bg)"
+                textColor="var(--danger)"
+              />
             ))}
-          </select>
-          <input
-            className="input"
-            type="number"
-            value={localPrefs.min_salary}
-            onChange={(e) => update({ min_salary: parseInt(e.target.value) || 0 })}
-            style={{ maxWidth: 140 }}
+          </div>
+          <TagInput
+            value={newIndustry}
+            onChange={setNewIndustry}
+            onAdd={addIndustry}
+            placeholder="e.g. Payments, Healthcare compliance"
           />
-          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>per year</span>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 6,
-            marginTop: 8,
-          }}
-        >
-          <Info size={13} style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }} />
-          <p
-            style={{
-              fontSize: 11.5,
-              color: "var(--text-muted)",
-              margin: 0,
-              lineHeight: 1.5,
-            }}
-          >
-            €40-70k is mid-level in Ireland · ₹20-40 LPA is strong in India · AED 15-25k/mo is good
-            in UAE (tax-free, higher real value than EUR equivalent).
-          </p>
-        </div>
-      </Section>
+        </Section>
 
-      {/* Skill overrides — NEW */}
-      <Section
-        title="Skill overrides"
-        subtitle="Skills you have that aren't on your CV. Injected into every rating call so the LLM stops flagging them as gaps."
-      >
-        {overrides.length > 0 && (
+        {/* Key skills */}
+        <Section title="Key skills" subtitle="Used to generate personalised search queries.">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+            {localPrefs.key_skills.map((s) => (
+              <Tag
+                key={s}
+                label={s}
+                onRemove={() =>
+                  update({
+                    key_skills: localPrefs.key_skills.filter((x) => x !== s),
+                  })
+                }
+                color="var(--accent-light)"
+                textColor="var(--accent)"
+              />
+            ))}
+          </div>
+          <TagInput
+            value={newSkill}
+            onChange={setNewSkill}
+            onAdd={addSkill}
+            placeholder="e.g. React"
+          />
+        </Section>
+
+        {/* Minimum salary */}
+        <Section
+          title="Minimum salary"
+          subtitle="Jobs below this are flagged. Pick the currency that matches your target market."
+        >
           <div
             style={{
               display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              marginBottom: 14,
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
             }}
           >
-            {overrides.map((o) => (
-              <div
-                key={o.skill}
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 10,
-                  background: "var(--purple-bg)",
-                  borderRadius: 8,
-                  padding: "10px 12px",
-                  border: "1px solid var(--border)",
-                }}
-              >
-                <Brain
-                  size={13}
+            <select
+              value={salaryCurrency}
+              onChange={(e) => setSalaryCurrency(e.target.value)}
+              className="input"
+              style={{ maxWidth: 90, cursor: "pointer" }}
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <input
+              className="input"
+              type="number"
+              value={minSalaryInput}
+              onChange={(e) => {
+                const raw = e.target.value;
+                setMinSalaryInput(raw);
+                if (raw !== "") update({ min_salary: parseInt(raw, 10) || 0 });
+              }}
+              onBlur={() => {
+                if (minSalaryInput === "") {
+                  setMinSalaryInput("0");
+                  update({ min_salary: 0 });
+                }
+              }}
+              style={{ maxWidth: 140 }}
+            />
+            <span style={{ fontSize: 13, color: "var(--text-muted)" }}>per year</span>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 6,
+              marginTop: 8,
+            }}
+          >
+            <Info size={13} style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }} />
+            <p
+              style={{
+                fontSize: 11.5,
+                color: "var(--text-muted)",
+                margin: 0,
+                lineHeight: 1.5,
+              }}
+            >
+              €40-70k is mid-level in Ireland · ₹20-40 LPA is strong in India · AED 15-25k/mo is
+              good in UAE (tax-free, higher real value than EUR equivalent).
+            </p>
+          </div>
+        </Section>
+
+        {/* Skill overrides — NEW */}
+        <Section
+          title="Skill overrides"
+          subtitle="Skills you have that aren't on your CV. Injected into every rating call so the LLM stops flagging them as gaps."
+        >
+          {overrides.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                marginBottom: 14,
+              }}
+            >
+              {overrides.map((o) => (
+                <div
+                  key={o.skill}
                   style={{
-                    color: "var(--purple)",
-                    flexShrink: 0,
-                    marginTop: 1,
-                  }}
-                />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 12.5,
-                      fontWeight: 600,
-                      color: "var(--purple)",
-                      marginBottom: 2,
-                    }}
-                  >
-                    {o.skill}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "var(--text-secondary)",
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {o.context}
-                  </div>
-                </div>
-                <button
-                  onClick={() => deleteOverrideMutation.mutate(o.skill)}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    color: "var(--text-muted)",
                     display: "flex",
-                    padding: 2,
-                    flexShrink: 0,
+                    alignItems: "flex-start",
+                    gap: 10,
+                    background: "var(--purple-bg)",
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                    border: "1px solid var(--border)",
                   }}
-                  title="Remove override"
                 >
-                  <Trash2 size={13} />
+                  <Brain
+                    size={13}
+                    style={{
+                      color: "var(--purple)",
+                      flexShrink: 0,
+                      marginTop: 1,
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        color: "var(--purple)",
+                        marginBottom: 2,
+                      }}
+                    >
+                      {o.skill}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "var(--text-secondary)",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {o.context}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => deleteOverrideMutation.mutate(o.skill)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "var(--text-muted)",
+                      display: "flex",
+                      padding: 2,
+                      flexShrink: 0,
+                    }}
+                    title="Remove override"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!addingOverride ? (
+            <button
+              onClick={() => setAddingOverride(true)}
+              className="btn btn-ghost"
+              style={{ fontSize: 12.5 }}
+            >
+              <Plus size={13} /> Add skill override
+            </button>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  className="input"
+                  placeholder="Skill (e.g. plotly)"
+                  value={newOverrideSkill}
+                  onChange={(e) => setNewOverrideSkill(e.target.value)}
+                  style={{ maxWidth: 160 }}
+                  autoFocus
+                />
+                <input
+                  className="input"
+                  placeholder="Your experience with it..."
+                  value={newOverrideContext}
+                  onChange={(e) => setNewOverrideContext(e.target.value)}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" &&
+                    newOverrideSkill &&
+                    newOverrideContext &&
+                    addOverrideMutation.mutate()
+                  }
+                />
+              </div>
+              <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: 0 }}>
+                e.g. "plotly" → "used in BEng for ML model visualisation across 3 projects"
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => addOverrideMutation.mutate()}
+                  disabled={
+                    !newOverrideSkill.trim() ||
+                    !newOverrideContext.trim() ||
+                    addOverrideMutation.isPending
+                  }
+                  className="btn btn-primary"
+                  style={{ fontSize: 12 }}
+                >
+                  {addOverrideMutation.isPending ? "Saving..." : "Save override"}
+                </button>
+                <button
+                  onClick={() => {
+                    setAddingOverride(false);
+                    setNewOverrideSkill("");
+                    setNewOverrideContext("");
+                  }}
+                  className="btn btn-ghost"
+                  style={{ fontSize: 12 }}
+                >
+                  Cancel
                 </button>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          )}
+        </Section>
+      </SectionGroup>
 
-        {!addingOverride ? (
-          <button
-            onClick={() => setAddingOverride(true)}
-            className="btn btn-ghost"
-            style={{ fontSize: 12.5 }}
-          >
-            <Plus size={13} /> Add skill override
-          </button>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", gap: 8 }}>
+      <SectionGroup id="account" icon={KeyRound} label="Account & security">
+        <Section title="Password" subtitle="Change your sign-in password">
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <label className="label">Current password</label>
               <input
                 className="input"
-                placeholder="Skill (e.g. plotly)"
-                value={newOverrideSkill}
-                onChange={(e) => setNewOverrideSkill(e.target.value)}
-                style={{ maxWidth: 160 }}
-                autoFocus
-              />
-              <input
-                className="input"
-                placeholder="Your experience with it..."
-                value={newOverrideContext}
-                onChange={(e) => setNewOverrideContext(e.target.value)}
-                onKeyDown={(e) =>
-                  e.key === "Enter" &&
-                  newOverrideSkill &&
-                  newOverrideContext &&
-                  addOverrideMutation.mutate()
-                }
+                type="password"
+                value={pwForm.current}
+                onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })}
               />
             </div>
-            <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: 0 }}>
-              e.g. "plotly" → "used in BEng for ML model visualisation across 3 projects"
+            <div>
+              <label className="label">New password</label>
+              <input
+                className="input"
+                type="password"
+                placeholder="Min. 8 characters"
+                value={pwForm.next}
+                onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="label">Confirm new password</label>
+              <input
+                className="input"
+                type="password"
+                value={pwForm.confirm}
+                onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={changingPassword}
+              style={{ alignSelf: "flex-start" }}
+              onClick={async () => {
+                if (pwForm.next.length < 8) {
+                  toast.error("New password must be at least 8 characters");
+                  return;
+                }
+                if (pwForm.next !== pwForm.confirm) {
+                  toast.error("New passwords do not match");
+                  return;
+                }
+                setChangingPassword(true);
+                try {
+                  const res = await authApi.changePassword(pwForm.current, pwForm.next);
+                  toast.success(res.message);
+                  setPwForm({ current: "", next: "", confirm: "" });
+                } catch (err: any) {
+                  toast.error(err.response?.data?.detail || "Could not change password");
+                } finally {
+                  setChangingPassword(false);
+                }
+              }}
+            >
+              {changingPassword ? "Updating..." : "Change password"}
+            </button>
+            <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>
+              Forgot your password?{" "}
+              <a href="/forgot-password" style={{ color: "var(--accent)" }}>
+                Reset via email
+              </a>
             </p>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                onClick={() => addOverrideMutation.mutate()}
-                disabled={
-                  !newOverrideSkill.trim() ||
-                  !newOverrideContext.trim() ||
-                  addOverrideMutation.isPending
-                }
-                className="btn btn-primary"
-                style={{ fontSize: 12 }}
-              >
-                {addOverrideMutation.isPending ? "Saving..." : "Save override"}
-              </button>
-              <button
-                onClick={() => {
-                  setAddingOverride(false);
-                  setNewOverrideSkill("");
-                  setNewOverrideContext("");
-                }}
-                className="btn btn-ghost"
-                style={{ fontSize: 12 }}
-              >
-                Cancel
-              </button>
-            </div>
           </div>
-        )}
-      </Section>
+        </Section>
+      </SectionGroup>
 
-      <Section title="Password" subtitle="Change your sign-in password">
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div>
-            <label className="label">Current password</label>
-            <input
-              className="input"
-              type="password"
-              value={pwForm.current}
-              onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="label">New password</label>
-            <input
-              className="input"
-              type="password"
-              placeholder="Min. 8 characters"
-              value={pwForm.next}
-              onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="label">Confirm new password</label>
-            <input
-              className="input"
-              type="password"
-              value={pwForm.confirm}
-              onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
-            />
-          </div>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={changingPassword}
-            style={{ alignSelf: "flex-start" }}
-            onClick={async () => {
-              if (pwForm.next.length < 8) {
-                toast.error("New password must be at least 8 characters");
-                return;
-              }
-              if (pwForm.next !== pwForm.confirm) {
-                toast.error("New passwords do not match");
-                return;
-              }
-              setChangingPassword(true);
-              try {
-                const res = await authApi.changePassword(pwForm.current, pwForm.next);
-                toast.success(res.message);
-                setPwForm({ current: "", next: "", confirm: "" });
-              } catch (err: any) {
-                toast.error(err.response?.data?.detail || "Could not change password");
-              } finally {
-                setChangingPassword(false);
-              }
-            }}
-          >
-            {changingPassword ? "Updating..." : "Change password"}
-          </button>
-          <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>
-            Forgot your password?{" "}
-            <a href="/forgot-password" style={{ color: "var(--accent)" }}>
-              Reset via email
-            </a>
-          </p>
-        </div>
-      </Section>
+      <SectionGroup id="data" icon={DatabaseZap} label="Data & privacy">
+        {/* Job cleanup */}
+        <JobCleanupSection />
 
-      {/* Job cleanup */}
-      <JobCleanupSection />
-
-      {/* Data & privacy */}
-      <DataPrivacySection
-        summary={dataSummary}
-        onExport={handleExportData}
-        onDeleteCv={() => {
-          if (window.confirm("Delete your CV from JobRadar? You can upload again later.")) {
-            deleteCvMutation.mutate();
-          }
-        }}
-        deleteCvPending={deleteCvMutation.isPending}
-        onDeleteAccount={() => setShowDeleteAccount(true)}
-      />
+        {/* Data & privacy */}
+        <DataPrivacySection
+          summary={dataSummary}
+          onExport={handleExportData}
+          onDeleteCv={() => {
+            if (window.confirm("Delete your CV from JobRadar? You can upload again later.")) {
+              deleteCvMutation.mutate();
+            }
+          }}
+          deleteCvPending={deleteCvMutation.isPending}
+          onDeleteAccount={() => setShowDeleteAccount(true)}
+        />
+      </SectionGroup>
 
       {showDeleteAccount && (
         <div
@@ -1209,7 +1268,7 @@ const TERMINAL_STATUSES = ["REJECTED", "OFFER", "APPLIED"] as const;
 
 function JobCleanupSection() {
   const [filterType, setFilterType] = useState<UserFilterType>("old");
-  const [olderThanDays, setOlderThanDays] = useState(30);
+  const [olderThanDays, setOlderThanDays] = useState<number | "">(30);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>(["REJECTED"]);
   const [preview, setPreview] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1225,7 +1284,7 @@ function JobCleanupSection() {
 
   const buildReq = () => ({
     filter_type: filterType,
-    older_than_days: filterType === "old" ? olderThanDays : undefined,
+    older_than_days: filterType === "old" ? olderThanDays || 1 : undefined,
     statuses: filterType === "by_status" ? selectedStatuses : undefined,
   });
 
@@ -1368,9 +1427,10 @@ function JobCleanupSection() {
             value={olderThanDays}
             min={1}
             onChange={(e) => {
-              setOlderThanDays(parseInt(e.target.value) || 1);
+              setOlderThanDays(e.target.value === "" ? "" : parseInt(e.target.value, 10));
               resetPreview();
             }}
+            onBlur={() => olderThanDays === "" && setOlderThanDays(1)}
             className="input"
             style={{ maxWidth: 80, textAlign: "center" }}
           />
@@ -1693,6 +1753,30 @@ function DataStat({ label, value }: { label: string; value: string }) {
     <div className="admin-stat-box">
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text)" }}>{value}</div>
+    </div>
+  );
+}
+
+function SectionGroup({
+  id,
+  icon: Icon,
+  label,
+  children,
+}: {
+  id: string;
+  icon: React.ElementType;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div id={id} className="settings-group">
+      <div className="settings-group-header">
+        <span className="settings-group-icon">
+          <Icon size={14} />
+        </span>
+        <span className="settings-group-label">{label}</span>
+      </div>
+      <div className="settings-group-body">{children}</div>
     </div>
   );
 }

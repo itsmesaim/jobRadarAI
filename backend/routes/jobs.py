@@ -21,6 +21,7 @@ from database import get_database
 from deps import get_current_user
 from services.job_dedup import content_fingerprint, hash_url, job_exists_for_user
 from services.rating import (
+    RATING_IN_PROGRESS,
     generate_job_brief,
     is_billable_rating,
     rate_all_jobs_for_user,
@@ -77,6 +78,12 @@ class FetchUrlRequest(BaseModel):
 def _format_job(job: dict, user_id: str) -> dict:
     rating = job.get("ratings", {}).get(user_id, {})
     posted = job.get("posted_at") or job.get("crawled_at")
+    # While a background rate-all worker has claimed this job it holds a
+    # placeholder rating with verdict=RATING_IN_PROGRESS and score=0 so a
+    # second overlapping run won't re-rate it. Never leak that internal
+    # sentinel to the client — surface it as an explicit flag instead so
+    # the UI can show a real "rating in progress" state.
+    in_progress = rating.get("verdict") == RATING_IN_PROGRESS
     return {
         "id": str(job["_id"]),
         "title": job.get("title"),
@@ -84,15 +91,24 @@ def _format_job(job: dict, user_id: str) -> dict:
         "snippet": job.get("snippet", "")[:300],
         "crawled_at": job.get("crawled_at"),
         "posted_at": posted,
+        # True posting date only (None if the source never gave one) — lets
+        # the UI distinguish "posted 20m ago" from "we just happened to pull
+        # it a moment ago" (crawled_at) rather than always faking one from
+        # the other.
+        "posted_at_actual": job.get("posted_at"),
+        "rated_at": rating.get("rated_at"),
         "source": job.get("source", "tavily"),
         "company": job.get("company", ""),
         "location": job.get("location", ""),
-        "score": rating.get("score", None),
-        "matched_strengths": rating.get("matched_strengths", []),
-        "gaps": rating.get("gaps", []),
-        "verdict": rating.get("verdict", "Not rated yet"),
+        "score": None if in_progress else rating.get("score", None),
+        "matched_strengths": [] if in_progress else rating.get("matched_strengths", []),
+        "gaps": [] if in_progress else rating.get("gaps", []),
+        "verdict": (
+            "Not rated yet" if in_progress else rating.get("verdict", "Not rated yet")
+        ),
         "auto_reject": rating.get("auto_reject", False),
         "status": job.get(f"status_{user_id}", "NEW"),
+        "rating_in_progress": in_progress,
     }
 
 
@@ -518,6 +534,63 @@ async def add_manual_jd(payload: ManualJD, user=Depends(get_current_user)):
     }
 
 
+# ── RE-RATE A SINGLE JOB (after CV/preferences/skills change) ────
+@router.post("/{job_id}/rate")
+async def rate_single_job(job_id: str, user=Depends(get_current_user)):
+    """Force a fresh rating for one job, bypassing the 'already rated' skip.
+
+    Useful after the user updates their CV, preferences, or skill
+    overrides — the old score/verdict on this job may no longer reflect
+    their profile.
+    """
+    db = get_database()
+    user_id = str(user["_id"])
+
+    job_doc = await db.jobs.find_one({"_id": ObjectId(job_id), "crawled_by": user_id})
+    if not job_doc:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    token_ok, token_msg = await check_ai_token_quota(user)
+    if not token_ok:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=token_msg
+        )
+
+    allowed, quota_msg, _ = await check_and_increment_rating(user, jobs_to_rate=1)
+    if not allowed:
+        usage = await get_user_usage(user_id)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=quota_msg or rating_limit_message(usage.get("rating_limit", 0)),
+        )
+
+    try:
+        rating = await rate_job_for_user(job_doc, user)
+    except Exception:
+        await refund_rating(user_id, 1)
+        raise HTTPException(status_code=500, detail="Re-rating failed. Try again.")
+
+    rating["rated_at"] = datetime.now(timezone.utc)
+    await db.jobs.update_one(
+        {"_id": ObjectId(job_id)}, {"$set": {f"ratings.{user_id}": rating}}
+    )
+
+    if not is_billable_rating(rating):
+        await refund_rating(user_id, 1)
+
+    return {
+        "message": "Job re-rated.",
+        "score": rating.get("score"),
+        "verdict": rating.get("verdict"),
+        "matched_strengths": rating.get("matched_strengths"),
+        "gaps": rating.get("gaps"),
+        "auto_reject": rating.get("auto_reject"),
+        "structural_mismatch": rating.get("structural_mismatch"),
+        "tailoring_tips": rating.get("tailoring_tips"),
+        "rated_at": rating.get("rated_at"),
+    }
+
+
 # ── BRIEF — must be before /{job_id} ─────────────────────
 @router.get("/{job_id}/brief")
 async def get_job_brief(job_id: str, user=Depends(get_current_user)):
@@ -648,7 +721,13 @@ async def update_status(
         raise HTTPException(status_code=404, detail="Job not found.")
 
     await db.jobs.update_one(
-        {"_id": ObjectId(job_id)}, {"$set": {f"status_{user_id}": payload.status}}
+        {"_id": ObjectId(job_id)},
+        {
+            "$set": {
+                f"status_{user_id}": payload.status,
+                f"status_at_{user_id}": datetime.now(timezone.utc),
+            }
+        },
     )
     return {"message": "Status updated.", "status": payload.status}
 

@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     rating_provider: str = (
         ""  # "xai" | "openai" | "ollama" (empty = use main llm_provider)
     )
+    # Max concurrent LLM calls during bulk rating. Every call now uses the
+    # full-length prompt (see rating.py), so this directly controls tokens/min
+    # sent to your rating provider — lower it if you hit 429 TPM rate limits
+    # on a low-tier model/org (e.g. gpt-4.1-nano).
+    rating_concurrency: int = 4
 
     # External
     tavily_api_key: str = ""
@@ -104,7 +109,7 @@ class Settings(BaseSettings):
     jobsapi_key: str = ""
 
     # Auto scheduler (search + rate every N hours in background)
-    auto_crawl_interval_hours: int = 24
+    auto_crawl_interval_hours: int = 12
     # Cap new jobs stored per user per auto-crawl cycle (does not consume manual search quota)
     auto_crawl_max_stored_per_cycle: int = 25
 
@@ -116,6 +121,10 @@ class Settings(BaseSettings):
     job_reminder_email_job_limit: int = 8  # max jobs listed in one email
     # Comma-separated UTC hours, e.g. "8,18" → 08:00 and 18:00 UTC daily
     job_reminder_hours_utc: str = "8,18"
+
+    # A job sitting in Applied/Half-applied/Saved for this many days with no
+    # status change gets flagged as needing a follow-up nudge.
+    stale_followup_days: int = 7
 
     # Admin / Freemium
     # IMPORTANT: Put real values in .env only. These defaults are safe for git.

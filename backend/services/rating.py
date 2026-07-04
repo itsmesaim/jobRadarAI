@@ -221,25 +221,7 @@ Examples of good tips:
 Make the tips specific to the JD text and the candidate's actual projects. Avoid generic advice.
 """.strip()
 
-FAST_RATING_SYSTEM_PROMPT = """
-You are a senior technical recruiter rating candidate–job fit (1–10). Be honest; do not inflate.
-
-Check first for deal-breakers (set structural_mismatch=true, score ≤ 3):
-- Hard people-management requirement vs IC candidate
-- Core domain required with zero candidate exposure
-- Work authorization / strict onsite mismatch with stated constraints
-
-Then score:
-- Start at 5 for a relevant candidate
-- + for required skills, named tools in the CV, production agentic/LLM systems built
-- − for missing required skills (larger) vs preferred (smaller)
-- Cap at 3 for structural mismatch; 7–8 strong match; 9–10 excellent
-
-Return matched_strengths, gaps, verdict (one sentence), auto_reject, structural_mismatch.
-Skip tailoring_tips (empty list is fine for bulk screening).
-""".strip()
-
-_RATING_IN_PROGRESS = "__rating_in_progress__"
+RATING_IN_PROGRESS = "__rating_in_progress__"
 
 
 ROAST_SYSTEM_PROMPT = """
@@ -341,7 +323,7 @@ def unrated_jobs_filter(user_id: str) -> dict:
     verdict_path = f"{rating_path}.verdict"
     return {
         "crawled_by": user_id,
-        verdict_path: {"$ne": _RATING_IN_PROGRESS},
+        verdict_path: {"$ne": RATING_IN_PROGRESS},
         "$or": [
             {rating_path: {"$exists": False}},
             {score_path: {"$lte": 0}},
@@ -372,7 +354,7 @@ def _should_skip_rating(job: dict, user_id: str) -> bool:
     if not rating:
         return False
     verdict = (rating.get("verdict") or "").strip()
-    if verdict == _RATING_IN_PROGRESS:
+    if verdict == RATING_IN_PROGRESS:
         return True
     score = rating.get("score")
     if isinstance(score, int) and score > 0:
@@ -387,7 +369,7 @@ def _should_skip_rating(job: dict, user_id: str) -> bool:
 
 
 @traceable(name="rate_job_for_user", run_type="chain")
-async def rate_job_for_user(job: dict, user: dict, *, mode: str = "full") -> dict:
+async def rate_job_for_user(job: dict, user: dict) -> dict:
     cv = user.get("cv", {})
     if not cv:
         return {
@@ -441,14 +423,10 @@ Education: {json.dumps(structured.get('education', []))}
 
     human_message_content = "\n".join(sections)
 
-    system_prompt = (
-        FAST_RATING_SYSTEM_PROMPT if mode == "fast" else RATING_SYSTEM_PROMPT
-    )
-    operation = "job_rating_fast" if mode == "fast" else "job_rating"
-    prompt_chars = len(system_prompt) + len(human_message_content)
+    prompt_chars = len(RATING_SYSTEM_PROMPT) + len(human_message_content)
 
     messages = [
-        SystemMessage(content=system_prompt),
+        SystemMessage(content=RATING_SYSTEM_PROMPT),
         HumanMessage(content=human_message_content),
     ]
 
@@ -460,9 +438,7 @@ Education: {json.dumps(structured.get('education', []))}
             llm, "model", getattr(llm, "model_name", settings.rating_model or "unknown")
         )
         structured_llm = llm.with_structured_output(JobRating, include_raw=True)
-        print(
-            f"[rating] [job] LLM invoke mode={mode} provider={provider} model={model}"
-        )
+        print(f"[rating] [job] LLM invoke provider={provider} model={model}")
         raw_result = await structured_llm.ainvoke(messages)
         if isinstance(raw_result, dict):
             result: JobRating = raw_result.get("parsed")
@@ -472,7 +448,7 @@ Education: {json.dumps(structured.get('education', []))}
                 await record_from_llm_response(
                     user_id,
                     raw_msg,
-                    operation=operation,
+                    operation="job_rating",
                     provider=provider,
                     model=str(model),
                     prompt_chars=prompt_chars,
@@ -483,7 +459,7 @@ Education: {json.dumps(structured.get('education', []))}
             if user_id:
                 await record_ai_usage(
                     user_id,
-                    operation=operation,
+                    operation="job_rating",
                     provider=provider,
                     model=str(model),
                     llm_calls=1,
@@ -510,9 +486,10 @@ Education: {json.dumps(structured.get('education', []))}
 
 # ── Fast path config ──────────────────────────────────────────────────────────
 
-# Max concurrent LLM rating calls. Tune based on your provider limits.
-# Grok fast models often handle higher concurrency well.
-RATING_CONCURRENCY = 10
+# Max concurrent LLM rating calls. Tune via RATING_CONCURRENCY in .env based
+# on your provider's tokens-per-minute limit — every call now sends the full
+# rating prompt (no cheap first pass), so this is what controls burst TPM.
+RATING_CONCURRENCY = settings.rating_concurrency
 
 # Embedding similarity threshold (cosine).
 # Jobs below this get a cheap low score (no full LLM call) to save tokens on irrelevant results from broad search.
@@ -521,9 +498,6 @@ EMBEDDING_SIMILARITY_CUTOFF = 0.18
 
 # Max jobs to pull in one rate-all run. Set high to process hundreds in one background task.
 RATE_ALL_MAX_JOBS = 2000
-
-# Bulk fast rating first; run full detailed prompt only when fast score ≥ this.
-FULL_RATING_SCORE_THRESHOLD = 7
 
 
 # ── Embedding helpers (cheap & fast pre-filter) ───────────────────────────────
@@ -737,12 +711,11 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
 
     prefilter_count = 0
     llm_count = 0
-    full_llm_count = 0
     skipped_count = 0
     error_count = 0
 
     async def rate_and_store(job):
-        nonlocal prefilter_count, llm_count, full_llm_count, skipped_count, error_count
+        nonlocal prefilter_count, llm_count, skipped_count, error_count
         async with sem:
             job_id = str(job["_id"])
             job_title = str(job.get("title", "Unknown"))[:50]
@@ -760,7 +733,7 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
                             "score": 0,
                             "matched_strengths": [],
                             "gaps": [],
-                            "verdict": _RATING_IN_PROGRESS,
+                            "verdict": RATING_IN_PROGRESS,
                             "auto_reject": False,
                             "rated_at": datetime.now(timezone.utc),
                         }
@@ -826,19 +799,17 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
                         )
                         return 1 if is_billable_rating(rating) else 0
 
-            # Fast LLM rating first; full prompt only for strong matches
+            # Full accurate LLM rating — same prompt path as manual "Paste JD".
+            # A cheap "fast" pass used to run first and only promoted to the
+            # full prompt when its own (cruder) score was >= 7, so a real 8/9
+            # match that the fast prompt under-scored as a 5 or 6 got stuck
+            # there forever. That silently tanked match quality for crawled
+            # jobs while manual paste-JD (always full prompt) stayed accurate.
             llm_count += 1
             sim_str = f" sim={sim:.3f}" if sim is not None else ""
-            print(f"[rating] [{job_id}] LLM-FAST{sim_str} title='{job_title}'")
+            print(f"[rating] [{job_id}] LLM-FULL{sim_str} title='{job_title}'")
             try:
-                rating = await rate_job_for_user(job, fresh_user, mode="fast")
-                fast_score = rating.get("score", 0) or 0
-                if fast_score >= FULL_RATING_SCORE_THRESHOLD:
-                    full_llm_count += 1
-                    print(
-                        f"[rating] [{job_id}] LLM-FULL (fast={fast_score}≥{FULL_RATING_SCORE_THRESHOLD}) title='{job_title}'"
-                    )
-                    rating = await rate_job_for_user(job, fresh_user, mode="full")
+                rating = await rate_job_for_user(job, fresh_user)
                 rating["rated_at"] = datetime.now(timezone.utc)
                 await db.jobs.update_one(
                     {"_id": ObjectId(job["_id"])},
@@ -877,14 +848,13 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
 
     print(f"[rating] === FINISHED {user_email} ===")
     print(
-        f"[rating] [queue] Summary: total_in_queue={len(jobs)} | skipped(already_rated)={skipped_count} | prefiltered(cheap,no-LLM)={prefilter_count} | llm_fast={llm_count} | llm_full={full_llm_count} | errors={error_count} | successfully_stored={rated_count}"
+        f"[rating] [queue] Summary: total_in_queue={len(jobs)} | skipped(already_rated)={skipped_count} | prefiltered(cheap,no-LLM)={prefilter_count} | llm_full={llm_count} | errors={error_count} | successfully_stored={rated_count}"
     )
     return {
         "rated": rated_count,
         "skipped": skipped_count,
         "prefiltered": prefilter_count,
         "llm_calls": llm_count,
-        "llm_full_calls": full_llm_count,
         "errors": error_count,
     }
 

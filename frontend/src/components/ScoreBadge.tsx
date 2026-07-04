@@ -1,11 +1,36 @@
 interface Props {
   score: number | null;
   size?: "sm" | "md" | "lg";
+  loading?: boolean;
 }
 
-export function ScoreBadge({ score, size = "sm" }: Props) {
+export function ScoreBadge({ score, size = "sm", loading = false }: Props) {
   const dims = { sm: 12, md: 14, lg: 22 }[size];
   const padding = { sm: "3px 8px", md: "5px 11px", lg: "6px 14px" }[size];
+
+  if (loading) {
+    return (
+      <span
+        className="score-badge-loading"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 5,
+          color: "var(--accent)",
+          fontFamily: "var(--font-mono)",
+          fontSize: dims * 0.85,
+          fontWeight: 600,
+          padding,
+          border: "1px solid var(--accent-light)",
+          background: "var(--accent-light)",
+          borderRadius: 7,
+        }}
+      >
+        <span className="score-badge-spinner" style={{ width: dims * 0.7, height: dims * 0.7 }} />
+        Rating…
+      </span>
+    );
+  }
 
   if (score === null) {
     return (

@@ -473,24 +473,21 @@ async def admin_update_user_limits(
     """
     db = get_database()
     updates = {}
+    # NOTE: full_access / full_access_until are the ONLY source of truth for
+    # unlimited access (see _has_unlimited_access). Do NOT also stamp
+    # search_limit/rating_limit/token_limit overrides to 9999/0 here — those
+    # are separate, persistent fields with no expiry of their own, so once
+    # written they silently keep granting unlimited access forever, even
+    # after full_access_until has passed (this was a real bug: a 12h grant
+    # kept a user unlimited for days because the 9999 override never got
+    # cleaned up).
     if full_access_duration_hours is not None and full_access_duration_hours > 0:
         until = datetime.now(timezone.utc) + timedelta(hours=full_access_duration_hours)
         updates["admin_overrides.full_access_until"] = until.isoformat()
         updates["admin_overrides.full_access"] = False  # use until instead
-        updates["admin_overrides.search_limit"] = 9999
-        updates["admin_overrides.rating_limit"] = 9999
-        updates["admin_overrides.daily_token_limit"] = 0
-        updates["admin_overrides.monthly_token_limit"] = 0
     elif full_access is not None:
         updates["admin_overrides.full_access"] = full_access
-        if full_access:
-            updates["admin_overrides.full_access_until"] = None
-            updates["admin_overrides.search_limit"] = 9999
-            updates["admin_overrides.rating_limit"] = 9999
-            updates["admin_overrides.daily_token_limit"] = 0
-            updates["admin_overrides.monthly_token_limit"] = 0
-        else:
-            updates["admin_overrides.full_access_until"] = None
+        updates["admin_overrides.full_access_until"] = None
     if search_limit is not None:
         updates["admin_overrides.search_limit"] = search_limit
     if rating_limit is not None:

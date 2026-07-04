@@ -93,10 +93,13 @@ type AccessLevel = "free" | "limited" | "full" | "temp_12h" | "temp_1d";
 
 interface EditForm {
   access_level: AccessLevel;
-  search_limit: number;
-  rating_limit: number;
-  daily_token_limit: number;
-  monthly_token_limit: number;
+  // "" represents a field the user has cleared while typing a new value —
+  // it must NOT be coerced to 0 immediately, or the input becomes
+  // impossible to clear (every keystroke re-adds a leading "0").
+  search_limit: number | "";
+  rating_limit: number | "";
+  daily_token_limit: number | "";
+  monthly_token_limit: number | "";
   notes: string;
 }
 
@@ -348,9 +351,10 @@ function UserEditForm({
                   onChange={(e) =>
                     setForm({
                       ...form,
-                      search_limit: parseInt(e.target.value) || 0,
+                      search_limit: e.target.value === "" ? "" : parseInt(e.target.value, 10),
                     })
                   }
+                  onBlur={() => form.search_limit === "" && setForm({ ...form, search_limit: 0 })}
                   className="input"
                   disabled={limitsDisabled}
                 />
@@ -363,9 +367,10 @@ function UserEditForm({
                   onChange={(e) =>
                     setForm({
                       ...form,
-                      rating_limit: parseInt(e.target.value) || 0,
+                      rating_limit: e.target.value === "" ? "" : parseInt(e.target.value, 10),
                     })
                   }
+                  onBlur={() => form.rating_limit === "" && setForm({ ...form, rating_limit: 0 })}
                   className="input"
                   disabled={limitsDisabled}
                 />
@@ -380,8 +385,11 @@ function UserEditForm({
               onChange={(e) =>
                 setForm({
                   ...form,
-                  daily_token_limit: parseInt(e.target.value) || 0,
+                  daily_token_limit: e.target.value === "" ? "" : parseInt(e.target.value, 10),
                 })
+              }
+              onBlur={() =>
+                form.daily_token_limit === "" && setForm({ ...form, daily_token_limit: 0 })
               }
               className="input"
               disabled={limitsDisabled}
@@ -396,8 +404,11 @@ function UserEditForm({
               onChange={(e) =>
                 setForm({
                   ...form,
-                  monthly_token_limit: parseInt(e.target.value) || 0,
+                  monthly_token_limit: e.target.value === "" ? "" : parseInt(e.target.value, 10),
                 })
+              }
+              onBlur={() =>
+                form.monthly_token_limit === "" && setForm({ ...form, monthly_token_limit: 0 })
               }
               className="input"
               disabled={limitsDisabled}
@@ -586,13 +597,7 @@ const JOB_STATUSES = [
 ] as const;
 
 type FilterType =
-  | "all"
-  | "old"
-  | "unrated"
-  | "low_score"
-  | "below_score"
-  | "by_status"
-  | "auto_rejected";
+  "all" | "old" | "unrated" | "low_score" | "below_score" | "by_status" | "auto_rejected";
 
 const FILTER_OPTIONS: {
   value: FilterType;
@@ -645,9 +650,9 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
   const [open, setOpen] = useState(false);
   const [userId, setUserId] = useState("");
   const [filterType, setFilterType] = useState<FilterType>("old");
-  const [olderThanDays, setOlderThanDays] = useState(30);
-  const [maxScore, setMaxScore] = useState(3);
-  const [minScore, setMinScore] = useState(6);
+  const [olderThanDays, setOlderThanDays] = useState<number | "">(30);
+  const [maxScore, setMaxScore] = useState<number | "">(3);
+  const [minScore, setMinScore] = useState<number | "">(6);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>(["REJECTED"]);
   const [preview, setPreview] = useState<{ count: number; email: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -664,9 +669,9 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
   const buildPayload = (dry: boolean) => ({
     user_id: userId,
     filter_type: filterType,
-    older_than_days: filterType === "old" ? olderThanDays : undefined,
-    max_score: filterType === "low_score" ? maxScore : undefined,
-    min_score: filterType === "below_score" ? minScore : undefined,
+    older_than_days: filterType === "old" ? olderThanDays || 1 : undefined,
+    max_score: filterType === "low_score" ? maxScore || 0 : undefined,
+    min_score: filterType === "below_score" ? minScore || 6 : undefined,
     statuses: filterType === "by_status" ? selectedStatuses : undefined,
     dry_run: dry,
   });
@@ -967,9 +972,10 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                   value={olderThanDays}
                   min={1}
                   onChange={(e) => {
-                    setOlderThanDays(parseInt(e.target.value) || 1);
+                    setOlderThanDays(e.target.value === "" ? "" : parseInt(e.target.value, 10));
                     resetPreview();
                   }}
+                  onBlur={() => olderThanDays === "" && setOlderThanDays(1)}
                   className="input"
                   style={{ maxWidth: 80, textAlign: "center" }}
                 />
@@ -986,9 +992,10 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                   min={0}
                   max={9}
                   onChange={(e) => {
-                    setMaxScore(parseInt(e.target.value) || 0);
+                    setMaxScore(e.target.value === "" ? "" : parseInt(e.target.value, 10));
                     resetPreview();
                   }}
+                  onBlur={() => maxScore === "" && setMaxScore(0)}
                   className="input"
                   style={{ maxWidth: 70, textAlign: "center" }}
                 />
@@ -1007,9 +1014,10 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                   min={2}
                   max={10}
                   onChange={(e) => {
-                    setMinScore(parseInt(e.target.value) || 6);
+                    setMinScore(e.target.value === "" ? "" : parseInt(e.target.value, 10));
                     resetPreview();
                   }}
+                  onBlur={() => minScore === "" && setMinScore(6)}
                   className="input"
                   style={{ maxWidth: 70, textAlign: "center" }}
                 />
@@ -1268,14 +1276,14 @@ export function AdminPage() {
         payload.full_access = false;
         payload.search_limit = 3;
         payload.rating_limit = 10;
-        payload.daily_token_limit = form.daily_token_limit;
-        payload.monthly_token_limit = form.monthly_token_limit;
+        payload.daily_token_limit = form.daily_token_limit || 0;
+        payload.monthly_token_limit = form.monthly_token_limit || 0;
       } else {
         payload.full_access = false;
-        payload.search_limit = form.search_limit;
-        payload.rating_limit = form.rating_limit;
-        payload.daily_token_limit = form.daily_token_limit;
-        payload.monthly_token_limit = form.monthly_token_limit;
+        payload.search_limit = form.search_limit || 0;
+        payload.rating_limit = form.rating_limit || 0;
+        payload.daily_token_limit = form.daily_token_limit || 0;
+        payload.monthly_token_limit = form.monthly_token_limit || 0;
       }
 
       await adminApi.updateAccess(basePath, id, payload);

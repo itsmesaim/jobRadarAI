@@ -126,7 +126,10 @@ def get_rating_llm() -> BaseChatModel:
     """
     provider = settings.rating_provider or settings.llm_provider
     model = settings.rating_model or ""
-    llm = _make_llm(provider, model, temperature=0.0)
+    # Bulk rating fires many calls back-to-back — bump retries so a
+    # transient 429 (tokens-per-minute) backs off and retries instead of
+    # failing the job outright. The SDK honors the provider's Retry-After.
+    llm = _make_llm(provider, model, temperature=0.0, max_retries=5)
 
     # Helpful visibility so you can see what's actually being used for bulk rating
     # (printed once thanks to caching)

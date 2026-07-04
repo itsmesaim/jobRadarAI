@@ -23,6 +23,12 @@ function timeAgo(dateStr?: string): string {
   return `${weeks}w ago`;
 }
 
+function fullDate(dateStr?: string): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? "" : d.toLocaleString();
+}
+
 type Freshness = "today" | "recent" | null;
 
 function getFreshness(crawledAt?: string): Freshness {
@@ -63,6 +69,21 @@ const REJECTION_QUOTES = [
   "Even the best get rejected. It's part of the process.",
   "One door closes, a better one opens.",
   "Thomas Edison failed 10,000 times before the lightbulb. You got this.",
+  "A 'no' today doesn't cancel the 'yes' coming next week.",
+  "Michael Jordan got cut from his high school team. Look him up.",
+  "This role wasn't it. The right one hasn't opened yet — that's all this means.",
+  "You didn't lose a job, you avoided one that wasn't a fit. Onward.",
+  "Every strong candidate racks up rejections on the way to an offer. You're on track.",
+  "Companies pass on great people constantly — for budget, timing, internal politics. Rarely about you.",
+  "Stephen King's first novel got 30 rejections. He kept a spike on the wall for them.",
+  "Interview reps are still reps. This one counts toward the next win.",
+  "The market is noisy right now. Your skills didn't just get worse because of one 'no'.",
+  "Log it, forget it, apply to the next one. Momentum beats dwelling.",
+  "J.K. Rowling was rejected by 12 publishers before Harry Potter took off.",
+  "Some of the best hires were someone else's rejected candidate first.",
+  "This just means the timing or fit was off — not that you're not good enough.",
+  "Keep the applications moving. Volume plus quality is how offers happen.",
+  "Take five minutes to feel it, then get back to the next role. You've got this.",
 ];
 
 function extractCompany(job: Job): string {
@@ -89,7 +110,16 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
   const title = cleanTitle(job);
   // @ts-ignore
   const location = job.location as string | undefined;
-  const postedTime = timeAgo(job.posted_at || job.crawled_at);
+  // Prefer the source's real posting date; fall back to when we pulled it.
+  const postedTime = timeAgo(job.posted_at_actual || job.crawled_at);
+  const postedLabel = job.posted_at_actual ? "Posted" : "Pulled";
+  const timeTooltip = [
+    job.posted_at_actual && `Posted: ${fullDate(job.posted_at_actual)}`,
+    job.crawled_at && `Pulled by JobRadar: ${fullDate(job.crawled_at)}`,
+    job.rated_at && `Rated: ${fullDate(job.rated_at)}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
   const freshness = getFreshness(job.crawled_at);
 
   const handleStatus = async (status: JobStatus) => {
@@ -123,7 +153,8 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
 
   const isHighScore = job.score !== null && job.score >= 8;
   const isGoodScore = job.score !== null && job.score >= 6 && job.score < 8;
-  const isUnrated = job.score === null;
+  const isRating = !!job.rating_in_progress;
+  const isUnrated = job.score === null && !isRating;
 
   const borderColor = isHighScore
     ? "var(--success)"
@@ -135,37 +166,17 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
     <>
       <div
         onClick={() => setShowModal(true)}
-        className="card card-hover"
+        className="card card-hover job-card"
         style={{
-          padding: "18px 20px",
           opacity: job.auto_reject ? 0.45 : 1,
           borderLeft: `3px solid ${borderColor}`,
           cursor: "pointer",
-          display: "flex",
-          flexDirection: "column",
-          minHeight: 248,
-          boxSizing: "border-box",
         }}
       >
         {/* Header row */}
-        <div
-          style={{
-            display: "flex",
-            gap: 14,
-            alignItems: "flex-start",
-            marginBottom: 10,
-          }}
-        >
+        <div className="job-card-header-row">
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 7,
-                marginBottom: 6,
-                flexWrap: "wrap",
-              }}
-            >
+            <div className="job-card-meta-row">
               <span
                 style={{
                   fontSize: 10.5,
@@ -189,6 +200,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
               </span>
               {postedTime && (
                 <span
+                  title={timeTooltip}
                   style={{
                     fontSize: 10,
                     color: "var(--text-muted)",
@@ -197,7 +209,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                     gap: 3,
                   }}
                 >
-                  <Clock size={10} /> {postedTime}
+                  <Clock size={10} /> {postedLabel} {postedTime}
                 </span>
               )}
               {freshness === "today" && (
@@ -350,7 +362,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
               flexShrink: 0,
             }}
           >
-            <ScoreBadge score={job.score} size="md" />
+            <ScoreBadge score={job.score} size="md" loading={isRating} />
             {job.url && (
               <a
                 href={job.url}
@@ -367,7 +379,21 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
 
         {/* Verdict — clamped at 2 lines, ellipsis not mid-word cut */}
         <div style={{ flex: 1, minHeight: 0, marginBottom: 12 }}>
-          {!isUnrated && job.verdict && job.verdict !== "Not rated yet" ? (
+          {isRating ? (
+            <p
+              style={{
+                fontSize: 12,
+                color: "var(--accent)",
+                margin: 0,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <span className="score-badge-spinner" style={{ width: 10, height: 10 }} />
+              AI is rating this job against your CV…
+            </p>
+          ) : !isUnrated && job.verdict && job.verdict !== "Not rated yet" ? (
             <p
               style={{
                 fontSize: 12.5,
@@ -391,33 +417,13 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
         </div>
 
         {/* Footer */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 8,
-            paddingTop: 12,
-            borderTop: "1px solid var(--border)",
-            flexShrink: 0,
-          }}
-        >
+        <div className="job-card-footer">
           <select
             value={currentStatus}
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => handleStatus(e.target.value as JobStatus)}
-            style={{
-              fontSize: 11.5,
-              fontWeight: 600,
-              color: STATUS_COLORS[currentStatus],
-              background: "transparent",
-              border: "1px solid var(--border)",
-              borderRadius: 7,
-              padding: "4px 6px",
-              cursor: "pointer",
-              outline: "none",
-              maxWidth: 110,
-            }}
+            className="job-card-status-select"
+            style={{ color: STATUS_COLORS[currentStatus] }}
           >
             {STATUSES.map((s) => (
               <option
@@ -430,29 +436,20 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
             ))}
           </select>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 5,
-              flexShrink: 0,
-            }}
-          >
+          <div className="job-card-footer-actions">
             <button
               onClick={handleHide}
-              className="btn btn-ghost"
-              style={{ padding: "5px 6px", fontSize: 11.5 }}
+              className="btn btn-ghost job-card-icon-btn"
               title="Remove from list"
             >
-              <EyeOff size={11} />
+              <EyeOff size={13} />
             </button>
             <button
               onClick={() => setShowModal(true)}
-              className="btn btn-ghost"
-              style={{ padding: "5px 6px", fontSize: 11.5 }}
+              className="btn btn-ghost job-card-icon-btn"
               title="View full details"
             >
-              <Maximize2 size={11} />
+              <Maximize2 size={13} />
             </button>
           </div>
         </div>

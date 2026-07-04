@@ -8,6 +8,8 @@ import {
   Loader,
   Sparkles,
   ClipboardCopy,
+  RefreshCw,
+  CalendarClock,
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -33,6 +35,13 @@ function timeAgo(dateStr?: string): string {
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
   return `${Math.floor(days / 7)}w ago`;
+}
+
+function fullDate(dateStr?: string): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString();
 }
 
 interface Props {
@@ -61,6 +70,18 @@ export function JobDetailModal({ job, onClose }: Props) {
   const [copiedPack, setCopiedPack] = useState(false);
   const [packLoading, setPackLoading] = useState(false);
   const [showApplyPackLimit, setShowApplyPackLimit] = useState(false);
+  const [reRating, setReRating] = useState(false);
+  // Rating fields can change without the job's identity changing (title,
+  // company, JD text stay the same) — track them separately so a re-rate
+  // updates the modal immediately without needing the parent list to refetch.
+  const [rating, setRating] = useState({
+    score: job.score,
+    verdict: job.verdict,
+    matched_strengths: job.matched_strengths,
+    gaps: job.gaps,
+    auto_reject: job.auto_reject,
+    rated_at: job.rated_at,
+  });
 
   const company = extractCompany(job);
   const title = cleanTitle(job);
@@ -85,7 +106,7 @@ export function JobDetailModal({ job, onClose }: Props) {
     ? 9999
     : Math.max(0, (usage?.apply_pack_limit ?? 0) - (usage?.apply_packs_used ?? 0));
   const canApplyPack =
-    (job.score ?? 0) >= MIN_APPLY_PACK_SCORE && (isPro || applyPacksRemaining > 0);
+    (rating.score ?? 0) >= MIN_APPLY_PACK_SCORE && (isPro || applyPacksRemaining > 0);
 
   const handleCopyBrief = async () => {
     try {
@@ -102,6 +123,35 @@ export function JobDetailModal({ job, onClose }: Props) {
       } else {
         toast.error(detail || "Could not copy fit summary");
       }
+    }
+  };
+
+  const handleReRate = async () => {
+    setReRating(true);
+    try {
+      const res = await jobsApi.rateOne(job.id);
+      setRating({
+        score: res.score,
+        verdict: res.verdict,
+        matched_strengths: res.matched_strengths,
+        gaps: res.gaps,
+        auto_reject: res.auto_reject,
+        rated_at: res.rated_at,
+      });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["kanban"] });
+      queryClient.invalidateQueries({ queryKey: ["crawl-status"] });
+      toast.success(`Re-rated: ${res.score ?? "?"}/10`);
+    } catch (err: unknown) {
+      const ax = err as { response?: { status?: number; data?: { detail?: string } } };
+      const detail = ax.response?.data?.detail;
+      if (ax.response?.status === 429 && detail) {
+        toast.error(detail, { duration: 6000 });
+      } else {
+        toast.error(detail || "Could not re-rate this job");
+      }
+    } finally {
+      setReRating(false);
     }
   };
 
@@ -160,16 +210,7 @@ export function JobDetailModal({ job, onClose }: Props) {
         }}
       >
         {/* Header */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: 12,
-            padding: "20px 24px",
-            borderBottom: "1px solid var(--border)",
-          }}
-        >
+        <div className="job-modal-header">
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
@@ -198,31 +239,35 @@ export function JobDetailModal({ job, onClose }: Props) {
                         ? "LinkedIn"
                         : "Auto"}
               </span>
+            </div>
+
+            <div className="job-modal-timestamps">
+              {job.posted_at_actual && (
+                <span
+                  title={`Posted: ${fullDate(job.posted_at_actual)}`}
+                  style={{ display: "flex", alignItems: "center", gap: 4 }}
+                >
+                  <Clock size={11} /> Posted {timeAgo(job.posted_at_actual)}
+                </span>
+              )}
               {job.crawled_at && (
                 <span
-                  style={{
-                    fontSize: 11,
-                    color: "var(--text-muted)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4,
-                  }}
+                  title={`Pulled by JobRadar: ${fullDate(job.crawled_at)}`}
+                  style={{ display: "flex", alignItems: "center", gap: 4 }}
                 >
-                  <Clock size={11} /> {timeAgo(job.crawled_at)}
+                  <CalendarClock size={11} /> Pulled {timeAgo(job.crawled_at)}
+                </span>
+              )}
+              {rating.rated_at && (
+                <span
+                  title={`Last rated: ${fullDate(rating.rated_at)}`}
+                  style={{ display: "flex", alignItems: "center", gap: 4 }}
+                >
+                  <Sparkles size={11} /> Rated {timeAgo(rating.rated_at)}
                 </span>
               )}
             </div>
-            <h2
-              style={{
-                fontSize: 18,
-                fontWeight: 600,
-                margin: "0 0 6px",
-                lineHeight: 1.35,
-                color: "var(--text)",
-              }}
-            >
-              {title}
-            </h2>
+            <h2 className="job-modal-title">{title}</h2>
             <div
               style={{
                 display: "flex",
@@ -245,7 +290,7 @@ export function JobDetailModal({ job, onClose }: Props) {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            <ScoreBadge score={job.score} size="lg" />
+            <ScoreBadge score={rating.score} size="lg" loading={!!job.rating_in_progress} />
             <button
               onClick={onClose}
               className="btn btn-ghost"
@@ -259,7 +304,27 @@ export function JobDetailModal({ job, onClose }: Props) {
 
         {/* Body — scrollable */}
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
-          {job.verdict && job.verdict !== "Not rated yet" && (
+          {job.rating_in_progress && (
+            <p
+              style={{
+                fontSize: 14,
+                color: "var(--accent)",
+                lineHeight: 1.6,
+                margin: "0 0 20px",
+                padding: "12px 14px",
+                background: "var(--accent-light)",
+                borderRadius: 8,
+                border: "1px solid var(--accent-light)",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span className="score-badge-spinner" style={{ width: 13, height: 13 }} />
+              AI is rating this job against your CV right now — check back in a moment.
+            </p>
+          )}
+          {rating.verdict && rating.verdict !== "Not rated yet" && (
             <p
               style={{
                 fontSize: 14,
@@ -272,11 +337,11 @@ export function JobDetailModal({ job, onClose }: Props) {
                 border: "1px solid var(--border)",
               }}
             >
-              {job.verdict}
+              {rating.verdict}
             </p>
           )}
 
-          {job.matched_strengths && job.matched_strengths.length > 0 && (
+          {rating.matched_strengths && rating.matched_strengths.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <p
                 style={{
@@ -290,7 +355,7 @@ export function JobDetailModal({ job, onClose }: Props) {
               >
                 Strengths
               </p>
-              {job.matched_strengths.map((s, i) => (
+              {rating.matched_strengths.map((s, i) => (
                 <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                   <span
                     style={{
@@ -315,7 +380,7 @@ export function JobDetailModal({ job, onClose }: Props) {
             </div>
           )}
 
-          {job.gaps && job.gaps.length > 0 && (
+          {rating.gaps && rating.gaps.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <p
                 style={{
@@ -329,7 +394,7 @@ export function JobDetailModal({ job, onClose }: Props) {
               >
                 Gaps
               </p>
-              {job.gaps.map((g, i) => (
+              {rating.gaps.map((g, i) => (
                 <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                   <span style={{ color: "#f97316", fontWeight: 700, flexShrink: 0 }}>−</span>
                   <span
@@ -375,51 +440,61 @@ export function JobDetailModal({ job, onClose }: Props) {
           )}
         </div>
 
-        {/* Footer */}
-        {job.score !== null && job.score > 0 && (
-          <div className="job-modal-footer">
-            {(job.score ?? 0) >= MIN_APPLY_PACK_SCORE && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleApplyPack}
-                  disabled={packLoading}
-                  className="btn btn-primary job-modal-apply-pack"
-                >
-                  {packLoading ? (
-                    <Loader size={15} className="animate-spin" />
-                  ) : copiedPack ? (
-                    <Check size={15} />
-                  ) : (
-                    <Sparkles size={15} />
-                  )}
-                  {packLoading
-                    ? "Building your apply pack…"
-                    : copiedPack
-                      ? "Copied — paste into ChatGPT / Claude"
-                      : "Copy apply pack for LLM"}
-                </button>
-                <p className="job-modal-pack-hint">
-                  {isPro
-                    ? "Unlimited · ATS keywords, full LaTeX CV boilerplate, MASTER CV + JD context"
-                    : applyPacksRemaining > 0
-                      ? `${applyPacksRemaining} free today · one prompt: tailored CV .tex + cover note`
-                      : "Daily limit used — upgrade for unlimited apply packs"}
-                </p>
-              </>
-            )}
+        {/* Footer — always visible so a job can be re-rated even before it has a score */}
+        <div className="job-modal-footer">
+          {(rating.score ?? 0) >= MIN_APPLY_PACK_SCORE && (
+            <>
+              <button
+                type="button"
+                onClick={handleApplyPack}
+                disabled={packLoading}
+                className="btn btn-primary job-modal-apply-pack"
+              >
+                {packLoading ? (
+                  <Loader size={15} className="animate-spin" />
+                ) : copiedPack ? (
+                  <Check size={15} />
+                ) : (
+                  <Sparkles size={15} />
+                )}
+                {packLoading
+                  ? "Building your apply pack…"
+                  : copiedPack
+                    ? "Copied — paste into ChatGPT / Claude"
+                    : "Copy apply pack for LLM"}
+              </button>
+              <p className="job-modal-pack-hint">
+                {isPro
+                  ? "Unlimited · ATS keywords, full LaTeX CV boilerplate, MASTER CV + JD context"
+                  : applyPacksRemaining > 0
+                    ? `${applyPacksRemaining} free today · one prompt: tailored CV .tex + cover note`
+                    : "Daily limit used — upgrade for unlimited apply packs"}
+              </p>
+            </>
+          )}
 
-            <div className="job-modal-footer-actions">
-              {job.url && (
-                <a
-                  href={job.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-ghost job-modal-action-btn"
-                >
-                  <ExternalLink size={14} /> View posting
-                </a>
-              )}
+          <div className="job-modal-footer-actions">
+            {job.url && (
+              <a
+                href={job.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-ghost job-modal-action-btn"
+              >
+                <ExternalLink size={14} /> View posting
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={handleReRate}
+              disabled={reRating}
+              className="btn btn-ghost job-modal-action-btn"
+              title="Re-check this job against your current CV, preferences, and skill overrides"
+            >
+              {reRating ? <Loader size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              {reRating ? "Re-rating…" : "Re-rate"}
+            </button>
+            {rating.score !== null && rating.score > 0 && (
               <button
                 type="button"
                 onClick={handleCopyBrief}
@@ -436,9 +511,9 @@ export function JobDetailModal({ job, onClose }: Props) {
                   </>
                 )}
               </button>
-            </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {showApplyPackLimit && (

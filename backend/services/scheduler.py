@@ -6,6 +6,7 @@ who have uploaded a CV. Auto-crawl does not consume manual search quota but
 caps new jobs stored per cycle (see AUTO_CRAWL_MAX_STORED_PER_CYCLE).
 """
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -65,8 +66,10 @@ async def _auto_crawl_and_rate():
                 f"[scheduler] [{email}] → Starting crawl "
                 f"(cap {max_stored}/cycle: jooble={jooble_cap}, indeed={indeed_cap})..."
             )
-            res_j = await crawl_jobs_for_user_jooble(user, max_stored=jooble_cap)
-            res_i = await crawl_jobs_for_user_jobsapi(user, max_stored=indeed_cap)
+            res_j, res_i = await asyncio.gather(
+                crawl_jobs_for_user_jooble(user, max_stored=jooble_cap),
+                crawl_jobs_for_user_jobsapi(user, max_stored=indeed_cap),
+            )
             stored = (res_j or {}).get("stored", 0) + (res_i or {}).get("stored", 0)
             print(f"[scheduler] [{email}] Crawl done: stored={stored} new jobs")
 

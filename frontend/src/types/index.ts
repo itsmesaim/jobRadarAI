@@ -21,7 +21,10 @@ export interface Job {
   url: string;
   snippet: string;
   crawled_at: string;
-  posted_at?: string; // actual job posting date from source when available
+  posted_at?: string; // posted_at_actual, falling back to crawled_at
+  posted_at_actual?: string; // true posting date from source, if it gave one
+  rated_at?: string; // when this job was last rated for the current user
+  rating_in_progress?: boolean; // a background worker is rating this job right now
   source: "tavily" | "manual" | "jooble" | "adzuna" | "jobsapi-indeed" | "jobsapi-linkedin";
   score: number | null;
   matched_strengths: string[];

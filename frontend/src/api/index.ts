@@ -65,6 +65,20 @@ export const jobsApi = {
     return res.data;
   },
 
+  rateOne: async (id: string) => {
+    const res = await api.post(`/jobs/${id}/rate`);
+    return res.data as {
+      score: number | null;
+      verdict: string;
+      matched_strengths: string[];
+      gaps: string[];
+      auto_reject: boolean;
+      structural_mismatch?: boolean;
+      tailoring_tips?: string[];
+      rated_at: string;
+    };
+  },
+
   addManual: async (payload: { title: string; company: string; url?: string; jd_text: string }) => {
     const res = await api.post("/jobs/manual", payload);
     return res.data;
@@ -217,13 +231,7 @@ export const adminApi = {
     payload: {
       user_id: string;
       filter_type:
-        | "all"
-        | "old"
-        | "unrated"
-        | "low_score"
-        | "below_score"
-        | "by_status"
-        | "auto_rejected";
+        "all" | "old" | "unrated" | "low_score" | "below_score" | "by_status" | "auto_rejected";
       older_than_days?: number;
       max_score?: number;
       min_score?: number;

@@ -5,11 +5,13 @@ POST /crawler/search   — manual trigger (capped 3/day)
 GET  /crawler/status   — last crawl info for current user
 """
 
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from config import settings
 from database import get_database
 from deps import get_current_user
 from services.adzuna_crawler import crawl_jobs_for_user_adzuna
@@ -21,6 +23,7 @@ from services.limits import check_and_increment_search, get_user_usage
 router = APIRouter(prefix="/crawler", tags=["crawler"])
 
 MANUAL_DAILY_LIMIT = 20
+STALE_FOLLOWUP_STATUSES = ["APPLIED", "HALF_APPLIED", "SAVED"]
 
 
 @router.post("/search")
@@ -36,9 +39,12 @@ async def manual_search(user=Depends(get_current_user)):
             detail=message,
         )
 
-    # run crawl (legacy counter still updated for backward compat)
-    result_jooble = await crawl_jobs_for_user_jooble(user)
-    result_jobsapi = await crawl_jobs_for_user_jobsapi(user)
+    # Run both sources concurrently — they're independent network calls, no
+    # reason to make the user wait for Jooble to finish before Indeed starts.
+    result_jooble, result_jobsapi = await asyncio.gather(
+        crawl_jobs_for_user_jooble(user),
+        crawl_jobs_for_user_jobsapi(user),
+    )
     result_adzuna = {"found": 0, "stored": 0, "skipped": 0}
 
     result = {
@@ -103,6 +109,29 @@ async def crawl_status(user=Depends(get_current_user)):
     )
     active_count = await db.jobs.count_documents({**base_filter, **active_status})
 
+    # Follow-up nudge: jobs sitting in Applied/Half-applied/Saved for too
+    # long with no status change. status_at_{user_id} is only set going
+    # forward (added when this feature shipped) — for older status changes
+    # that predate it, fall back to crawled_at as a best-effort proxy so
+    # existing pipeline jobs aren't silently excluded forever.
+    status_at_key = f"status_at_{user_id}"
+    stale_cutoff = datetime.now(timezone.utc) - timedelta(
+        days=settings.stale_followup_days
+    )
+    stale_followup_count = await db.jobs.count_documents(
+        {
+            **base_filter,
+            status_key: {"$in": STALE_FOLLOWUP_STATUSES},
+            "$or": [
+                {status_at_key: {"$lte": stale_cutoff}},
+                {
+                    status_at_key: {"$exists": False},
+                    "crawled_at": {"$lte": stale_cutoff},
+                },
+            ],
+        }
+    )
+
     usage = await get_user_usage(user_id)
     is_full = (
         usage.get("full_access")
@@ -152,4 +181,6 @@ async def crawl_status(user=Depends(get_current_user)):
         "strong_matches_count": strong_matches_count,
         "unrated_count": unrated_count,
         "active_count": active_count,
+        "stale_followup_count": stale_followup_count,
+        "stale_followup_days": settings.stale_followup_days,
     }

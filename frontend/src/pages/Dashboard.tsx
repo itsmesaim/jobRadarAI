@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Search,
@@ -14,6 +15,7 @@ import {
   ChevronRight,
   Briefcase,
   Sparkles,
+  BellRing,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { JobCard } from "../components/JobCard";
@@ -269,7 +271,9 @@ export function Dashboard() {
   const [showManual, setShowManual] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [reminderDismissed, setReminderDismissed] = useState(false);
+  const [staleReminderDismissed, setStaleReminderDismissed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const navigate = useNavigate();
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [limitModalKind, setLimitModalKind] = useState<LimitKind | null>(null);
 
@@ -501,6 +505,9 @@ export function Dashboard() {
   const unratedCount = usage?.unrated_count ?? 0;
   const activeAccountCount = usage?.active_count ?? data?.account_total ?? 0;
   const showReminder = !reminderDismissed && applySoonCount >= 2;
+  const staleFollowupCount = usage?.stale_followup_count ?? 0;
+  const staleFollowupDays = usage?.stale_followup_days ?? 7;
+  const showStaleReminder = !staleReminderDismissed && staleFollowupCount > 0;
   const lastCrawlLabel = formatLastCrawl(usage?.last_crawl_at);
   const firstName = user?.name?.trim().split(/\s+/)[0] || "there";
   const searchUsedPct = isFull ? 0 : Math.round((searchesUsed / Math.max(searchesLimit, 1)) * 100);
@@ -751,6 +758,40 @@ export function Dashboard() {
             </button>
             <button
               onClick={() => setReminderDismissed(true)}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "var(--text-muted)",
+                display: "flex",
+              }}
+            >
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showStaleReminder && (
+        <div className="dash-reminder">
+          <BellRing size={18} style={{ color: "var(--accent)", flexShrink: 0 }} />
+          <p className="dash-reminder-text">
+            <strong>
+              {staleFollowupCount} job{staleFollowupCount === 1 ? "" : "s"}
+            </strong>{" "}
+            {staleFollowupCount === 1 ? "has" : "have"} been Applied, Half-applied, or Saved for
+            over {staleFollowupDays} days with no update. Worth a follow-up email or a status check.
+          </p>
+          <div className="dash-reminder-actions">
+            <button
+              onClick={() => navigate("/kanban")}
+              className="btn btn-secondary"
+              style={{ fontSize: 13, padding: "6px 12px", flexShrink: 0 }}
+            >
+              Review pipeline
+            </button>
+            <button
+              onClick={() => setStaleReminderDismissed(true)}
               style={{
                 background: "none",
                 border: "none",
