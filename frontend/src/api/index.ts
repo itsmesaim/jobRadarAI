@@ -216,9 +216,17 @@ export const adminApi = {
     basePath: string,
     payload: {
       user_id: string;
-      filter_type: "all" | "old" | "unrated" | "low_score" | "by_status" | "auto_rejected";
+      filter_type:
+        | "all"
+        | "old"
+        | "unrated"
+        | "low_score"
+        | "below_score"
+        | "by_status"
+        | "auto_rejected";
       older_than_days?: number;
       max_score?: number;
+      min_score?: number;
       statuses?: string[];
       dry_run: boolean;
     },

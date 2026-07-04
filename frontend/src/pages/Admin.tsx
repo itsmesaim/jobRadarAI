@@ -585,7 +585,14 @@ const JOB_STATUSES = [
   "REJECTED",
 ] as const;
 
-type FilterType = "all" | "old" | "unrated" | "low_score" | "by_status" | "auto_rejected";
+type FilterType =
+  | "all"
+  | "old"
+  | "unrated"
+  | "low_score"
+  | "below_score"
+  | "by_status"
+  | "auto_rejected";
 
 const FILTER_OPTIONS: {
   value: FilterType;
@@ -604,7 +611,13 @@ const FILTER_OPTIONS: {
   {
     value: "low_score",
     label: "Low-scored",
-    desc: "Score ≤ N (pre-filtered junk)",
+    desc: "Score ≤ N (includes 0)",
+    icon: <TrendingDown size={18} />,
+  },
+  {
+    value: "below_score",
+    label: "Below 6",
+    desc: "Score 0 or rated below 6/10",
     icon: <TrendingDown size={18} />,
   },
   {
@@ -634,6 +647,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
   const [filterType, setFilterType] = useState<FilterType>("old");
   const [olderThanDays, setOlderThanDays] = useState(30);
   const [maxScore, setMaxScore] = useState(3);
+  const [minScore, setMinScore] = useState(6);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>(["REJECTED"]);
   const [preview, setPreview] = useState<{ count: number; email: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -652,6 +666,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
     filter_type: filterType,
     older_than_days: filterType === "old" ? olderThanDays : undefined,
     max_score: filterType === "low_score" ? maxScore : undefined,
+    min_score: filterType === "below_score" ? minScore : undefined,
     statuses: filterType === "by_status" ? selectedStatuses : undefined,
     dry_run: dry,
   });
@@ -968,16 +983,39 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                 <input
                   type="number"
                   value={maxScore}
-                  min={1}
+                  min={0}
                   max={9}
                   onChange={(e) => {
-                    setMaxScore(parseInt(e.target.value) || 1);
+                    setMaxScore(parseInt(e.target.value) || 0);
                     resetPreview();
                   }}
                   className="input"
                   style={{ maxWidth: 70, textAlign: "center" }}
                 />
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>out of 10 (1–9)</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>out of 10 (0–9)</span>
+              </div>
+            )}
+
+            {filterType === "below_score" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                  Delete jobs scored below
+                </span>
+                <input
+                  type="number"
+                  value={minScore}
+                  min={2}
+                  max={10}
+                  onChange={(e) => {
+                    setMinScore(parseInt(e.target.value) || 6);
+                    resetPreview();
+                  }}
+                  className="input"
+                  style={{ maxWidth: 70, textAlign: "center" }}
+                />
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  / 10 (includes score 0 — failed or weak fits)
+                </span>
               </div>
             )}
 

@@ -26,10 +26,17 @@ from services.limits import admin_list_users, admin_update_user_limits, get_user
 class JobCleanupRequest(BaseModel):
     user_id: str
     filter_type: Literal[
-        "all", "old", "unrated", "low_score", "by_status", "auto_rejected"
+        "all",
+        "old",
+        "unrated",
+        "low_score",
+        "below_score",
+        "by_status",
+        "auto_rejected",
     ]
     older_than_days: int | None = None  # used when filter_type == "old"
     max_score: int | None = None  # used when filter_type == "low_score"
+    min_score: int | None = None  # used when filter_type == "below_score"
     statuses: list[str] | None = None  # used when filter_type == "by_status"
     dry_run: bool = True  # True = preview only, no deletion
 
@@ -132,7 +139,13 @@ async def cleanup_user_jobs(payload: JobCleanupRequest, user=Depends(get_current
 
     elif payload.filter_type == "low_score":
         threshold = payload.max_score if payload.max_score is not None else 3
-        query[f"ratings.{uid}.score"] = {"$gt": 0, "$lte": threshold}
+        query[f"ratings.{uid}.score"] = {"$lte": threshold}
+
+    elif payload.filter_type == "below_score":
+        # Score 0 (failed/thin JD) and any rating strictly below min_score (default 6).
+        cutoff = payload.min_score if payload.min_score is not None else 6
+        cutoff = max(1, min(10, cutoff))
+        query[f"ratings.{uid}.score"] = {"$lt": cutoff}
 
     elif payload.filter_type == "by_status":
         if not payload.statuses:
