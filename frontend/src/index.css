@@ -237,13 +237,22 @@
       padding: 10px;
     }
 
+    /* Status select + 2 icon buttons don't fit one row on narrow phones —
+       give the select its own row instead of squeezing everything together. */
+    .job-card-footer {
+      flex-wrap: wrap;
+    }
+
     .job-card-status-select {
       padding: 7px 8px;
-      max-width: 130px;
+      flex: 1 1 100%;
+      max-width: none;
     }
 
     .job-card-footer-actions {
       gap: 4px;
+      flex: 1 1 100%;
+      justify-content: flex-end;
     }
   }
 
@@ -1351,11 +1360,34 @@
 
   @media (max-width: 640px) {
     .job-modal-footer {
-      padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+      gap: 6px;
+      padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .job-modal-apply-pack {
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+
+    .job-modal-pack-hint {
+      font-size: 10.5px;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 1;
+      overflow: hidden;
     }
 
     .job-modal-footer-actions {
-      flex-direction: column;
+      flex-direction: row;
+      flex-wrap: wrap;
+      margin-top: 0;
+      padding-top: 6px;
+    }
+
+    .job-modal-action-btn {
+      min-height: 36px;
+      padding: 7px 10px;
+      font-size: 12px;
     }
   }
 }

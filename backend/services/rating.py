@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import json
 import math
+import re
 from datetime import datetime, timezone
 
 from bson import ObjectId
@@ -75,6 +76,36 @@ class RoastResult(BaseModel):
     savage_score: int = Field(description="1-10 how savage this roast was")
 
 
+# Hard pre-filter (runs before any LLM rating call)
+_HARD_FILTER_SALARY_CEILING = 70000
+_SENIOR_TITLE_PATTERN = re.compile(
+    r"\b(senior|sr\.?|lead|staff|principal|iii|iv|v)\b", re.IGNORECASE
+)
+_SALARY_NUMBER_PATTERN = re.compile(r"[\d,]{3,}")
+
+
+def parse_comp_max(salary_text: str) -> int | None:
+    if not salary_text:
+        return None
+    numbers = [
+        int(n.replace(",", "")) for n in _SALARY_NUMBER_PATTERN.findall(salary_text)
+    ]
+    return max(numbers) if numbers else None
+
+
+def hard_disqualify(
+    job_title: str,
+    comp_max: int | None,
+    salary_ceiling: int = _HARD_FILTER_SALARY_CEILING,
+) -> tuple[bool, str]:
+    title = job_title or ""
+    if _SENIOR_TITLE_PATTERN.search(title):
+        return True, f"title matched seniority pattern: '{title}'"
+    if comp_max and comp_max > salary_ceiling * 1.5:
+        return True, f"comp_max {comp_max} exceeds {salary_ceiling * 1.5} ceiling"
+    return False, ""
+
+
 # ── System prompts ────────────────────────────────────────────────────────────
 
 RATING_SYSTEM_PROMPT = """
@@ -118,6 +149,24 @@ you penalise skill gaps — they are deal-breakers, not "areas to improve."
 4. WORK MODE MISMATCH
    If the JD is strictly onsite and the candidate's acceptable work modes
    exclude onsite, flag it clearly in the verdict.
+
+5. PROFESSIONAL-EXPERIENCE-YEARS MISMATCH
+   Freelance work, contract-for-multiple-clients, self-employment, internships,
+   and academic/personal projects are REAL skill evidence — never penalise the
+   tech-stack match because of them. But they are NOT the same thing as
+   continuous full-time employment at a single employer, and must not be
+   summed with corporate tenure to satisfy a JD's stated years-of-experience
+   requirement.
+   If the JD requires N+ years of professional/corporate/industry experience
+   (e.g. "5+ years professional experience", "senior-level, 4-6 years in
+   industry") and the candidate's matching years are freelance/academic/
+   internship rather than full-time corporate roles, treat this as a
+   structural mismatch: cap the score per the Step 1 cap, and say so plainly
+   in verdict (e.g. "JD wants 5+ years corporate experience; candidate's
+   relevant years are freelance/academic, not full-time employment").
+   The "Stated experience level" in candidate constraints (junior/mid/senior)
+   is the candidate's own self-assessment — treat it as authoritative over
+   whatever a raw year-count on the CV timeline might suggest.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 2 — PARSE THE JD INTO REQUIRED vs PREFERRED
@@ -192,7 +241,9 @@ Adjust up for:
 Adjust down for:
   - Missing REQUIRED skills (1.5-2 pts each)
   - Missing PREFERRED skills (0.3-0.5 pts each)
-  - Experience level mismatch (if stated)
+  - Experience level mismatch (if stated) — do not treat freelance/academic
+    calendar years as equivalent to the corporate tenure a "Senior"/
+    "N+ years professional experience" JD expects (see Step 1.5)
   - Domain exposure gap (if required, not just mentioned)
 
 Caps:
@@ -216,7 +267,10 @@ These are practical instructions the candidate can directly use when customizing
 Examples of good tips:
 - "Lead your cover note and first bullet with the fact that you built and shipped JobRadar — a live production agentic system that crawls jobs, does parallel LLM structured rating with LangChain, and is deployed end-to-end."
 - "Explicitly name LangGraph + LangSmith + structured outputs when describing your AI work, even if currently only in the skills section."
-- "Frame your 4 years as 'full ownership of production AI systems from 0 to live' rather than just years of experience."
+
+Never suggest reframing freelance/academic years as if they were corporate
+tenure (e.g. do not say "frame your N years as full professional experience")
+— that is dishonest and is exactly what Step 1.5 exists to catch, not paper over.
 
 Make the tips specific to the JD text and the candidate's actual projects. Avoid generic advice.
 """.strip()
@@ -302,6 +356,7 @@ _NON_BILLABLE_VERDICT_PREFIXES = (
     "Rating failed",
     "No CV uploaded",
     "JD text too short",
+    "Hard filter:",
 )
 
 
@@ -370,6 +425,20 @@ def _should_skip_rating(job: dict, user_id: str) -> bool:
 
 @traceable(name="rate_job_for_user", run_type="chain")
 async def rate_job_for_user(job: dict, user: dict) -> dict:
+    disqualified, reason = hard_disqualify(
+        job.get("title", ""),
+        parse_comp_max(job.get("salary_text", "")),
+    )
+    if disqualified:
+        return {
+            "score": 1,
+            "matched_strengths": [],
+            "gaps": [reason],
+            "verdict": f"Hard filter: {reason}",
+            "auto_reject": True,
+            "structural_mismatch": True,
+        }
+
     cv = user.get("cv", {})
     if not cv:
         return {

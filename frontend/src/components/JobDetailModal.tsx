@@ -107,6 +107,11 @@ export function JobDetailModal({ job, onClose }: Props) {
     : Math.max(0, (usage?.apply_pack_limit ?? 0) - (usage?.apply_packs_used ?? 0));
   const canApplyPack =
     (rating.score ?? 0) >= MIN_APPLY_PACK_SCORE && (isPro || applyPacksRemaining > 0);
+  const packHint = isPro
+    ? "Unlimited · ATS keywords, full LaTeX CV boilerplate, MASTER CV + JD context"
+    : applyPacksRemaining > 0
+      ? `${applyPacksRemaining} free today · one prompt: tailored CV .tex + cover note`
+      : "Daily limit used — upgrade for unlimited apply packs";
 
   const handleCopyBrief = async () => {
     try {
@@ -463,12 +468,8 @@ export function JobDetailModal({ job, onClose }: Props) {
                     ? "Copied — paste into ChatGPT / Claude"
                     : "Copy apply pack for LLM"}
               </button>
-              <p className="job-modal-pack-hint">
-                {isPro
-                  ? "Unlimited · ATS keywords, full LaTeX CV boilerplate, MASTER CV + JD context"
-                  : applyPacksRemaining > 0
-                    ? `${applyPacksRemaining} free today · one prompt: tailored CV .tex + cover note`
-                    : "Daily limit used — upgrade for unlimited apply packs"}
+              <p className="job-modal-pack-hint" title={packHint}>
+                {packHint}
               </p>
             </>
           )}
