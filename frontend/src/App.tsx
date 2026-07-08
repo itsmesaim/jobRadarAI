@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./queryClient";
 import { Toaster } from "react-hot-toast";
+import { LandingPage } from "./pages/Landing";
 import { LoginPage } from "./pages/Login";
 import { ForgotPasswordPage } from "./pages/ForgotPassword";
 import { ResetPasswordPage } from "./pages/ResetPassword";
@@ -37,6 +38,16 @@ function Protected({ children }: { children: React.ReactNode }) {
   return <Layout>{children}</Layout>;
 }
 
+function Home() {
+  const token = useAuthStore((s) => s.token);
+  if (!token) return <LandingPage />;
+  return (
+    <Layout>
+      <Dashboard />
+    </Layout>
+  );
+}
+
 export default function App() {
   const { token, setUser, user } = useAuthStore();
 
@@ -57,14 +68,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route
-            path="/"
-            element={
-              <Protected>
-                <Dashboard />
-              </Protected>
-            }
-          />
+          <Route path="/" element={<Home />} />
           <Route
             path="/kanban"
             element={

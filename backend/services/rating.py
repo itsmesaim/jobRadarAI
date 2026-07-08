@@ -97,9 +97,10 @@ def hard_disqualify(
     job_title: str,
     comp_max: int | None,
     salary_ceiling: int = _HARD_FILTER_SALARY_CEILING,
+    experience_level: str = "mid",
 ) -> tuple[bool, str]:
     title = job_title or ""
-    if _SENIOR_TITLE_PATTERN.search(title):
+    if experience_level != "senior" and _SENIOR_TITLE_PATTERN.search(title):
         return True, f"title matched seniority pattern: '{title}'"
     if comp_max and comp_max > salary_ceiling * 1.5:
         return True, f"comp_max {comp_max} exceeds {salary_ceiling * 1.5} ceiling"
@@ -428,6 +429,7 @@ async def rate_job_for_user(job: dict, user: dict) -> dict:
     disqualified, reason = hard_disqualify(
         job.get("title", ""),
         parse_comp_max(job.get("salary_text", "")),
+        experience_level=user.get("experience_level", "mid"),
     )
     if disqualified:
         return {

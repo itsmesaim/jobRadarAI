@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /$
+Disallow: /login
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /kanban
+Disallow: /settings
+Disallow: /admin
+
+Sitemap: https://jobradar.saimjs.com/sitemap.xml

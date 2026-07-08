@@ -1391,3 +1391,49 @@
     }
   }
 }
+
+@layer base {
+  .landing-hero-title {
+    font-size: clamp(28px, 5.5vw, 44px);
+  }
+
+  .landing-hero-sub {
+    font-size: clamp(14px, 2vw, 16px);
+  }
+
+  .landing-hero-actions {
+    flex-direction: column;
+  }
+
+  .landing-features {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-compare {
+    grid-template-columns: 1fr;
+  }
+
+  @media (min-width: 480px) {
+    .landing-hero-actions {
+      flex-direction: row;
+    }
+  }
+
+  @media (min-width: 640px) {
+    .landing-features {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 700px) {
+    .landing-compare {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .landing-features {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+}
