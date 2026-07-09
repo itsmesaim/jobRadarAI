@@ -3,6 +3,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./queryClient";
 import { Toaster } from "react-hot-toast";
 import { LandingPage } from "./pages/Landing";
+import { PrivacyPage } from "./pages/Privacy";
+import { TermsPage } from "./pages/Terms";
 import { LoginPage } from "./pages/Login";
 import { ForgotPasswordPage } from "./pages/ForgotPassword";
 import { ResetPasswordPage } from "./pages/ResetPassword";
@@ -68,6 +70,8 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
           <Route path="/" element={<Home />} />
           <Route
             path="/kanban"

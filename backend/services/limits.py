@@ -454,6 +454,13 @@ async def get_user_usage(user_id: str) -> dict:
         "last_reset": usage.get("last_reset"),
         "admin_notes": user.get("admin_notes", ""),
         "ai_usage": format_ai_usage(user),
+        "last_login_at": user.get("last_login_at"),
+        "last_active_at": user.get("last_active_at"),
+        "last_search_at": user.get("last_crawl_at"),
+        "last_manual_rate_at": user.get("last_manual_rate_at"),
+        "suspended": bool(user.get("suspended")),
+        "suspended_reason": user.get("suspended_reason", ""),
+        "suspended_at": user.get("suspended_at"),
         **token_quota,
     }
 

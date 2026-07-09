@@ -226,6 +226,23 @@ export const adminApi = {
     const res = await api.patch(`${basePath}/users/${userId}/access`, data);
     return res.data;
   },
+  suspendUser: async (
+    basePath: string,
+    userId: string,
+    data: { suspended: boolean; reason?: string },
+  ) => {
+    const res = await api.patch(`${basePath}/users/${userId}/suspend`, data);
+    return res.data as {
+      user_id: string;
+      email: string;
+      suspended: boolean;
+      suspended_reason?: string;
+    };
+  },
+  deleteUser: async (basePath: string, userId: string) => {
+    const res = await api.delete(`${basePath}/users/${userId}`);
+    return res.data as { deleted_user: string; deleted_jobs: number };
+  },
   cleanupJobs: async (
     basePath: string,
     payload: {

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Cpu,
   Zap,
@@ -69,6 +69,13 @@ interface AdminUser {
   full_access_until?: string;
   admin_notes?: string;
   ai_usage?: AiUsage;
+  last_login_at?: string;
+  last_active_at?: string;
+  last_search_at?: string;
+  last_manual_rate_at?: string;
+  suspended?: boolean;
+  suspended_reason?: string;
+  suspended_at?: string;
 }
 
 function formatTokens(n?: number) {
@@ -87,6 +94,28 @@ function formatCostLine(tokens?: number, llmCalls?: number, cost?: number, costE
   const parts = [`${formatTokens(tokens)} tokens`, `${llmCalls ?? 0} LLM calls`];
   if (costEnabled) parts.push(formatUsd(cost, true));
   return parts.join(" · ");
+}
+
+function formatRelativeTime(value?: string) {
+  if (!value) return "Never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Never";
+  const diffMs = Date.now() - date.getTime();
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return date.toLocaleDateString();
+}
+
+function isInactive24h(value?: string) {
+  if (!value) return true;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return true;
+  return Date.now() - date.getTime() > 24 * 60 * 60 * 1000;
 }
 
 type AccessLevel = "free" | "limited" | "full" | "temp_12h" | "temp_1d";
@@ -208,6 +237,20 @@ function UsageStat({
 
 function StatusBadge({ user }: { user: AdminUser }) {
   const isFull = isUserFullAccess(user);
+  if (user.suspended) {
+    return (
+      <span
+        className="badge"
+        style={{
+          background: "var(--danger-bg)",
+          color: "var(--danger)",
+          border: "1px solid var(--danger-border)",
+        }}
+      >
+        Paused
+      </span>
+    );
+  }
   if (isFull) {
     const untilText = user.full_access_until
       ? ` until ${new Date(user.full_access_until).toLocaleDateString()}`
@@ -430,27 +473,25 @@ function UserEditForm({
   );
 }
 
-function AdminUserCard({
-  user,
-  editing,
-  form,
-  setForm,
-  onStartEdit,
-  onSave,
-  onCancel,
-}: {
-  user: AdminUser;
-  editing: boolean;
-  form: EditForm;
-  setForm: (form: EditForm) => void;
-  onStartEdit: () => void;
-  onSave: () => void;
-  onCancel: () => void;
-}) {
+function AdminUserCard({ user, onOpen }: { user: AdminUser; onOpen: () => void }) {
   const isFull = isUserFullAccess(user);
+  const inactive = isInactive24h(user.last_active_at);
 
   return (
-    <div className="admin-user-card">
+    <button
+      type="button"
+      onClick={onOpen}
+      className="admin-user-card"
+      style={{
+        width: "100%",
+        textAlign: "left",
+        cursor: "pointer",
+        font: "inherit",
+        color: "inherit",
+        display: "block",
+        appearance: "none",
+      }}
+    >
       <div
         style={{
           display: "flex",
@@ -485,102 +526,464 @@ function AdminUserCard({
         <StatusBadge user={user} />
       </div>
 
-      {!editing && (
-        <>
-          <div className="admin-stat-row">
-            <UsageStat
-              label="Searches"
-              used={user.searches_used}
-              limit={user.search_limit}
-              unlimited={isFull}
-              color="var(--success)"
-            />
-            <UsageStat
-              label="Ratings"
-              used={user.ratings_used}
-              limit={user.rating_limit}
-              unlimited={isFull}
-              color="var(--warning)"
-            />
-            <UsageStat
-              label="AI tokens (today)"
-              used={user.daily_tokens_used ?? user.ai_usage?.today?.total_tokens ?? 0}
-              limit={user.daily_token_limit ?? DEFAULT_DAILY_TOKEN_LIMIT}
-              unlimited={isFull || isUnlimitedTokenCap(user.daily_token_limit)}
-              color="var(--accent)"
-            />
-          </div>
+      <div className="admin-stat-row">
+        <UsageStat
+          label="Searches"
+          used={user.searches_used}
+          limit={user.search_limit}
+          unlimited={isFull}
+          color="var(--success)"
+        />
+        <UsageStat
+          label="Ratings"
+          used={user.ratings_used}
+          limit={user.rating_limit}
+          unlimited={isFull}
+          color="var(--warning)"
+        />
+        <UsageStat
+          label="AI tokens (today)"
+          used={user.daily_tokens_used ?? user.ai_usage?.today?.total_tokens ?? 0}
+          limit={user.daily_token_limit ?? DEFAULT_DAILY_TOKEN_LIMIT}
+          unlimited={isFull || isUnlimitedTokenCap(user.daily_token_limit)}
+          color="var(--accent)"
+        />
+      </div>
 
-          {user.ai_usage && (
+      <div
+        style={{
+          marginTop: 12,
+          fontSize: 12,
+          color: inactive ? "var(--text-muted)" : "var(--text-secondary)",
+        }}
+      >
+        Last active: {formatRelativeTime(user.last_active_at)}
+        {inactive && " · idle"}
+      </div>
+
+      {user.admin_notes && (
+        <p
+          style={{
+            margin: "8px 0 0",
+            fontSize: 12,
+            color: "var(--text-secondary)",
+            lineHeight: 1.5,
+          }}
+        >
+          {user.admin_notes}
+        </p>
+      )}
+    </button>
+  );
+}
+
+function buildFormFromUser(u: AdminUser): EditForm {
+  let level: AccessLevel = "limited";
+  if (u.full_access) level = "full";
+  else if (u.full_access_until) level = "temp_12h";
+  return {
+    access_level: level,
+    search_limit: u.search_limit,
+    rating_limit: u.rating_limit,
+    daily_token_limit: u.daily_token_limit ?? DEFAULT_DAILY_TOKEN_LIMIT,
+    monthly_token_limit: u.monthly_token_limit ?? 0,
+    notes: u.admin_notes || "",
+  };
+}
+
+function buildAccessPayload(form: EditForm): Record<string, unknown> {
+  const payload: Record<string, unknown> = { notes: form.notes };
+  const level = form.access_level;
+  if (level === "full") {
+    payload.full_access = true;
+  } else if (level === "temp_12h") {
+    payload.full_access_duration_hours = 12;
+  } else if (level === "temp_1d") {
+    payload.full_access_duration_hours = 24;
+  } else if (level === "free") {
+    payload.full_access = false;
+    payload.search_limit = 3;
+    payload.rating_limit = 10;
+    payload.daily_token_limit = form.daily_token_limit || 0;
+    payload.monthly_token_limit = form.monthly_token_limit || 0;
+  } else {
+    payload.full_access = false;
+    payload.search_limit = form.search_limit || 0;
+    payload.rating_limit = form.rating_limit || 0;
+    payload.daily_token_limit = form.daily_token_limit || 0;
+    payload.monthly_token_limit = form.monthly_token_limit || 0;
+  }
+  return payload;
+}
+
+function ActivityStat({ label, value, stale }: { label: string; value: string; stale?: boolean }) {
+  return (
+    <div className="admin-stat-box">
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
+      <div
+        style={{
+          fontSize: 14,
+          fontWeight: 600,
+          color: stale ? "var(--text-muted)" : "var(--text)",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function UserDetailModal({
+  user,
+  basePath,
+  onClose,
+  onChanged,
+}: {
+  user: AdminUser;
+  basePath: string;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [editingAccess, setEditingAccess] = useState(false);
+  const [form, setForm] = useState<EditForm>(() => buildFormFromUser(user));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setForm(buildFormFromUser(user));
+    setEditingAccess(false);
+  }, [user.id]);
+
+  const saveAccess = async () => {
+    setBusy(true);
+    try {
+      await adminApi.updateAccess(basePath, user.id, buildAccessPayload(form));
+      toast.success("Access updated");
+      setEditingAccess(false);
+      onChanged();
+    } catch {
+      toast.error("Failed to update access");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleSuspend = async () => {
+    if (!user.suspended) {
+      const reason = window.prompt("Reason for pausing this account (optional):") || "";
+      if (
+        !window.confirm(
+          `Pause ${user.email}? They'll be logged out immediately and blocked from logging in, searching, or rating until reactivated.`,
+        )
+      )
+        return;
+      setBusy(true);
+      try {
+        await adminApi.suspendUser(basePath, user.id, { suspended: true, reason });
+        toast.success(`Paused ${user.email}`);
+        onChanged();
+      } catch {
+        toast.error("Failed to pause user");
+      } finally {
+        setBusy(false);
+      }
+    } else {
+      setBusy(true);
+      try {
+        await adminApi.suspendUser(basePath, user.id, { suspended: false });
+        toast.success(`Reactivated ${user.email}`);
+        onChanged();
+      } catch {
+        toast.error("Failed to reactivate user");
+      } finally {
+        setBusy(false);
+      }
+    }
+  };
+
+  const handleDelete = async () => {
+    if (
+      !window.confirm(
+        `Permanently delete ${user.email} and every job crawled for them? This cannot be undone.`,
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      const res = await adminApi.deleteUser(basePath, user.id);
+      toast.success(`Deleted ${res.deleted_user} (${res.deleted_jobs} jobs)`);
+      onChanged();
+      onClose();
+    } catch {
+      toast.error("Failed to delete user");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const isFull = isUserFullAccess(user);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="admin-user-modal-title"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0, 0, 0, 0.72)",
+        backdropFilter: "blur(4px)",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        zIndex: 1000,
+      }}
+      className="admin-modal-overlay"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="admin-modal"
+        style={{
+          background: "var(--bg-card)",
+          color: "var(--text)",
+          borderRadius: 16,
+          width: "100%",
+          maxWidth: 560,
+          maxHeight: "92vh",
+          overflowY: "auto",
+          boxShadow: "var(--shadow-lg)",
+          border: "1px solid var(--border)",
+          padding: 24,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 10,
+            marginBottom: 18,
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <h3
+              id="admin-user-modal-title"
+              style={{
+                margin: 0,
+                fontSize: 18,
+                fontWeight: 700,
+                color: "var(--text)",
+                wordBreak: "break-word",
+              }}
+            >
+              {user.name || "Unnamed"}
+            </h3>
             <div
               style={{
-                marginTop: 12,
-                padding: "10px 12px",
-                borderRadius: 8,
-                background: "var(--bg-secondary)",
-                border: "1px solid var(--border)",
-                fontSize: 12,
-                color: "var(--text-secondary)",
-                lineHeight: 1.55,
+                fontSize: 13,
+                color: "var(--text-muted)",
+                fontFamily: "monospace",
+                marginTop: 2,
+                wordBreak: "break-all",
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  marginBottom: 4,
-                }}
-              >
-                <Cpu size={13} style={{ color: "var(--accent)" }} />
-                <span style={{ fontWeight: 600, color: "var(--text)" }}>AI usage</span>
-              </div>
-              Today:{" "}
-              {formatCostLine(
-                user.ai_usage.today?.total_tokens,
-                user.ai_usage.today?.llm_calls,
-                user.ai_usage.today?.estimated_cost_usd,
-                user.ai_usage.cost_estimation_enabled,
-              )}
-              <br />
-              Month: {formatTokens(user.ai_usage.this_month?.total_tokens)} tokens
-              {user.ai_usage.cost_estimation_enabled &&
-                ` · ${formatUsd(user.ai_usage.this_month?.estimated_cost_usd)}`}
-              <br />
-              Lifetime: {formatTokens(user.ai_usage.lifetime?.total_tokens)} tokens ·{" "}
-              {user.ai_usage.lifetime?.llm_calls ?? 0} LLM
-              {user.ai_usage.cost_estimation_enabled &&
-                ` · ${formatUsd(user.ai_usage.lifetime?.estimated_cost_usd)}`}
+              {user.email}
             </div>
-          )}
+          </div>
+          <StatusBadge user={user} />
+        </div>
 
-          {user.admin_notes && (
-            <p
-              style={{
-                margin: "12px 0 0",
-                fontSize: 12,
-                color: "var(--text-secondary)",
-                lineHeight: 1.5,
-              }}
-            >
-              {user.admin_notes}
-            </p>
-          )}
-
-          <button
-            type="button"
-            onClick={onStartEdit}
-            className="btn btn-secondary"
-            style={{ width: "100%", marginTop: 14, justifyContent: "center" }}
+        {user.suspended && (
+          <div
+            style={{
+              padding: "10px 12px",
+              borderRadius: 8,
+              background: "var(--danger-bg)",
+              border: "1px solid var(--danger-border)",
+              color: "var(--danger)",
+              fontSize: 12.5,
+              marginBottom: 16,
+              lineHeight: 1.5,
+            }}
           >
-            Manage access
-          </button>
-        </>
-      )}
+            Paused {formatRelativeTime(user.suspended_at)}
+            {user.suspended_reason ? ` — ${user.suspended_reason}` : ""}
+          </div>
+        )}
 
-      {editing && (
-        <UserEditForm form={form} setForm={setForm} onSave={onSave} onCancel={onCancel} />
-      )}
+        <p className="label" style={{ marginBottom: 8 }}>
+          Activity
+        </p>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+            gap: 10,
+            marginBottom: 18,
+          }}
+        >
+          <ActivityStat
+            label="Last login"
+            value={formatRelativeTime(user.last_login_at)}
+            stale={isInactive24h(user.last_login_at)}
+          />
+          <ActivityStat
+            label="Last active"
+            value={formatRelativeTime(user.last_active_at)}
+            stale={isInactive24h(user.last_active_at)}
+          />
+          <ActivityStat
+            label="Last manual search"
+            value={formatRelativeTime(user.last_search_at)}
+          />
+          <ActivityStat
+            label="Last manual rate"
+            value={formatRelativeTime(user.last_manual_rate_at)}
+          />
+        </div>
+
+        <p className="label" style={{ marginBottom: 8 }}>
+          Usage
+        </p>
+        <div className="admin-stat-row" style={{ marginBottom: 18, marginTop: 0 }}>
+          <UsageStat
+            label="Searches"
+            used={user.searches_used}
+            limit={user.search_limit}
+            unlimited={isFull}
+            color="var(--success)"
+          />
+          <UsageStat
+            label="Ratings"
+            used={user.ratings_used}
+            limit={user.rating_limit}
+            unlimited={isFull}
+            color="var(--warning)"
+          />
+          <UsageStat
+            label="AI tokens (today)"
+            used={user.daily_tokens_used ?? user.ai_usage?.today?.total_tokens ?? 0}
+            limit={user.daily_token_limit ?? DEFAULT_DAILY_TOKEN_LIMIT}
+            unlimited={isFull || isUnlimitedTokenCap(user.daily_token_limit)}
+            color="var(--accent)"
+          />
+        </div>
+
+        {user.ai_usage && (
+          <div
+            style={{
+              marginBottom: 18,
+              padding: "10px 12px",
+              borderRadius: 8,
+              background: "var(--bg-secondary)",
+              border: "1px solid var(--border)",
+              fontSize: 12,
+              color: "var(--text-secondary)",
+              lineHeight: 1.55,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <Cpu size={13} style={{ color: "var(--accent)" }} />
+              <span style={{ fontWeight: 600, color: "var(--text)" }}>AI usage</span>
+            </div>
+            Today:{" "}
+            {formatCostLine(
+              user.ai_usage.today?.total_tokens,
+              user.ai_usage.today?.llm_calls,
+              user.ai_usage.today?.estimated_cost_usd,
+              user.ai_usage.cost_estimation_enabled,
+            )}
+            <br />
+            Month: {formatTokens(user.ai_usage.this_month?.total_tokens)} tokens
+            {user.ai_usage.cost_estimation_enabled &&
+              ` · ${formatUsd(user.ai_usage.this_month?.estimated_cost_usd)}`}
+            <br />
+            Lifetime: {formatTokens(user.ai_usage.lifetime?.total_tokens)} tokens ·{" "}
+            {user.ai_usage.lifetime?.llm_calls ?? 0} LLM
+            {user.ai_usage.cost_estimation_enabled &&
+              ` · ${formatUsd(user.ai_usage.lifetime?.estimated_cost_usd)}`}
+          </div>
+        )}
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 8,
+          }}
+        >
+          <p className="label" style={{ margin: 0 }}>
+            Access
+          </p>
+          {!editingAccess && (
+            <button
+              type="button"
+              onClick={() => setEditingAccess(true)}
+              className="btn btn-secondary"
+              style={{ fontSize: 12, padding: "6px 10px" }}
+            >
+              Manage access
+            </button>
+          )}
+        </div>
+
+        {editingAccess ? (
+          <UserEditForm
+            form={form}
+            setForm={setForm}
+            onSave={saveAccess}
+            onCancel={() => setEditingAccess(false)}
+          />
+        ) : (
+          <p style={{ margin: "0 0 18px", fontSize: 13, color: "var(--text-secondary)" }}>
+            {user.admin_notes || "No notes."}
+          </p>
+        )}
+
+        <div
+          style={{
+            marginTop: 20,
+            paddingTop: 18,
+            borderTop: "1px solid var(--border)",
+          }}
+        >
+          <p className="label" style={{ marginBottom: 10, color: "var(--danger)" }}>
+            Danger zone
+          </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={toggleSuspend}
+              disabled={busy}
+              className="btn btn-secondary"
+              style={{ gap: 6 }}
+            >
+              <Ban size={14} />
+              {user.suspended ? "Reactivate account" : "Pause account"}
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={busy}
+              className="btn btn-danger"
+              style={{ gap: 6 }}
+            >
+              <Trash2 size={14} />
+              Delete account
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="btn btn-ghost"
+          style={{ width: "100%", marginTop: 20, justifyContent: "center" }}
+        >
+          Close
+        </button>
+      </div>
     </div>
   );
 }
@@ -1197,15 +1600,7 @@ export function AdminPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [editing, setEditing] = useState<string | null>(null);
-  const [form, setForm] = useState<EditForm>({
-    access_level: "limited",
-    search_limit: 0,
-    rating_limit: 0,
-    daily_token_limit: DEFAULT_DAILY_TOKEN_LIMIT,
-    monthly_token_limit: 0,
-    notes: "",
-  });
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   const basePath = user?.adminBasePath || "";
   const isMobile = useIsMobile();
@@ -1245,55 +1640,11 @@ export function AdminPage() {
       u.email?.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
-  const startEdit = (u: AdminUser) => {
-    let level: AccessLevel = "limited";
-    if (u.full_access) level = "full";
-    else if (u.full_access_until) level = "temp_12h";
+  const selectedUser = users.find((u) => u.id === selectedUserId) || null;
 
-    setEditing(u.id);
-    setForm({
-      access_level: level,
-      search_limit: u.search_limit,
-      rating_limit: u.rating_limit,
-      daily_token_limit: u.daily_token_limit ?? DEFAULT_DAILY_TOKEN_LIMIT,
-      monthly_token_limit: u.monthly_token_limit ?? 0,
-      notes: u.admin_notes || "",
-    });
-  };
-
-  const save = async (id: string) => {
-    try {
-      const payload: Record<string, unknown> = { notes: form.notes };
-      const level = form.access_level;
-
-      if (level === "full") {
-        payload.full_access = true;
-      } else if (level === "temp_12h") {
-        payload.full_access_duration_hours = 12;
-      } else if (level === "temp_1d") {
-        payload.full_access_duration_hours = 24;
-      } else if (level === "free") {
-        payload.full_access = false;
-        payload.search_limit = 3;
-        payload.rating_limit = 10;
-        payload.daily_token_limit = form.daily_token_limit || 0;
-        payload.monthly_token_limit = form.monthly_token_limit || 0;
-      } else {
-        payload.full_access = false;
-        payload.search_limit = form.search_limit || 0;
-        payload.rating_limit = form.rating_limit || 0;
-        payload.daily_token_limit = form.daily_token_limit || 0;
-        payload.monthly_token_limit = form.monthly_token_limit || 0;
-      }
-
-      await adminApi.updateAccess(basePath, id, payload);
-      toast.success("Access updated");
-      setEditing(null);
-      await loadUsers();
-      await loadAiSummary();
-    } catch {
-      toast.error("Failed to update");
-    }
+  const handleChanged = async () => {
+    await loadUsers();
+    await loadAiSummary();
   };
 
   if (!user?.isAdmin) {
@@ -1437,16 +1788,7 @@ export function AdminPage() {
       ) : isMobile ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {filteredUsers.map((u) => (
-            <AdminUserCard
-              key={u.id}
-              user={u}
-              editing={editing === u.id}
-              form={form}
-              setForm={setForm}
-              onStartEdit={() => startEdit(u)}
-              onSave={() => save(u.id)}
-              onCancel={() => setEditing(null)}
-            />
+            <AdminUserCard key={u.id} user={u} onOpen={() => setSelectedUserId(u.id)} />
           ))}
         </div>
       ) : (
@@ -1466,172 +1808,189 @@ export function AdminPage() {
                     borderBottom: "1px solid var(--border)",
                   }}
                 >
-                  {["User", "Status", "Searches", "Ratings", "AI (month)", "Notes", ""].map(
-                    (col) => (
-                      <th
-                        key={col}
-                        style={{
-                          textAlign: "left",
-                          padding: "12px 16px",
-                          fontWeight: 600,
-                          color: "var(--text-secondary)",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {col}
-                      </th>
-                    ),
-                  )}
+                  {[
+                    "User",
+                    "Status",
+                    "Last active",
+                    "Searches",
+                    "Ratings",
+                    "AI (month)",
+                    "Notes",
+                    "",
+                  ].map((col) => (
+                    <th
+                      key={col}
+                      style={{
+                        textAlign: "left",
+                        padding: "12px 16px",
+                        fontWeight: 600,
+                        color: "var(--text-secondary)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {col}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {filteredUsers.map((u) => {
-                  const isEditingThis = editing === u.id;
                   const isFull = isUserFullAccess(u);
                   const searchPct = getPct(u.searches_used, u.search_limit);
                   const ratingPct = getPct(u.ratings_used, u.rating_limit);
+                  const inactive = isInactive24h(u.last_active_at);
 
                   return (
-                    <Fragment key={u.id}>
-                      <tr style={{ borderTop: "1px solid var(--border)" }}>
-                        <td style={{ padding: "14px 16px", minWidth: 180 }}>
-                          <div style={{ fontWeight: 600 }}>{u.name || "Unnamed"}</div>
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: "var(--text-muted)",
-                              fontFamily: "monospace",
-                              marginTop: 2,
-                            }}
-                          >
-                            {u.email}
-                          </div>
-                        </td>
-                        <td style={{ padding: "14px 16px" }}>
-                          <StatusBadge user={u} />
-                        </td>
-                        <td style={{ padding: "14px 16px", minWidth: 120 }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 5,
-                              fontFamily: "monospace",
-                              fontWeight: 600,
-                            }}
-                          >
-                            {u.searches_used}
-                            {isFull ? (
-                              <UnlimitedBadge />
-                            ) : (
-                              <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
-                                / {u.search_limit}
-                              </span>
-                            )}
-                          </div>
-                          {!isFull && (
-                            <div className="admin-progress">
-                              <span
-                                style={{ width: `${searchPct}%`, background: "var(--success)" }}
-                              />
-                            </div>
-                          )}
-                        </td>
-                        <td style={{ padding: "14px 16px", minWidth: 120 }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 5,
-                              fontFamily: "monospace",
-                              fontWeight: 600,
-                            }}
-                          >
-                            {u.ratings_used}
-                            {isFull ? (
-                              <UnlimitedBadge />
-                            ) : (
-                              <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
-                                / {u.rating_limit}
-                              </span>
-                            )}
-                          </div>
-                          {!isFull && (
-                            <div className="admin-progress">
-                              <span
-                                style={{ width: `${ratingPct}%`, background: "var(--warning)" }}
-                              />
-                            </div>
-                          )}
-                        </td>
-                        <td style={{ padding: "14px 16px", minWidth: 130 }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 5,
-                              fontFamily: "monospace",
-                              fontWeight: 600,
-                              fontSize: 12,
-                            }}
-                          >
-                            {formatTokens(u.daily_tokens_used ?? u.ai_usage?.today?.total_tokens)}{" "}
-                            today
-                            {isFull || isUnlimitedTokenCap(u.daily_token_limit) ? (
-                              <UnlimitedBadge />
-                            ) : (
-                              <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
-                                / {formatTokenCap(u.daily_token_limit)}
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                            {formatTokens(u.ai_usage?.this_month?.total_tokens)} this month
-                            {u.ai_usage?.cost_estimation_enabled &&
-                              ` · ${formatUsd(u.ai_usage?.this_month?.estimated_cost_usd, true)}`}
-                          </div>
-                        </td>
-                        <td
+                    <tr
+                      key={u.id}
+                      onClick={() => setSelectedUserId(u.id)}
+                      style={{ borderTop: "1px solid var(--border)", cursor: "pointer" }}
+                    >
+                      <td style={{ padding: "14px 16px", minWidth: 180 }}>
+                        <div style={{ fontWeight: 600 }}>{u.name || "Unnamed"}</div>
+                        <div
                           style={{
-                            padding: "14px 16px",
-                            color: "var(--text-secondary)",
-                            maxWidth: 200,
+                            fontSize: 11,
+                            color: "var(--text-muted)",
+                            fontFamily: "monospace",
+                            marginTop: 2,
                           }}
                         >
-                          {u.admin_notes || "—"}
-                        </td>
-                        <td style={{ padding: "14px 16px", textAlign: "right" }}>
-                          {!isEditingThis && (
-                            <button
-                              type="button"
-                              onClick={() => startEdit(u)}
-                              className="btn btn-ghost"
-                              style={{ fontSize: 12, padding: "6px 10px" }}
-                            >
-                              Manage
-                            </button>
+                          {u.email}
+                        </div>
+                      </td>
+                      <td style={{ padding: "14px 16px" }}>
+                        <StatusBadge user={u} />
+                      </td>
+                      <td
+                        style={{
+                          padding: "14px 16px",
+                          minWidth: 110,
+                          color: inactive ? "var(--text-muted)" : "var(--text-secondary)",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {formatRelativeTime(u.last_active_at)}
+                      </td>
+                      <td style={{ padding: "14px 16px", minWidth: 120 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                            fontFamily: "monospace",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {u.searches_used}
+                          {isFull ? (
+                            <UnlimitedBadge />
+                          ) : (
+                            <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+                              / {u.search_limit}
+                            </span>
                           )}
-                        </td>
-                      </tr>
-                      {isEditingThis && (
-                        <tr style={{ background: "var(--bg-secondary)" }}>
-                          <td colSpan={7} style={{ padding: "16px" }}>
-                            <UserEditForm
-                              form={form}
-                              setForm={setForm}
-                              onSave={() => save(u.id)}
-                              onCancel={() => setEditing(null)}
+                        </div>
+                        {!isFull && (
+                          <div className="admin-progress">
+                            <span
+                              style={{ width: `${searchPct}%`, background: "var(--success)" }}
                             />
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: "14px 16px", minWidth: 120 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                            fontFamily: "monospace",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {u.ratings_used}
+                          {isFull ? (
+                            <UnlimitedBadge />
+                          ) : (
+                            <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+                              / {u.rating_limit}
+                            </span>
+                          )}
+                        </div>
+                        {!isFull && (
+                          <div className="admin-progress">
+                            <span
+                              style={{ width: `${ratingPct}%`, background: "var(--warning)" }}
+                            />
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: "14px 16px", minWidth: 130 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                            fontFamily: "monospace",
+                            fontWeight: 600,
+                            fontSize: 12,
+                          }}
+                        >
+                          {formatTokens(u.daily_tokens_used ?? u.ai_usage?.today?.total_tokens)}{" "}
+                          today
+                          {isFull || isUnlimitedTokenCap(u.daily_token_limit) ? (
+                            <UnlimitedBadge />
+                          ) : (
+                            <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+                              / {formatTokenCap(u.daily_token_limit)}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                          {formatTokens(u.ai_usage?.this_month?.total_tokens)} this month
+                          {u.ai_usage?.cost_estimation_enabled &&
+                            ` · ${formatUsd(u.ai_usage?.this_month?.estimated_cost_usd, true)}`}
+                        </div>
+                      </td>
+                      <td
+                        style={{
+                          padding: "14px 16px",
+                          color: "var(--text-secondary)",
+                          maxWidth: 200,
+                        }}
+                      >
+                        {u.admin_notes || "—"}
+                      </td>
+                      <td style={{ padding: "14px 16px", textAlign: "right" }}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedUserId(u.id);
+                          }}
+                          className="btn btn-ghost"
+                          style={{ fontSize: 12, padding: "6px 10px" }}
+                        >
+                          Manage
+                        </button>
+                      </td>
+                    </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
         </div>
+      )}
+
+      {selectedUser && (
+        <UserDetailModal
+          user={selectedUser}
+          basePath={basePath}
+          onClose={() => setSelectedUserId(null)}
+          onChanged={handleChanged}
+        />
       )}
 
       <JobCleanupPanel users={users} basePath={basePath} />

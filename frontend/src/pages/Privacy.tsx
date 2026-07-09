@@ -1,0 +1,221 @@
+import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
+import { Logo } from "../components/Logo";
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 18 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" as const } },
+};
+
+function Section({
+  title,
+  children,
+  index,
+}: {
+  title: string;
+  children: React.ReactNode;
+  index: number;
+}) {
+  return (
+    <motion.section
+      initial="hidden"
+      whileInView="show"
+      viewport={{ once: true, amount: 0.3 }}
+      variants={fadeUp}
+      transition={{ delay: Math.min(index * 0.05, 0.2) }}
+      style={{ marginBottom: 36 }}
+    >
+      <h2 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 10px", color: "var(--text)" }}>
+        {title}
+      </h2>
+      <div style={{ fontSize: 15, color: "var(--text-secondary)", lineHeight: 1.75 }}>
+        {children}
+      </div>
+    </motion.section>
+  );
+}
+
+const heroWords = "Privacy Policy".split(" ");
+const wordVariants = {
+  hidden: { opacity: 0, y: 14 },
+  show: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { delay: i * 0.06, duration: 0.4, ease: "easeOut" as const },
+  }),
+};
+
+export function PrivacyPage() {
+  return (
+    <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
+      <header
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "16px 24px",
+          maxWidth: 780,
+          margin: "0 auto",
+        }}
+      >
+        <Link to="/" style={{ display: "flex" }}>
+          <Logo size={28} wordmarkSize={17} />
+        </Link>
+        <Link to="/login" className="btn btn-secondary">
+          Log in
+        </Link>
+      </header>
+
+      <main style={{ maxWidth: 780, margin: "0 auto", padding: "16px 24px 96px" }}>
+        <h1
+          style={{
+            fontSize: "clamp(32px, 5vw, 44px)",
+            fontWeight: 800,
+            letterSpacing: "-0.02em",
+            margin: "0 0 10px",
+            color: "var(--text)",
+          }}
+        >
+          {heroWords.map((word, i) => (
+            <motion.span
+              key={word}
+              custom={i}
+              variants={wordVariants}
+              initial="hidden"
+              animate="show"
+              style={{ display: "inline-block", marginRight: "0.3em" }}
+            >
+              {word}
+            </motion.span>
+          ))}
+        </h1>
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3, duration: 0.5 }}
+          style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 40 }}
+        >
+          Last updated: {new Date().toISOString().slice(0, 10)}
+        </motion.p>
+
+        <Section title="Who we are" index={0}>
+          <p>
+            JobRadar ("we", "us") is a job-search tool that crawls job boards, rates listings
+            against your CV using AI, and helps you track applications. This policy explains what
+            personal data we collect, why, and the rights you have over it.
+          </p>
+        </Section>
+
+        <Section title="Information we collect" index={1}>
+          <p style={{ marginBottom: 10 }}>
+            <strong style={{ color: "var(--text)" }}>Account data:</strong> your name, email
+            address, and a securely hashed password. We never store your password in plain text and
+            cannot recover it — only reset it.
+          </p>
+          <p style={{ marginBottom: 10 }}>
+            <strong style={{ color: "var(--text)" }}>CV data:</strong> when you upload a CV, we
+            extract the text from your PDF and use AI to produce a structured breakdown (skills,
+            experience, education, contact details). We store the extracted text and structured
+            data, not the original PDF file.
+          </p>
+          <p style={{ marginBottom: 10 }}>
+            <strong style={{ color: "var(--text)" }}>Preferences:</strong> your target roles,
+            locations, salary range, key skills, work authorization, preferred work mode, and any
+            free-text notes you add about yourself.
+          </p>
+          <p>
+            <strong style={{ color: "var(--text)" }}>Activity data:</strong> job listings crawled on
+            your behalf, the AI-generated fit scores/strengths/gaps tied to your account, and your
+            Kanban pipeline status for each listing.
+          </p>
+        </Section>
+
+        <Section title="How we use your data" index={2}>
+          <p>
+            Your CV and preferences are used to search job boards on your behalf and to generate AI
+            fit ratings, tailoring tips, and application briefs. We use your account data solely to
+            authenticate you and operate the service — never for advertising, and never sold to
+            anyone.
+          </p>
+        </Section>
+
+        <Section title="Protecting your contact details from AI providers" index={3}>
+          <p>
+            When your CV is parsed, we redact your phone number and email address before sending the
+            text to our AI provider — the provider never sees them. Your real contact details are
+            extracted locally and restored directly into your stored CV data, so your structured CV
+            and any documents generated from it still include them correctly.
+          </p>
+        </Section>
+
+        <Section title="Third parties we share data with" index={4}>
+          <ul style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 8 }}>
+            <li>
+              <strong style={{ color: "var(--text)" }}>Jooble and JobsAPI (Indeed):</strong> receive
+              search terms derived from your job preferences to find listings. They never receive
+              your CV or identity.
+            </li>
+            <li>
+              <strong style={{ color: "var(--text)" }}>Our AI/LLM provider</strong> (OpenAI, xAI, or
+              a locally-run model, depending on deployment): receives your CV text (with phone/
+              email redacted, see above) and job descriptions, to parse your CV and generate fit
+              ratings.
+            </li>
+            <li>
+              <strong style={{ color: "var(--text)" }}>MongoDB:</strong> our database provider,
+              which stores all account, CV, preference, and job data described above.
+            </li>
+          </ul>
+        </Section>
+
+        <Section title="Data retention" index={5}>
+          <p>
+            We keep your data for as long as your account exists. Deleting your account permanently
+            and immediately removes your user record and every job listing tied to it. This action
+            cannot be undone.
+          </p>
+        </Section>
+
+        <Section title="Your rights" index={6}>
+          <p>
+            You can download a complete export of everything we hold about you, or permanently
+            delete your account and all associated data, at any time from{" "}
+            <strong style={{ color: "var(--text)" }}>Settings → Data &amp; privacy</strong>. If
+            you're in the EU/EEA or UK, these are your rights to access, portability, and erasure
+            under GDPR.
+          </p>
+        </Section>
+
+        <Section title="Security" index={7}>
+          <p>
+            Passwords are hashed with bcrypt and never stored in plain text. Your session uses a
+            signed access token. Admin functionality is restricted to a single, explicitly
+            configured administrator account and cannot be reached by any other user.
+          </p>
+        </Section>
+
+        <Section title="Cookies and tracking" index={8}>
+          <p>
+            JobRadar does not use cookies, analytics, or advertising trackers. Your session token
+            and theme preference are stored in your browser's local storage, not cookies, and are
+            never transmitted to third parties.
+          </p>
+        </Section>
+
+        <Section title="Changes to this policy" index={9}>
+          <p>
+            If this policy changes in a material way, we'll update the date at the top of this page.
+            Continued use of JobRadar after a change means you accept the revised policy.
+          </p>
+        </Section>
+
+        <Section title="Contact" index={10}>
+          <p>
+            Questions about this policy or your data? Reach out to the site operator through the
+            contact details published on the production site.
+          </p>
+        </Section>
+      </main>
+    </div>
+  );
+}

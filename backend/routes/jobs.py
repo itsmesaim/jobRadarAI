@@ -448,6 +448,10 @@ async def rate_all(background_tasks: BackgroundTasks, user=Depends(get_current_u
     print(
         f"[rating] [route] /rate-all accepted for user={user_id}, spawning background task rate_all_jobs_for_user (real work happens async)"
     )
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"last_manual_rate_at": datetime.now(timezone.utc)}},
+    )
     background_tasks.add_task(rate_all_jobs_for_user, user)
     return {
         "message": "Rating started in background.",

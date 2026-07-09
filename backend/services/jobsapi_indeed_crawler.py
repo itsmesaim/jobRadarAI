@@ -5,7 +5,7 @@ Docs: rapidapi.com/Pat92/api/jobs-api14
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from bson import ObjectId
@@ -17,6 +17,7 @@ from services.job_dedup import content_fingerprint, find_duplicate_job, hash_url
 
 BASE_URL = "https://jobs-api14.p.rapidapi.com"
 MIN_CONTENT_LENGTH = MIN_JD_LENGTH
+MAX_JOB_AGE_DAYS = 21
 
 
 def _build_search_terms(user: dict) -> list[str]:
@@ -287,9 +288,15 @@ async def crawl_jobs_for_user_jobsapi(
                     )
                     if posted:
                         try:
-                            posted_at = datetime.fromisoformat(
+                            posted_dt = datetime.fromisoformat(
                                 str(posted).replace("Z", "+00:00")
-                            ).isoformat()
+                            )
+                            if posted_dt < datetime.now(timezone.utc) - timedelta(
+                                days=MAX_JOB_AGE_DAYS
+                            ):
+                                skipped += 1
+                                continue
+                            posted_at = posted_dt.isoformat()
                         except Exception:
                             posted_at = None
 

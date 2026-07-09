@@ -8,6 +8,8 @@ It reads the Bearer token, decodes it, loads the user from Mongo,
 and hands you the full user document.
 """
 
+from datetime import datetime, timedelta, timezone
+
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import Depends, HTTPException, status
@@ -17,6 +19,10 @@ from core.security import decode_access_token
 from database import get_database
 
 bearer_scheme = HTTPBearer(auto_error=True)
+
+# Only write last_active_at at most this often — every route depends on
+# get_current_user, so unthrottled writes would hit Mongo on every request.
+_ACTIVITY_UPDATE_INTERVAL = timedelta(hours=1)
 
 
 async def get_current_user(
@@ -49,4 +55,21 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session expired. Please sign in again.",
         )
+
+    if user.get("suspended"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account has been paused by an admin.",
+        )
+
+    now = datetime.now(timezone.utc)
+    last_active = user.get("last_active_at")
+    if isinstance(last_active, datetime) and last_active.tzinfo is None:
+        last_active = last_active.replace(tzinfo=timezone.utc)
+    if not last_active or now - last_active > _ACTIVITY_UPDATE_INTERVAL:
+        await get_database().users.update_one(
+            {"_id": oid}, {"$set": {"last_active_at": now}}
+        )
+        user["last_active_at"] = now
+
     return user

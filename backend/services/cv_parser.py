@@ -82,16 +82,39 @@ Rules:
 - If a field is missing, use null for strings or [] for arrays.
 - skills should be individual technologies/tools, not sentences.
 - Keep bullet points concise and exactly as written in the CV.
+- The contact block has been replaced with [REDACTED_PHONE] / [REDACTED_EMAIL]
+  placeholders — leave "phone" and "email" as null, they're filled in locally.
 """.strip()
+
+_PHONE_RE = re.compile(r"(\+?\d[\d\-.\s()]{7,}\d)")
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+
+
+def _redact_contact_details(text: str) -> str:
+    """Mask phone numbers and emails before the text leaves the server."""
+    text = _EMAIL_RE.sub("[REDACTED_EMAIL]", text)
+    text = _PHONE_RE.sub("[REDACTED_PHONE]", text)
+    return text
+
+
+def _extract_contact_details(text: str) -> tuple[str | None, str | None]:
+    """Pull the real phone/email locally — never sent to the LLM."""
+    email_match = _EMAIL_RE.search(text)
+    phone_match = _PHONE_RE.search(text)
+    return (
+        phone_match.group(0).strip() if phone_match else None,
+        email_match.group(0) if email_match else None,
+    )
 
 
 @traceable(name="parse_cv_with_llm", run_type="llm")
 async def parse_cv_with_llm(raw_text: str, user_id: str | None = None) -> dict:
     llm = get_llm()
 
+    redacted_text = _redact_contact_details(raw_text)
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=f"Parse this CV:\n\n{raw_text}"),
+        HumanMessage(content=f"Parse this CV:\n\n{redacted_text}"),
     ]
 
     response = await llm.ainvoke(messages)
@@ -116,6 +139,9 @@ async def parse_cv_with_llm(raw_text: str, user_id: str | None = None) -> dict:
     except json.JSONDecodeError as e:
         raise ValueError(f"LLM returned invalid JSON: {e}\n\nRaw output:\n{content}")
 
+    phone, email = _extract_contact_details(raw_text)
+    parsed["phone"] = phone
+    parsed["email"] = email
     return parsed
 
 

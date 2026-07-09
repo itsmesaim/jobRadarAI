@@ -78,9 +78,6 @@ class RoastResult(BaseModel):
 
 # Hard pre-filter (runs before any LLM rating call)
 _HARD_FILTER_SALARY_CEILING = 70000
-_SENIOR_TITLE_PATTERN = re.compile(
-    r"\b(senior|sr\.?|lead|staff|principal|iii|iv|v)\b", re.IGNORECASE
-)
 _SALARY_NUMBER_PATTERN = re.compile(r"[\d,]{3,}")
 
 
@@ -94,14 +91,11 @@ def parse_comp_max(salary_text: str) -> int | None:
 
 
 def hard_disqualify(
-    job_title: str,
     comp_max: int | None,
     salary_ceiling: int = _HARD_FILTER_SALARY_CEILING,
-    experience_level: str = "mid",
 ) -> tuple[bool, str]:
-    title = job_title or ""
-    if experience_level != "senior" and _SENIOR_TITLE_PATTERN.search(title):
-        return True, f"title matched seniority pattern: '{title}'"
+    if not salary_ceiling:
+        return False, ""
     if comp_max and comp_max > salary_ceiling * 1.5:
         return True, f"comp_max {comp_max} exceeds {salary_ceiling * 1.5} ceiling"
     return False, ""
@@ -427,9 +421,8 @@ def _should_skip_rating(job: dict, user_id: str) -> bool:
 @traceable(name="rate_job_for_user", run_type="chain")
 async def rate_job_for_user(job: dict, user: dict) -> dict:
     disqualified, reason = hard_disqualify(
-        job.get("title", ""),
         parse_comp_max(job.get("salary_text", "")),
-        experience_level=user.get("experience_level", "mid"),
+        salary_ceiling=user.get("min_salary", 0) or 0,
     )
     if disqualified:
         return {
@@ -586,12 +579,9 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 
 
 def _cv_embedding_text(user: dict) -> str:
-    """Text used for CV embedding (raw_text preferred)."""
+    """Text used for CV embedding — structured fields only (never raw_text,
+    which carries contact details that add no semantic value here)."""
     cv = user.get("cv", {})
-    raw = cv.get("raw_text", "") or ""
-    if len(raw) > 200:
-        return raw[:8000]
-
     structured = cv.get("structured", {})
     parts = [
         structured.get("summary", ""),

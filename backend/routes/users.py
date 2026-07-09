@@ -299,9 +299,8 @@ async def export_my_data(user=Depends(get_current_user)):
             "filename": cv.get("filename"),
             "uploaded_at": cv.get("uploaded_at"),
             "structured": cv.get("structured"),
-            # raw_text omitted from export by default — very large; include summary note
-            "raw_text_included": False,
-            "raw_text_chars": len(cv.get("raw_text", "") or ""),
+            "raw_text_included": True,
+            "raw_text": cv.get("raw_text", ""),
         }
 
     return {

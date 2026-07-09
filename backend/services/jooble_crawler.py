@@ -18,6 +18,7 @@ from database import get_database
 from services.job_dedup import content_fingerprint, hash_url, job_exists_for_user
 
 JOOBLE_BASE = "https://jooble.org/api"
+MAX_JOB_AGE_DAYS = 21
 
 
 def _build_search_terms(user: dict) -> list[str]:
@@ -140,7 +141,7 @@ async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) 
 
                     url_hash = hash_url(url)
 
-                    # date filter — skip older than 30 days
+                    # date filter — skip older than 21 days
                     updated_str = job.get("updated", "")
                     if updated_str:
                         try:
@@ -148,7 +149,7 @@ async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) 
                                 updated_str.replace("Z", "+00:00")
                             )
                             if job_date < datetime.now(timezone.utc) - timedelta(
-                                days=30
+                                days=MAX_JOB_AGE_DAYS
                             ):
                                 skipped += 1
                                 continue

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Upload,
@@ -1621,6 +1622,15 @@ function DataPrivacySection({
             >
               {summary?.legal_note ??
                 "Job listings come from third-party APIs. Your CV may be sent to an AI for matching. Download or delete your data anytime below."}
+            </p>
+            <p style={{ margin: "8px 0 0", fontSize: 12 }}>
+              <Link to="/privacy" target="_blank" style={{ color: "var(--accent)" }}>
+                Privacy Policy
+              </Link>
+              {" · "}
+              <Link to="/terms" target="_blank" style={{ color: "var(--accent)" }}>
+                Terms of Service
+              </Link>
             </p>
           </div>
         </div>

@@ -24,13 +24,19 @@ from services.rating import rate_all_jobs_for_user
 
 scheduler = AsyncIOScheduler()
 
+# Don't burn LLM tokens auto-crawling/rating for accounts nobody's using.
+DEAD_USER_INACTIVE_HOURS = 24
+
 
 async def _auto_crawl_and_rate():
     """Core job: for every user with a CV, crawl new jobs then rate them."""
     db = get_database()
 
-    # Only users who have uploaded a CV (otherwise nothing to match against)
-    users = await db.users.find({"cv": {"$exists": True}}).to_list(length=None)
+    # Only users who have uploaded a CV (otherwise nothing to match against),
+    # aren't paused by an admin, and have been active recently.
+    users = await db.users.find(
+        {"cv": {"$exists": True}, "suspended": {"$ne": True}}
+    ).to_list(length=None)
 
     print(f"[scheduler] === AUTO CYCLE START ({len(users)} users with CV) ===")
     print(
@@ -46,6 +52,23 @@ async def _auto_crawl_and_rate():
     for user in users:
         user_id = str(user["_id"])
         email = user.get("email", user_id)
+
+        last_active = user.get("last_active_at")
+        if isinstance(last_active, datetime) and last_active.tzinfo is None:
+            last_active = last_active.replace(tzinfo=timezone.utc)
+        if not isinstance(last_active, datetime) or (now_utc - last_active) > timedelta(
+            hours=DEAD_USER_INACTIVE_HOURS
+        ):
+            idle_desc = (
+                f"{int((now_utc - last_active).total_seconds() // 3600)}h"
+                if isinstance(last_active, datetime)
+                else "never"
+            )
+            print(
+                f"[scheduler] [{email}] Skipped — inactive for {idle_desc} "
+                f"(dead-user cutoff {DEAD_USER_INACTIVE_HOURS}h), not wasting tokens"
+            )
+            continue
 
         last_crawl = user.get("last_crawl_at")
         if last_crawl:

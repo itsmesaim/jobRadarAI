@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 500 600;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/plus-jakarta-sans.woff2") format("woff2");
+}
+
 @layer base {
   :root {
     /* Neutral scale */
@@ -1162,6 +1178,23 @@
     border-color: var(--accent);
     color: #fff;
     font-weight: 600;
+  }
+
+  .admin-modal {
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    max-height: 88vh;
+  }
+
+  @media (min-width: 640px) {
+    .admin-modal-overlay {
+      align-items: center !important;
+      padding: 16px;
+    }
+
+    .admin-modal {
+      border-radius: 16px !important;
+    }
   }
 
   @media (max-width: 640px) {

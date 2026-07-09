@@ -9,6 +9,7 @@ import { clearUserScopedCache } from "../queryClient";
 export function LoginPage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const navigate = useNavigate();
@@ -21,6 +22,9 @@ export function LoginPage() {
     else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = "Enter a valid email";
     if (!form.password) e.password = "Password is required";
     else if (form.password.length < 8) e.password = "At least 8 characters";
+    if (mode === "register" && !agreedToTerms) {
+      e.terms = "You must agree to the Privacy Policy and Terms of Service";
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -159,6 +163,41 @@ export function LoginPage() {
               </p>
             )}
           </div>
+
+          {mode === "register" && (
+            <div>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
+                  fontSize: 12,
+                  color: "var(--text-secondary)",
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={agreedToTerms}
+                  onChange={(e) => setAgreedToTerms(e.target.checked)}
+                  style={{ marginTop: 2 }}
+                />
+                <span>
+                  I agree to the{" "}
+                  <Link to="/privacy" target="_blank" style={{ color: "var(--accent)" }}>
+                    Privacy Policy
+                  </Link>{" "}
+                  and{" "}
+                  <Link to="/terms" target="_blank" style={{ color: "var(--accent)" }}>
+                    Terms of Service
+                  </Link>
+                </span>
+              </label>
+              {errors.terms && (
+                <p style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>{errors.terms}</p>
+              )}
+            </div>
+          )}
 
           <button
             onClick={handleSubmit}

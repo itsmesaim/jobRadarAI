@@ -61,6 +61,7 @@ async def register(payload: UserRegister, request: Request):
         "password_hash": hash_password(payload.password),
         "token_version": 1,
         "created_at": datetime.now(timezone.utc),
+        "privacy_accepted_at": datetime.now(timezone.utc),
     }
     result = await db.users.insert_one(doc)
 
@@ -79,6 +80,18 @@ async def login(payload: UserLogin, request: Request):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
+
+    if user.get("suspended"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account has been paused by an admin.",
+        )
+
+    now = datetime.now(timezone.utc)
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"last_active_at": now, "last_login_at": now}},
+    )
 
     token_version = int(user.get("token_version", 1) or 1)
     token = create_access_token(str(user["_id"]), token_version=token_version)

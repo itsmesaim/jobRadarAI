@@ -41,6 +41,11 @@ class JobCleanupRequest(BaseModel):
     dry_run: bool = True  # True = preview only, no deletion
 
 
+class UserSuspendUpdate(BaseModel):
+    suspended: bool
+    reason: str | None = None
+
+
 class UserAccessUpdate(BaseModel):
     search_limit: int | None = None
     rating_limit: int | None = None
@@ -94,6 +99,60 @@ async def update_user_access(
     return await admin_update_user_limits(
         user_id=user_id, **payload.model_dump(exclude_unset=True)
     )
+
+
+@router.patch("/users/{user_id}/suspend")
+async def suspend_user(
+    user_id: str, payload: UserSuspendUpdate, user=Depends(get_current_user)
+):
+    """Pause (or reactivate) a specific user: blocks login, all API calls,
+    and auto-crawl/rating for them until un-suspended. Does not delete data."""
+    _require_admin(user)
+    db = get_database()
+
+    target = await db.users.find_one(
+        {"_id": ObjectId(user_id)}, {"email": 1, "token_version": 1}
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    update: dict = {"suspended": payload.suspended}
+    if payload.suspended:
+        update["suspended_at"] = datetime.now(timezone.utc)
+        update["suspended_reason"] = payload.reason or ""
+        # Suspending should also kill any live session immediately.
+        update["token_version"] = int(target.get("token_version", 1) or 1) + 1
+    else:
+        update["suspended_reason"] = ""
+
+    await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": update})
+    print(
+        f"[admin] {'Suspended' if payload.suspended else 'Reactivated'} "
+        f"user={target.get('email')} reason={payload.reason!r}"
+    )
+    return {"user_id": user_id, "email": target.get("email"), **update}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(user_id: str, user=Depends(get_current_user)):
+    """Permanently delete a user account and all their crawled jobs."""
+    _require_admin(user)
+    db = get_database()
+
+    target = await db.users.find_one({"_id": ObjectId(user_id)}, {"email": 1})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    jobs_result = await db.jobs.delete_many({"crawled_by": user_id})
+    await db.users.delete_one({"_id": ObjectId(user_id)})
+
+    print(
+        f"[admin] Deleted user={target.get('email')} and {jobs_result.deleted_count} jobs"
+    )
+    return {
+        "deleted_user": target.get("email"),
+        "deleted_jobs": jobs_result.deleted_count,
+    }
 
 
 @router.get("/usage/{user_id}")

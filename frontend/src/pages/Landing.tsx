@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Radar, Sparkles, KanbanSquare, ShieldCheck, X, Check } from "lucide-react";
+import { Radar, Sparkles, KanbanSquare, ShieldCheck, X, Check, ShieldQuestion } from "lucide-react";
 import { Logo } from "../components/Logo";
 import { ThemeToggle } from "../components/ThemeToggle";
 
@@ -133,6 +133,34 @@ export function LandingPage() {
               Get started free
             </Link>
           </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.8, duration: 0.5 }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              marginTop: 20,
+              padding: "8px 14px",
+              borderRadius: 999,
+              background: "var(--accent-light)",
+              border: "1px solid var(--accent)",
+            }}
+          >
+            <ShieldQuestion size={15} color="var(--accent)" style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 12.5, color: "var(--text)" }}>
+              Please read our{" "}
+              <Link to="/privacy" style={{ color: "var(--accent)", fontWeight: 600 }}>
+                Privacy Policy
+              </Link>{" "}
+              and{" "}
+              <Link to="/terms" style={{ color: "var(--accent)", fontWeight: 600 }}>
+                Terms of Service
+              </Link>{" "}
+              before creating an account.
+            </span>
+          </motion.div>
         </section>
 
         {/* Without us / with us */}
@@ -229,6 +257,26 @@ export function LandingPage() {
           ))}
         </motion.section>
       </main>
+
+      <footer
+        style={{
+          maxWidth: 1080,
+          margin: "0 auto",
+          padding: "24px 24px 48px",
+          display: "flex",
+          justifyContent: "center",
+          gap: 20,
+          fontSize: 12,
+          color: "var(--text-muted)",
+        }}
+      >
+        <Link to="/privacy" style={{ color: "var(--text-muted)" }}>
+          Privacy Policy
+        </Link>
+        <Link to="/terms" style={{ color: "var(--text-muted)" }}>
+          Terms of Service
+        </Link>
+      </footer>
     </div>
   );
 }
