@@ -195,10 +195,16 @@ export function PrivacyPage() {
         </Section>
 
         <Section title="Cookies and tracking" index={8}>
+          <p style={{ marginBottom: 10 }}>
+            JobRadar does not use cookies, analytics, or advertising trackers. The public landing
+            page loads no third-party scripts or CDN assets — fonts and JavaScript are self-hosted
+            and bundled at build time (Vite), so visiting the homepage does not contact Google,
+            Cloudflare, or any other external tracker.
+          </p>
           <p>
-            JobRadar does not use cookies, analytics, or advertising trackers. Your session token
-            and theme preference are stored in your browser's local storage, not cookies, and are
-            never transmitted to third parties.
+            After you sign in, your session token and theme preference are stored in your browser's
+            local storage, not cookies, and are only sent to our own API — never to third-party
+            analytics or ad networks.
           </p>
         </Section>
 
