@@ -3,7 +3,7 @@ One-off diagnostic: why is a user getting no/few matching jobs.
 
 Run on the server (same env as the app):
     cd backend
-    uv run python diagnose_matching.py you@example.com
+    uv run python scripts/diagnose_matching.py you@example.com
 
 Paste the output back — no DB access needed on the other end.
 """
@@ -144,6 +144,6 @@ async def main(email: str):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("usage: python diagnose_matching.py <user-email>")
+        print("usage: python scripts/diagnose_matching.py <user-email>")
         sys.exit(1)
     asyncio.run(main(sys.argv[1]))

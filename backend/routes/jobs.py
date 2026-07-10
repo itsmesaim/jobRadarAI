@@ -97,7 +97,7 @@ def _format_job(job: dict, user_id: str) -> dict:
         # the other.
         "posted_at_actual": job.get("posted_at"),
         "rated_at": rating.get("rated_at"),
-        "source": job.get("source", "tavily"),
+        "source": job.get("source", "manual"),
         "company": job.get("company", ""),
         "location": job.get("location", ""),
         "score": None if in_progress else rating.get("score", None),

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { motion } from "framer-motion";
 import {
   ArrowRight,
   Building2,
@@ -22,7 +21,6 @@ import {
   Zap,
 } from "lucide-react";
 import { Logo } from "../components/Logo";
-import { LandingFooter } from "../components/LandingFooter";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { ScoreBadge } from "../components/ScoreBadge";
 
@@ -101,42 +99,49 @@ const HOW_IT_WORKS = [
   },
 ];
 
+const PREVIEW_JOBS = [
+  {
+    source: "Indeed",
+    title: "Senior Frontend Engineer",
+    company: "Linear",
+    location: "Remote",
+    score: 9,
+    summary:
+      "Strong match on React and TypeScript. Lead with the production systems you've shipped solo.",
+    status: "APPLIED",
+    borderColor: "var(--success)",
+  },
+  {
+    source: "Jooble",
+    title: "Full Stack Developer",
+    company: "Vercel",
+    location: "Remote · EU",
+    score: 8,
+    summary: "Solid overlap on Next.js and API design. Mention your FastAPI side projects.",
+    status: "SAVED",
+    borderColor: "var(--accent)",
+  },
+  {
+    source: "LinkedIn",
+    title: "Software Engineer",
+    company: "Stripe",
+    location: "Dublin",
+    score: 7,
+    summary:
+      "Good backend fit. Light on distributed systems, so mention any exposure in your cover letter.",
+    status: "NEW",
+    borderColor: "var(--warning)",
+  },
+];
+
+const HERO_STATS = [
+  { label: "Boards searched", value: "3+", accent: "is-accent" },
+  { label: "Profile inputs", value: "10+", accent: "" },
+  { label: "AI fit score", value: "1-10", accent: "is-success" },
+];
+
 const heroWords = "Stop scrolling job boards. Let the radar find your matches.".split(" ");
 const HERO_HIGHLIGHT = new Set(["radar", "matches."]);
-
-const fadeUp = {
-  hidden: { opacity: 0, y: 28 },
-  visible: (i = 0) => ({
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.65, delay: i * 0.1, ease: "easeOut" as const },
-  }),
-};
-
-const fadeScale = {
-  hidden: { opacity: 0, y: 24, scale: 0.97 },
-  visible: (i = 0) => ({
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: { duration: 0.7, delay: i * 0.1, ease: "easeOut" as const },
-  }),
-};
-
-const stagger = {
-  visible: { transition: { staggerChildren: 0.1, delayChildren: 0.05 } },
-};
-
-const wordVariants = {
-  hidden: { opacity: 0, y: 16 },
-  show: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { delay: 0.15 + i * 0.04, duration: 0.5, ease: "easeOut" as const },
-  }),
-};
-
-const springHover = { type: "spring" as const, stiffness: 380, damping: 22 };
 
 function PreviewJobCard({
   source,
@@ -247,28 +252,16 @@ function PreviewJobCard({
 
 export function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const year = new Date().getFullYear();
 
   return (
     <div className="landing-page">
       <div className="landing-bg" aria-hidden>
-        <motion.div
-          className="landing-orb landing-orb-1"
-          animate={{ y: [0, -22, 0], opacity: [0.55, 0.75, 0.55] }}
-          transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div
-          className="landing-orb landing-orb-2"
-          animate={{ y: [0, 20, 0], opacity: [0.4, 0.6, 0.4] }}
-          transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
-        />
+        <div className="landing-orb landing-orb-1" />
+        <div className="landing-orb landing-orb-2" />
       </div>
 
-      <motion.header
-        className="landing-nav"
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-      >
+      <header className="landing-nav">
         <div className="landing-nav-inner">
           <Link to="/" className="landing-nav-brand">
             <Logo size={32} wordmarkSize={19} />
@@ -311,43 +304,34 @@ export function LandingPage() {
             </button>
           </div>
         </div>
-      </motion.header>
+      </header>
 
       <main className="landing-main">
         <section className="landing-hero">
-          <motion.div
-            className="landing-hero-copy"
-            initial="hidden"
-            animate="visible"
-            variants={stagger}
-          >
-            <motion.p className="landing-eyebrow" variants={fadeUp}>
+          <div className="landing-hero-copy">
+            <p className="landing-eyebrow">
               <Radar size={14} strokeWidth={2.5} />
               Job search that knows your full profile
-            </motion.p>
+            </p>
 
             <h1 className="landing-hero-title">
               {heroWords.map((word, i) => (
-                <motion.span
+                <span
                   key={`${word}-${i}`}
-                  custom={i}
-                  variants={wordVariants}
-                  initial="hidden"
-                  animate="show"
                   className={HERO_HIGHLIGHT.has(word) ? "landing-hero-highlight" : undefined}
                 >
                   {word}
-                </motion.span>
+                </span>
               ))}
             </h1>
 
-            <motion.p className="landing-hero-sub" variants={fadeUp}>
+            <p className="landing-hero-sub">
               Upload your CV, tell us which markets and roles you're targeting, and JobRadar
               searches the boards, scores every listing against your full profile, and keeps your
               pipeline on a Kanban board. The more you fill in Settings, the sharper the scores get.
-            </motion.p>
+            </p>
 
-            <motion.div className="landing-hero-actions" variants={fadeUp}>
+            <div className="landing-hero-actions">
               <Link to="/login" className="btn btn-primary landing-cta-btn">
                 Get started free
                 <ArrowRight size={16} strokeWidth={2.5} />
@@ -355,52 +339,31 @@ export function LandingPage() {
               <a href="#preview" className="btn btn-ghost landing-cta-btn">
                 See dashboard preview
               </a>
-            </motion.div>
+            </div>
 
-            <motion.div className="landing-stats" variants={stagger}>
-              {[
-                { label: "Boards searched", value: "3+", accent: "is-accent" },
-                { label: "Profile inputs", value: "10+", accent: "" },
-                { label: "AI fit score", value: "1-10", accent: "is-success" },
-              ].map((stat, i) => (
-                <motion.div
-                  key={stat.label}
-                  className="dash-metric"
-                  variants={fadeScale}
-                  custom={i}
-                  whileHover={{ y: -3, transition: springHover }}
-                >
+            <div className="landing-stats">
+              {HERO_STATS.map((stat) => (
+                <div key={stat.label} className="dash-metric">
                   <span className="dash-metric-label">{stat.label}</span>
                   <span className={`dash-metric-value ${stat.accent}`.trim()}>{stat.value}</span>
-                </motion.div>
+                </div>
               ))}
-            </motion.div>
-          </motion.div>
+            </div>
+          </div>
         </section>
 
-        <motion.section
-          id="preview"
-          className="landing-section"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-        >
-          <motion.div className="landing-section-head" variants={fadeUp}>
+        <section id="preview" className="landing-section">
+          <div className="landing-section-head">
             <p className="landing-section-label">Preview</p>
             <h2>What the dashboard looks like</h2>
             <p>
               Search once, filter by fit score, and work through AI-rated listings. Same view you
               get after signing in.
             </p>
-          </motion.div>
+          </div>
 
-          <motion.div className="landing-preview-wrap" variants={fadeScale}>
-            <motion.div
-              className="landing-preview-browser card"
-              whileHover={{ y: -5, scale: 1.005 }}
-              transition={springHover}
-            >
+          <div className="landing-preview-wrap">
+            <div className="landing-preview-browser card">
               <div className="landing-preview-bar">
                 <span />
                 <span />
@@ -450,154 +413,64 @@ export function LandingPage() {
                   <span className="landing-preview-filter">8+</span>
                 </div>
 
-                <motion.div
-                  className="landing-preview-grid"
-                  variants={stagger}
-                  initial="hidden"
-                  animate="visible"
-                >
-                  {[
-                    {
-                      source: "Indeed",
-                      title: "Senior Frontend Engineer",
-                      company: "Linear",
-                      location: "Remote",
-                      score: 9,
-                      summary:
-                        "Strong match on React and TypeScript. Lead with the production systems you've shipped solo.",
-                      status: "APPLIED",
-                      borderColor: "var(--success)",
-                    },
-                    {
-                      source: "Jooble",
-                      title: "Full Stack Developer",
-                      company: "Vercel",
-                      location: "Remote · EU",
-                      score: 8,
-                      summary:
-                        "Solid overlap on Next.js and API design. Mention your FastAPI side projects.",
-                      status: "SAVED",
-                      borderColor: "var(--accent)",
-                    },
-                    {
-                      source: "LinkedIn",
-                      title: "Software Engineer",
-                      company: "Stripe",
-                      location: "Dublin",
-                      score: 7,
-                      summary:
-                        "Good backend fit. Light on distributed systems, so mention any exposure in your cover letter.",
-                      status: "NEW",
-                      borderColor: "var(--warning)",
-                    },
-                  ].map((job, i) => (
-                    <motion.div key={job.title} variants={fadeScale} custom={i + 1}>
-                      <PreviewJobCard {...job} />
-                    </motion.div>
+                <div className="landing-preview-grid">
+                  {PREVIEW_JOBS.map((job) => (
+                    <PreviewJobCard key={job.title} {...job} />
                   ))}
-                </motion.div>
+                </div>
               </div>
-            </motion.div>
+            </div>
             <p className="landing-preview-caption">
               Mockup only. Sign in, set up your profile in Settings, then run real searches for live
               ratings tuned to your roles and markets.
             </p>
-          </motion.div>
-        </motion.section>
+          </div>
+        </section>
 
-        <motion.section
-          id="features"
-          className="landing-section"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-        >
-          <motion.div className="landing-section-head" variants={fadeUp}>
+        <section id="features" className="landing-section">
+          <div className="landing-section-head">
             <p className="landing-section-label">Features</p>
             <h2>One place for the whole hunt</h2>
             <p>
               Find roles, score fit, and track applications without five browser tabs and a
               spreadsheet that stopped making sense two weeks ago.
             </p>
-          </motion.div>
+          </div>
 
           <div className="landing-feature-grid">
-            {FEATURES.map((f, i) => (
-              <motion.article
-                key={f.title}
-                className="card card-hover landing-feature-card"
-                variants={fadeScale}
-                custom={i}
-                whileHover={{ y: -4, scale: 1.01, transition: springHover }}
-              >
+            {FEATURES.map((f) => (
+              <article key={f.title} className="card card-hover landing-feature-card">
                 <span className="landing-feature-icon">
                   <f.Icon size={20} strokeWidth={2} />
                 </span>
                 <h3>{f.title}</h3>
                 <p>{f.desc}</p>
-              </motion.article>
+              </article>
             ))}
           </div>
-        </motion.section>
+        </section>
 
-        <motion.section
-          id="how-it-works"
-          className="landing-section"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-        >
-          <motion.div className="landing-section-head" variants={fadeUp}>
+        <section id="how-it-works" className="landing-section">
+          <div className="landing-section-head">
             <p className="landing-section-label">Workflow</p>
             <h2>How it works</h2>
-          </motion.div>
+          </div>
 
           <div className="landing-steps">
             <div className="landing-steps-line" aria-hidden />
             {HOW_IT_WORKS.map((step, i) => (
-              <motion.div
-                key={step.title}
-                className="landing-step"
-                variants={fadeScale}
-                custom={i}
-                whileHover={{ y: -3, transition: springHover }}
-              >
-                <motion.div
-                  className="landing-step-num"
-                  initial={{ scale: 0, opacity: 0 }}
-                  whileInView={{ scale: 1, opacity: 1 }}
-                  viewport={{ once: true }}
-                  transition={{
-                    delay: 0.15 + i * 0.12,
-                    type: "spring",
-                    stiffness: 320,
-                    damping: 18,
-                  }}
-                >
-                  {i + 1}
-                </motion.div>
+              <div key={step.title} className="landing-step">
+                <div className="landing-step-num">{i + 1}</div>
                 <h3>{step.title}</h3>
                 <p>{step.body}</p>
-              </motion.div>
+              </div>
             ))}
           </div>
-        </motion.section>
+        </section>
 
-        <motion.section
-          className="landing-section landing-compare-section"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-        >
+        <section className="landing-section landing-compare-section">
           <div className="landing-compare">
-            <motion.div
-              variants={fadeScale}
-              className="card card-hover landing-compare-card"
-              whileHover={{ y: -3, transition: springHover }}
-            >
+            <div className="card card-hover landing-compare-card">
               <h3>Without JobRadar</h3>
               <ul>
                 {WITHOUT.map((line) => (
@@ -607,14 +480,9 @@ export function LandingPage() {
                   </li>
                 ))}
               </ul>
-            </motion.div>
+            </div>
 
-            <motion.div
-              variants={fadeScale}
-              custom={1}
-              className="card card-hover landing-compare-card is-highlight"
-              whileHover={{ y: -3, transition: springHover }}
-            >
+            <div className="card card-hover landing-compare-card is-highlight">
               <h3>With JobRadar</h3>
               <ul>
                 {WITH.map((line) => (
@@ -624,20 +492,13 @@ export function LandingPage() {
                   </li>
                 ))}
               </ul>
-            </motion.div>
+            </div>
           </div>
-        </motion.section>
+        </section>
 
-        <motion.section
-          id="stack"
-          className="landing-section"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-        >
+        <section id="stack" className="landing-section">
           <div className="landing-stack">
-            <motion.div className="landing-stack-copy" variants={fadeUp}>
+            <div className="landing-stack-copy">
               <p className="landing-section-label">Tech stack</p>
               <h2>How it's built</h2>
               <p>
@@ -645,26 +506,17 @@ export function LandingPage() {
                 LangChain with two LLMs: one for CV parsing, a faster one for bulk job ratings
                 against your CV and saved preferences.
               </p>
-              <motion.ul className="landing-stack-list" variants={stagger}>
-                {STACK.map((item, i) => (
-                  <motion.li
-                    key={item}
-                    variants={fadeUp}
-                    custom={i}
-                    whileHover={{ scale: 1.04, transition: springHover }}
-                  >
+              <ul className="landing-stack-list">
+                {STACK.map((item) => (
+                  <li key={item}>
                     <Zap size={12} strokeWidth={2.5} />
                     {item}
-                  </motion.li>
+                  </li>
                 ))}
-              </motion.ul>
-            </motion.div>
+              </ul>
+            </div>
 
-            <motion.div
-              className="card landing-flow-card"
-              variants={fadeScale}
-              whileHover={{ y: -3, transition: springHover }}
-            >
+            <div className="card landing-flow-card">
               <div className="landing-flow-head">
                 <Shield size={18} />
                 <h3>How a search works</h3>
@@ -688,22 +540,12 @@ export function LandingPage() {
                   in sync on the dashboard and board.
                 </li>
               </ol>
-            </motion.div>
+            </div>
           </div>
-        </motion.section>
+        </section>
 
-        <motion.section
-          className="landing-section landing-cta-section"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-        >
-          <motion.div
-            className="card landing-cta-card"
-            variants={fadeScale}
-            whileHover={{ scale: 1.01, transition: springHover }}
-          >
+        <section className="landing-section landing-cta-section">
+          <div className="card landing-cta-card">
             <h2>Ready to stop scrolling?</h2>
             <p>
               Sign up, fill in your CV and job prefs, and run your first multi-board search in a few
@@ -718,11 +560,32 @@ export function LandingPage() {
                 I already have an account
               </Link>
             </div>
-          </motion.div>
-        </motion.section>
+          </div>
+        </section>
       </main>
 
-      <LandingFooter />
+      <footer className="landing-footer">
+        <div className="landing-footer-inner">
+          <div className="landing-footer-bottom">
+            <div className="landing-footer-brand">
+              <Logo size={28} wordmarkSize={17} />
+              <p>Find roles that fit. Track where you applied.</p>
+            </div>
+
+            <nav className="landing-footer-nav" aria-label="Footer">
+              <a href="#preview">Preview</a>
+              <a href="#features">Features</a>
+              <a href="#how-it-works">How it works</a>
+              <a href="#stack">Tech stack</a>
+              <Link to="/privacy">Privacy Policy</Link>
+              <Link to="/terms">Terms of Service</Link>
+              <Link to="/login">Log in</Link>
+            </nav>
+
+            <p className="landing-footer-copy">© {year} JobRadar</p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

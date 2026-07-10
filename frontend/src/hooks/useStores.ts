@@ -23,16 +23,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 }));
 
-interface CrawlState {
-  isCrawling: boolean;
-  setIsCrawling: (v: boolean) => void;
-}
-
-export const useCrawlStore = create<CrawlState>((set) => ({
-  isCrawling: false,
-  setIsCrawling: (v) => set({ isCrawling: v }),
-}));
-
 interface ThemeState {
   dark: boolean;
   toggle: () => void;

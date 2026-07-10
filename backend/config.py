@@ -93,18 +93,10 @@ class Settings(BaseSettings):
     # on a low-tier model/org (e.g. gpt-4.1-nano).
     rating_concurrency: int = 4
 
-    # External
-    tavily_api_key: str = ""
-    pinecone_api_key: str = ""
-
     langsmith_tracing: bool = False
     langsmith_endpoint: str = ""
     langsmith_api_key: str = ""
     langsmith_project: str = "My first app"
-
-    #  Adzuna
-    adzuna_app_id: str = ""
-    adzuna_app_key: str = ""
 
     jooble_api_key: str = ""
     jobsapi_key: str = ""

@@ -70,7 +70,7 @@ export function Navbar() {
                   }}
                 >
                   <Icon size={15} />
-                  <span className="hidden sm:inline">{label}</span>
+                  <span className="nav-label">{label}</span>
                 </div>
               </Link>
             );
@@ -92,7 +92,7 @@ export function Navbar() {
                 }}
               >
                 <Shield size={15} />
-                <span className="hidden sm:inline">Admin</span>
+                <span className="nav-label">Admin</span>
               </div>
             </Link>
           )}

@@ -39,7 +39,12 @@
         color-scheme: light;
       }
     </style>
-    <script src="/theme-init.js"></script>
+    <script>
+      (function () {
+        var dark = localStorage.getItem("theme") !== "light";
+        if (dark) document.documentElement.classList.add("dark");
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

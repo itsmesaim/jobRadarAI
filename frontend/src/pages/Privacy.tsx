@@ -1,49 +1,18 @@
 import { Link } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Logo } from "../components/Logo";
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 18 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" as const } },
-};
-
-function Section({
-  title,
-  children,
-  index,
-}: {
-  title: string;
-  children: React.ReactNode;
-  index: number;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <motion.section
-      initial="hidden"
-      whileInView="show"
-      viewport={{ once: true, amount: 0.3 }}
-      variants={fadeUp}
-      transition={{ delay: Math.min(index * 0.05, 0.2) }}
-      style={{ marginBottom: 36 }}
-    >
+    <section style={{ marginBottom: 36 }}>
       <h2 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 10px", color: "var(--text)" }}>
         {title}
       </h2>
       <div style={{ fontSize: 15, color: "var(--text-secondary)", lineHeight: 1.75 }}>
         {children}
       </div>
-    </motion.section>
+    </section>
   );
 }
-
-const heroWords = "Privacy Policy".split(" ");
-const wordVariants = {
-  hidden: { opacity: 0, y: 14 },
-  show: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { delay: i * 0.06, duration: 0.4, ease: "easeOut" as const },
-  }),
-};
 
 export function PrivacyPage() {
   return (
@@ -76,29 +45,13 @@ export function PrivacyPage() {
             color: "var(--text)",
           }}
         >
-          {heroWords.map((word, i) => (
-            <motion.span
-              key={word}
-              custom={i}
-              variants={wordVariants}
-              initial="hidden"
-              animate="show"
-              style={{ display: "inline-block", marginRight: "0.3em" }}
-            >
-              {word}
-            </motion.span>
-          ))}
+          Privacy Policy
         </h1>
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3, duration: 0.5 }}
-          style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 40 }}
-        >
+        <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 40 }}>
           Last updated: {new Date().toISOString().slice(0, 10)}
-        </motion.p>
+        </p>
 
-        <Section title="Who we are" index={0}>
+        <Section title="Who we are">
           <p>
             JobRadar ("we", "us") is a job-search tool that crawls job boards, rates listings
             against your CV using AI, and helps you track applications. This policy explains what
@@ -106,7 +59,7 @@ export function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="Information we collect" index={1}>
+        <Section title="Information we collect">
           <p style={{ marginBottom: 10 }}>
             <strong style={{ color: "var(--text)" }}>Account data:</strong> your name, email
             address, and a securely hashed password. We never store your password in plain text and
@@ -130,7 +83,7 @@ export function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="How we use your data" index={2}>
+        <Section title="How we use your data">
           <p>
             Your CV and preferences are used to search job boards on your behalf and to generate AI
             fit ratings, tailoring tips, and application briefs. We use your account data solely to
@@ -139,7 +92,7 @@ export function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="Protecting your contact details from AI providers" index={3}>
+        <Section title="Protecting your contact details from AI providers">
           <p>
             When your CV is parsed, we redact your phone number and email address before sending the
             text to our AI provider — the provider never sees them. Your real contact details are
@@ -148,7 +101,7 @@ export function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="Third parties we share data with" index={4}>
+        <Section title="Third parties we share data with">
           <ul style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 8 }}>
             <li>
               <strong style={{ color: "var(--text)" }}>Jooble and JobsAPI (Indeed):</strong> receive
@@ -168,7 +121,7 @@ export function PrivacyPage() {
           </ul>
         </Section>
 
-        <Section title="Data retention" index={5}>
+        <Section title="Data retention">
           <p>
             We keep your data for as long as your account exists. Deleting your account permanently
             and immediately removes your user record and every job listing tied to it. This action
@@ -176,7 +129,7 @@ export function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="Your rights" index={6}>
+        <Section title="Your rights">
           <p>
             You can download a complete export of everything we hold about you, or permanently
             delete your account and all associated data, at any time from{" "}
@@ -186,7 +139,7 @@ export function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="Security" index={7}>
+        <Section title="Security">
           <p>
             Passwords are hashed with bcrypt and never stored in plain text. Your session uses a
             signed access token. Admin functionality is restricted to a single, explicitly
@@ -194,7 +147,7 @@ export function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="Cookies and tracking" index={8}>
+        <Section title="Cookies and tracking">
           <p style={{ marginBottom: 10 }}>
             JobRadar does not use cookies, analytics, or advertising trackers. The public landing
             page loads no third-party scripts or CDN assets — fonts and JavaScript are self-hosted
@@ -208,14 +161,14 @@ export function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="Changes to this policy" index={9}>
+        <Section title="Changes to this policy">
           <p>
             If this policy changes in a material way, we'll update the date at the top of this page.
             Continued use of JobRadar after a change means you accept the revised policy.
           </p>
         </Section>
 
-        <Section title="Contact" index={10}>
+        <Section title="Contact">
           <p>
             Questions about this policy or your data? Reach out to the site operator through the
             contact details published on the production site.

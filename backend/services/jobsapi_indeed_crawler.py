@@ -348,14 +348,3 @@ def _is_relevant_job(full_text: str, user: dict) -> bool:
             return False
 
     return True
-
-
-async def crawl_jobs_for_user_jobsapi_linkedin(
-    user: dict, max_stored: int | None = None
-) -> dict:
-    """Disabled — LinkedIn search API returns metadata only (no JD text)."""
-    print(
-        "[jobsapi-linkedin] SKIPPED — API has no job descriptions; "
-        "storing listings caused empty JDs and blocked Indeed dedup upgrades"
-    )
-    return {"found": 0, "stored": 0, "skipped": 0}

@@ -26,7 +26,7 @@ import {
   type LimitKind,
 } from "../components/LimitContactModal";
 import { jobsApi, crawlerApi } from "../api/index";
-import { useAuthStore, useCrawlStore } from "../hooks/useStores";
+import { useAuthStore } from "../hooks/useStores";
 
 type ScoreFilterId = "6plus" | "7plus" | "8plus" | "below6" | "unrated" | "all";
 type ViewMode = "active" | "all";
@@ -262,7 +262,7 @@ function FilterChip({
 
 export function Dashboard() {
   const { user } = useAuthStore();
-  const { isCrawling, setIsCrawling } = useCrawlStore();
+  const [isCrawling, setIsCrawling] = useState(false);
   const [scoreFilter, setScoreFilter] = useState<ScoreFilterId>("6plus");
   const [viewMode, setViewMode] = useState<ViewMode>("active");
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
