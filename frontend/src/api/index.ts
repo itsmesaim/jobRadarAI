@@ -79,6 +79,11 @@ export const jobsApi = {
     };
   },
 
+  submitRatingFeedback: async (id: string, comment: string, stars?: number) => {
+    const res = await api.post(`/jobs/${id}/rating-feedback`, { comment, stars });
+    return res.data as { message: string };
+  },
+
   addManual: async (payload: { title: string; company: string; url?: string; jd_text: string }) => {
     const res = await api.post("/jobs/manual", payload);
     return res.data;

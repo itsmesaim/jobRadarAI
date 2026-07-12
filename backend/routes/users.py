@@ -25,6 +25,7 @@ from database import get_database
 from deps import get_current_user
 from models.user import DeleteAccountRequest
 from services.limits import get_user_usage
+from services.text_cleanup import clean_candidate_text
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -70,6 +71,11 @@ class SkillOverride(BaseModel):
 async def update_preferences(payload: UserPreferences, user=Depends(get_current_user)):
     db = get_database()
     prefs = payload.model_dump()
+
+    if prefs["about_me"].strip():
+        prefs["about_me"] = await clean_candidate_text(
+            prefs["about_me"], "candidate career summary", user_id=str(user["_id"])
+        )
 
     await db.users.update_one(
         {"_id": ObjectId(user["_id"])},

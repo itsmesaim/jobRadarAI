@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -29,15 +30,17 @@ export function AuthPageShell({ children, title, subtitle, showBrand = true }: A
       <div style={{ width: "100%", maxWidth: 380 }}>
         {showBrand && (
           <div style={{ textAlign: "center", marginBottom: 32 }}>
-            <div
+            <Link
+              to="/"
               style={{
                 display: "flex",
                 justifyContent: "center",
                 marginBottom: 10,
+                textDecoration: "none",
               }}
             >
               <Logo size={40} wordmarkSize={24} centered />
-            </div>
+            </Link>
             <p
               style={{
                 fontSize: 13,

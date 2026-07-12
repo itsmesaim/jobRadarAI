@@ -39,6 +39,7 @@ from services.limits import (
     get_user_usage,
     refund_rating,
 )
+from services.vectorstore import build_faiss_index, chunk_text, retrieve_top_k
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -471,6 +472,27 @@ Education: {json.dumps(structured.get('education', []))}
             "auto_reject": False,
         }
 
+    user_id = str(user.get("_id", ""))
+
+    # RAG: retrieve the JD chunks most relevant to this candidate instead of
+    # naively truncating, so long JDs don't silently lose tail content.
+    jd_context = await _retrieve_relevant_jd_context(job, cv_text)
+
+    # Calibrate against the user's own rating history on similar jobs
+    # (reuses jd_embedding if already cached from the prefilter step).
+    jd_embedding = job.get("jd_embedding")
+    if not jd_embedding:
+        try:
+            jd_embedding = await _get_jd_embedding(
+                job, get_embeddings(), user_id=user_id
+            )
+        except Exception:
+            jd_embedding = None
+    similar_block = ""
+    if jd_embedding:
+        similar_jobs = await _retrieve_similar_rated_jobs(user, job, jd_embedding)
+        similar_block = _build_similar_jobs_block(similar_jobs)
+
     # Compose the human message in the order that matters most
     # (about_me and overrides BEFORE the JD so they're in the LLM's context
     # when it reads the requirements, not appended as an afterthought)
@@ -483,7 +505,11 @@ Education: {json.dumps(structured.get('education', []))}
         sections += ["", "CANDIDATE KNOWLEDGE OVERRIDES:", overrides_block]
 
     sections += ["", "CANDIDATE STATED CONSTRAINTS:", constraints_block]
-    sections += ["", f"JOB DESCRIPTION:\n{jd_text[:4000]}"]
+
+    if similar_block:
+        sections += ["", similar_block]
+
+    sections += ["", f"JOB DESCRIPTION:\n{jd_context}"]
 
     human_message_content = "\n".join(sections)
 
@@ -495,7 +521,6 @@ Education: {json.dumps(structured.get('education', []))}
     ]
 
     try:
-        user_id = str(user.get("_id", ""))
         llm = get_rating_llm()
         provider = settings.rating_provider or settings.llm_provider
         model = getattr(
@@ -685,6 +710,175 @@ async def _get_jd_embedding(
         return vec
     except Exception:
         return None
+
+
+# ── RAG: JD chunk retrieval (replaces naive truncation) ──────────────────────
+
+JD_CHUNK_SIZE = 800
+JD_CHUNK_OVERLAP = 100
+
+# How many of the user's own past-rated jobs to consider as calibration
+# candidates. ponytail: bounds the FAISS rebuild cost to a small in-memory
+# index; move to a persistent index if a power user's rated-job count makes
+# this rebuild show up in latency.
+SIMILAR_JOBS_LOOKBACK = 200
+
+
+async def _get_jd_chunks(job: dict) -> list[dict]:
+    """Chunk + embed the JD once; cache on the job doc like jd_embedding."""
+    cached = job.get("jd_chunks")
+    if isinstance(cached, list) and cached:
+        return cached
+
+    jd_text = job.get("full_text") or job.get("snippet", "")
+    if len(jd_text) < 100:
+        return []
+
+    chunks = chunk_text(jd_text, chunk_size=JD_CHUNK_SIZE, overlap=JD_CHUNK_OVERLAP)
+    if not chunks:
+        return []
+
+    try:
+        embeddings = get_embeddings()
+        vecs = await embeddings.aembed_documents(chunks)
+    except Exception:
+        return []
+
+    jd_chunks = [{"text": t, "embedding": v} for t, v in zip(chunks, vecs)]
+    db = get_database()
+    await db.jobs.update_one(
+        {"_id": ObjectId(job["_id"])},
+        {"$set": {"jd_chunks": jd_chunks}},
+    )
+    return jd_chunks
+
+
+async def _retrieve_relevant_jd_context(
+    job: dict, query_text: str, k: int = 6, char_budget: int = 4000
+) -> str:
+    """Retrieve the JD chunks most relevant to query_text, in original order.
+
+    Falls back to plain head-truncation if chunking/embedding isn't
+    available (e.g. embeddings provider down) — degrade gracefully instead
+    of blocking rating.
+    """
+    fallback = (job.get("full_text") or job.get("snippet", ""))[:char_budget]
+
+    jd_chunks = await _get_jd_chunks(job)
+    if not jd_chunks:
+        return fallback
+
+    try:
+        embeddings = get_embeddings()
+        query_vec = await embeddings.aembed_query(query_text)
+    except Exception:
+        return fallback
+
+    texts = [c["text"] for c in jd_chunks]
+    vecs = [c["embedding"] for c in jd_chunks]
+    metadatas = [{"order": i} for i in range(len(texts))]
+    index = build_faiss_index(texts, vecs, embeddings, metadatas=metadatas)
+    if not index:
+        return fallback
+
+    results = retrieve_top_k(index, query_vec, k=k)
+    if not results:
+        return fallback
+
+    # Keep chunks by relevance rank first (a highly relevant chunk that
+    # happens to sit late in the document must not lose to the budget cap —
+    # that would just reintroduce the truncation bug this replaces), then
+    # sort the kept chunks back into original order so they read coherently.
+    kept = []
+    budget_left = char_budget
+    for doc in results:
+        if budget_left <= 0:
+            break
+        kept.append(doc)
+        budget_left -= len(doc.page_content)
+
+    ordered = sorted(kept, key=lambda d: d.metadata.get("order", 0))
+    return "\n\n".join(d.page_content for d in ordered)
+
+
+# ── RAG: calibration against the user's own rating history ───────────────────
+
+
+async def _retrieve_similar_rated_jobs(
+    user: dict, current_job: dict, current_job_embedding: list[float], k: int = 3
+) -> list[dict]:
+    """Find the user's own past-rated jobs most similar to current_job, so
+    the rating LLM can calibrate against how the user felt about similar
+    roles before (including any feedback they left on those ratings)."""
+    if not current_job_embedding:
+        return []
+
+    user_id = str(user.get("_id", ""))
+    rating_path = f"ratings.{user_id}"
+    db = get_database()
+    cursor = (
+        db.jobs.find(
+            {
+                "crawled_by": user_id,
+                f"{rating_path}.score": {"$gt": 0},
+                "jd_embedding": {"$exists": True, "$ne": []},
+                "_id": {"$ne": ObjectId(current_job["_id"])},
+            },
+            {
+                "title": 1,
+                "jd_embedding": 1,
+                rating_path: 1,
+                f"rating_feedback.{user_id}": 1,
+            },
+        )
+        .sort(f"{rating_path}.rated_at", -1)
+        .limit(SIMILAR_JOBS_LOOKBACK)
+    )
+    candidates = await cursor.to_list(length=SIMILAR_JOBS_LOOKBACK)
+    if not candidates:
+        return []
+
+    texts, vecs, metadatas = [], [], []
+    for c in candidates:
+        rating = (c.get("ratings") or {}).get(user_id, {})
+        user_feedback = (c.get("rating_feedback") or {}).get(user_id, {})
+        title = c.get("title", "Untitled")
+        texts.append(title)
+        vecs.append(c["jd_embedding"])
+        metadatas.append(
+            {
+                "title": title,
+                "score": rating.get("score"),
+                "verdict": rating.get("verdict", ""),
+                "feedback": user_feedback.get("comment", ""),
+                "stars": user_feedback.get("stars"),
+            }
+        )
+
+    try:
+        embeddings = get_embeddings()
+    except Exception:
+        return []
+    index = build_faiss_index(texts, vecs, embeddings, metadatas=metadatas)
+    if not index:
+        return []
+
+    results = retrieve_top_k(index, current_job_embedding, k=k)
+    return [r.metadata for r in results]
+
+
+def _build_similar_jobs_block(similar: list[dict]) -> str:
+    if not similar:
+        return ""
+    lines = ["Similar jobs you've already rated (use these to calibrate consistency):"]
+    for s in similar:
+        line = f"  - {s['title']}: {s.get('score')}/10 — {s.get('verdict', '')}"
+        if s.get("stars"):
+            line += f" (user rated {s['stars']}/5 stars)"
+        if s.get("feedback"):
+            line += f" | user feedback: '{s['feedback']}'"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 async def _fast_low_score_rating(sim: float = 0.0) -> dict:
@@ -934,7 +1128,9 @@ Skills: {', '.join(structured.get('skills', []))}
 Experience: {json.dumps(structured.get('experience', []))}
 """.strip()
 
-    jd_text = job.get("full_text") or job.get("snippet", "")
+    jd_context = await _retrieve_relevant_jd_context(
+        job, cv_text, k=5, char_budget=3000
+    )
 
     user_id = str(user.get("_id", ""))
     llm = get_llm()
@@ -945,7 +1141,7 @@ Experience: {json.dumps(structured.get('experience', []))}
     messages = [
         SystemMessage(content=ROAST_SYSTEM_PROMPT),
         HumanMessage(
-            content=f"JOB DESCRIPTION:\n{jd_text[:3000]}\n\nCANDIDATE CV:\n{cv_text}"
+            content=f"JOB DESCRIPTION:\n{jd_context}\n\nCANDIDATE CV:\n{cv_text}"
         ),
     ]
 

@@ -15,6 +15,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { ScoreBadge } from "./ScoreBadge";
+import { StarRating } from "./StarRating";
 import { jobsApi, crawlerApi } from "../api/index";
 import { LimitContactModal } from "./LimitContactModal";
 import type { Job } from "../types";
@@ -71,6 +72,10 @@ export function JobDetailModal({ job, onClose }: Props) {
   const [packLoading, setPackLoading] = useState(false);
   const [showApplyPackLimit, setShowApplyPackLimit] = useState(false);
   const [reRating, setReRating] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [starRating, setStarRating] = useState(0);
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   // Rating fields can change without the job's identity changing (title,
   // company, JD text stay the same) — track them separately so a re-rate
   // updates the modal immediately without needing the parent list to refetch.
@@ -157,6 +162,23 @@ export function JobDetailModal({ job, onClose }: Props) {
       }
     } finally {
       setReRating(false);
+    }
+  };
+
+  const handleSubmitFeedback = async () => {
+    const comment = feedbackText.trim();
+    if (!comment && !starRating) return;
+    setFeedbackSubmitting(true);
+    try {
+      await jobsApi.submitRatingFeedback(job.id, comment, starRating || undefined);
+      setFeedbackSubmitted(true);
+      setFeedbackText("");
+      toast.success("Thanks — this will help calibrate future ratings on similar jobs");
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { detail?: string } } };
+      toast.error(ax.response?.data?.detail || "Could not save feedback");
+    } finally {
+      setFeedbackSubmitting(false);
     }
   };
 
@@ -413,6 +435,76 @@ export function JobDetailModal({ job, onClose }: Props) {
                   </span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {rating.score !== null && rating.score > 0 && (
+            <div
+              style={{
+                marginBottom: 20,
+                padding: "12px 14px",
+                background: "var(--bg-secondary)",
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+              }}
+            >
+              <p
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  marginBottom: 10,
+                }}
+              >
+                Rate this AI review
+              </p>
+              <StarRating value={starRating} onChange={setStarRating} />
+              <p
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-muted)",
+                  margin: "10px 0 8px",
+                }}
+              >
+                Did this rating miss something? Your rating and note help calibrate ratings on
+                similar jobs.
+              </p>
+              <textarea
+                value={feedbackText}
+                onChange={(e) => setFeedbackText(e.target.value)}
+                placeholder="What did this rating get right or wrong?"
+                rows={3}
+                style={{
+                  width: "100%",
+                  resize: "vertical",
+                  fontSize: 13.5,
+                  padding: "8px 10px",
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-primary)",
+                  color: "var(--text-primary)",
+                  fontFamily: "inherit",
+                }}
+              />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={handleSubmitFeedback}
+                  disabled={feedbackSubmitting || (!feedbackText.trim() && !starRating)}
+                  className="btn btn-primary"
+                  style={{ padding: "6px 12px", fontSize: 13 }}
+                >
+                  {feedbackSubmitting ? (
+                    <Loader size={13} className="animate-spin" />
+                  ) : feedbackSubmitted ? (
+                    "Update feedback"
+                  ) : (
+                    "Submit"
+                  )}
+                </button>
+              </div>
             </div>
           )}
 

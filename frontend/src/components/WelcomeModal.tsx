@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Upload, Settings, Search, Zap, LayoutDashboard, X, ArrowRight } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Upload, Settings, Search, Zap, Star, LayoutDashboard, X, ArrowRight } from "lucide-react";
 
 const STEPS = [
   {
@@ -42,13 +42,33 @@ const STEPS = [
     desc: "Move jobs through New → Saved → Applied → Interviewing → Offer. The Kanban board keeps your pipeline organised.",
     action: { label: "Go to Kanban →", href: "/kanban" },
   },
+  {
+    icon: Star,
+    color: "var(--warning)",
+    bg: "var(--warning-bg)",
+    title: "Rate the AI's ratings",
+    desc: "Open a job and use the star rating + note under its review to tell us when it got something wrong — that feedback calibrates how similar jobs get rated next time.",
+    action: null,
+  },
 ];
 
 const STORAGE_KEY = "jobradar_welcomed";
 
-export function WelcomeModal() {
+interface Props {
+  forceOpen?: boolean;
+  onClose?: () => void;
+}
+
+export function WelcomeModal({ forceOpen = false, onClose }: Props = {}) {
   const [step, setStep] = useState(0);
   const [visible, setVisible] = useState(() => !localStorage.getItem(STORAGE_KEY));
+
+  useEffect(() => {
+    if (forceOpen) {
+      setStep(0);
+      setVisible(true);
+    }
+  }, [forceOpen]);
 
   if (!visible) return null;
 
@@ -59,6 +79,7 @@ export function WelcomeModal() {
   const dismiss = () => {
     localStorage.setItem(STORAGE_KEY, "1");
     setVisible(false);
+    onClose?.();
   };
 
   return (

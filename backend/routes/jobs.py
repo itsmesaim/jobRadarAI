@@ -39,6 +39,7 @@ from services.limits import (
     refund_apply_pack,
     refund_rating,
 )
+from services.text_cleanup import clean_candidate_text
 from services.url_fetch import fetch_job_page_text
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -593,6 +594,55 @@ async def rate_single_job(job_id: str, user=Depends(get_current_user)):
         "tailoring_tips": rating.get("tailoring_tips"),
         "rated_at": rating.get("rated_at"),
     }
+
+
+# ── RATING FEEDBACK — "did we miss something?" ────
+class RatingFeedbackRequest(BaseModel):
+    comment: str = ""
+    stars: int | None = None
+
+
+@router.post("/{job_id}/rating-feedback")
+async def submit_rating_feedback(
+    job_id: str, body: RatingFeedbackRequest, user=Depends(get_current_user)
+):
+    """Store the user's feedback on a job's AI rating. Future ratings of
+    similar jobs retrieve this feedback + stars as calibration context — see
+    _retrieve_similar_rated_jobs in services/rating.py."""
+    comment = body.comment.strip()
+    stars = body.stars
+    if stars is not None and not (1 <= stars <= 5):
+        raise HTTPException(status_code=400, detail="stars must be between 1 and 5.")
+    if not comment and stars is None:
+        raise HTTPException(
+            status_code=400, detail="Provide a star rating or a comment."
+        )
+
+    db = get_database()
+    user_id = str(user["_id"])
+
+    job_doc = await db.jobs.find_one({"_id": ObjectId(job_id), "crawled_by": user_id})
+    if not job_doc:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if comment:
+        comment = await clean_candidate_text(
+            comment, "feedback on an AI job rating", user_id=user_id
+        )
+
+    await db.jobs.update_one(
+        {"_id": ObjectId(job_id)},
+        {
+            "$set": {
+                f"rating_feedback.{user_id}": {
+                    "comment": comment[:1000],
+                    "stars": stars,
+                    "created_at": datetime.now(timezone.utc),
+                }
+            }
+        },
+    )
+    return {"message": "Feedback saved."}
 
 
 # ── BRIEF — must be before /{job_id} ─────────────────────

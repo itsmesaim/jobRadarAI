@@ -16,9 +16,10 @@ import { Navbar } from "./components/Navbar";
 import { WelcomeModal } from "./components/WelcomeModal";
 import { useAuthStore } from "./hooks/useStores";
 import { authApi } from "./api";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 function Layout({ children }: { children: React.ReactNode }) {
+  const [showWelcome, setShowWelcome] = useState(false);
   return (
     <div
       style={{
@@ -27,9 +28,9 @@ function Layout({ children }: { children: React.ReactNode }) {
         overflowX: "hidden",
       }}
     >
-      <Navbar />
+      <Navbar onHelpClick={() => setShowWelcome(true)} />
       <main style={{ overflowX: "hidden" }}>{children}</main>
-      <WelcomeModal />
+      <WelcomeModal forceOpen={showWelcome} onClose={() => setShowWelcome(false)} />
     </div>
   );
 }

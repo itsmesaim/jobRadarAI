@@ -1,11 +1,15 @@
 import { Link, useLocation } from "react-router-dom";
-import { LogOut, LayoutGrid, Kanban, Settings, Shield } from "lucide-react";
+import { LogOut, LayoutGrid, Kanban, Settings, Shield, HelpCircle } from "lucide-react";
 import { useAuthStore } from "../hooks/useStores";
 import { clearUserScopedCache } from "../queryClient";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 
-export function Navbar() {
+interface Props {
+  onHelpClick?: () => void;
+}
+
+export function Navbar({ onHelpClick }: Props = {}) {
   const location = useLocation();
   const logout = useAuthStore((s) => s.logout);
 
@@ -99,6 +103,17 @@ export function Navbar() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {onHelpClick && (
+            <button
+              onClick={onHelpClick}
+              className="btn btn-ghost"
+              style={{ padding: "8px 10px" }}
+              title="How JobRadar works"
+              aria-label="Help"
+            >
+              <HelpCircle size={16} />
+            </button>
+          )}
           <ThemeToggle />
           <button
             onClick={() => {

@@ -6,7 +6,6 @@ import {
   Briefcase,
   Check,
   Clock,
-  Cpu,
   ExternalLink,
   Kanban,
   LayoutGrid,
@@ -16,6 +15,7 @@ import {
   Search,
   Shield,
   Sparkles,
+  Star,
   UserCircle,
   X,
   Zap,
@@ -27,7 +27,7 @@ import { ScoreBadge } from "../components/ScoreBadge";
 const FEATURES = [
   {
     title: "Multi-board search",
-    desc: "One button searches Jooble, Indeed, and LinkedIn for the roles and cities you set. Each market runs on its own. Duplicates get filtered out.",
+    desc: "One button searches Jooble and Indeed for the roles and cities you set. Each market runs on its own. Duplicates get filtered out by URL.",
     Icon: Search,
   },
   {
@@ -37,13 +37,13 @@ const FEATURES = [
   },
   {
     title: "AI fit scoring",
-    desc: "Each job gets a 1 to 10 score from your full profile: CV, preferences, and notes. You see what matches, what's missing, and whether it's worth applying.",
+    desc: "Each job gets a 1 to 10 score from your full profile: CV, preferences, and notes, plus strengths, gaps, and tailoring tips for that specific listing.",
     Icon: Sparkles,
   },
   {
-    title: "Tailoring tips",
-    desc: "Before you spend twenty minutes on an application, see what to lead with and what gaps to cover for that specific role.",
-    Icon: Cpu,
+    title: "Learns from your corrections",
+    desc: "Rate the AI's rating 1 to 5 stars and leave a note when it misses something. That feedback gets pulled in the next time a similar job comes up, so scoring gets more consistent with you over time.",
+    Icon: Star,
   },
   {
     title: "Kanban pipeline",
@@ -60,24 +60,24 @@ const FEATURES = [
 const WITHOUT = [
   "Five job board tabs open, reading the same listings over and over",
   "Fit scores based on a bare resume with no role, market, or experience context",
+  "The same AI mistake on every similar listing because nothing you say sticks",
   "Applications living in a spreadsheet you stopped updating weeks ago",
-  "Searching the wrong cities or seniority bands because it's all in your head",
 ];
 
 const WITH = [
   "One search across every board, tuned to your roles and locations",
   "Every job scored against your full profile: CV, preferences, and about-you notes",
+  "Rate a rating wrong and it calibrates every similar job after that",
   "A Kanban board that shows where each application actually stands",
-  "Fill in more in Settings and the 1 to 10 ratings get noticeably better",
 ];
 
 const STACK = [
   "React 18 + TypeScript + Vite",
   "FastAPI + Motor (MongoDB)",
   "LangChain (split main + rating LLM)",
+  "FAISS RAG for JD context + rating calibration",
   "TanStack Query + Zustand",
-  "Jooble · Indeed · JobsAPI",
-  "JWT + bcrypt auth",
+  "Jooble · JobsAPI (Indeed)",
 ];
 
 const HOW_IT_WORKS = [
@@ -87,11 +87,15 @@ const HOW_IT_WORKS = [
   },
   {
     title: "Search your markets",
-    body: "JobRadar runs searches on Jooble, Indeed, and LinkedIn using those prefs. Each location is searched separately and repeat listings are cut.",
+    body: "JobRadar runs searches on Jooble and Indeed using those prefs, or paste in a job description directly. Each location is searched separately and repeat listings are cut.",
   },
   {
     title: "AI scores every listing",
     body: "Every job gets scored against your full profile, not just keywords on a PDF. You get a fit score, strengths, gaps, and tips for that application.",
+  },
+  {
+    title: "Rate the rating",
+    body: "Disagree with a score? Leave a star rating and a note right on the job. The next similar listing gets rated with that feedback in mind.",
   },
   {
     title: "Track on Kanban",
@@ -122,20 +126,20 @@ const PREVIEW_JOBS = [
     borderColor: "var(--accent)",
   },
   {
-    source: "LinkedIn",
+    source: "Manual",
     title: "Software Engineer",
     company: "Stripe",
     location: "Dublin",
     score: 7,
     summary:
-      "Good backend fit. Light on distributed systems, so mention any exposure in your cover letter.",
+      "Pasted this one in directly. Good backend fit. Light on distributed systems, so mention any exposure in your cover letter.",
     status: "NEW",
     borderColor: "var(--warning)",
   },
 ];
 
 const HERO_STATS = [
-  { label: "Boards searched", value: "3+", accent: "is-accent" },
+  { label: "Boards searched", value: "2", accent: "is-accent" },
   { label: "Profile inputs", value: "10+", accent: "" },
   { label: "AI fit score", value: "1-10", accent: "is-success" },
 ];
@@ -504,7 +508,8 @@ export function LandingPage() {
               <p>
                 React frontend on TanStack Query, FastAPI backend, MongoDB for storage, and
                 LangChain with two LLMs: one for CV parsing, a faster one for bulk job ratings
-                against your CV and saved preferences.
+                against your CV and saved preferences. FAISS retrieval picks the most relevant JD
+                context and pulls in your past feedback on similar jobs.
               </p>
               <ul className="landing-stack-list">
                 {STACK.map((item) => (
@@ -528,12 +533,18 @@ export function LandingPage() {
                   Settings.
                 </li>
                 <li>
-                  <strong>Search jobs.</strong> Crawlers hit Jooble, Indeed, and JobsAPI using your
-                  prefs. Each market is searched separately. Duplicates are cut.
+                  <strong>Search jobs.</strong> Crawlers hit Jooble and Indeed (via JobsAPI) using
+                  your prefs, or paste a JD in directly. Each market is searched separately.
+                  Duplicates are cut.
                 </li>
                 <li>
                   <strong>AI rates each listing.</strong> Rating LLM scores fit 1 to 10 from your CV
-                  plus preferences. You get strengths, gaps, and tailoring tips.
+                  plus preferences, retrieving the most relevant parts of the JD by search rather
+                  than just truncating it. You get strengths, gaps, and tailoring tips.
+                </li>
+                <li>
+                  <strong>You rate the rating.</strong> Star it and leave a note when it's off. That
+                  feedback gets retrieved again next time a similar job comes up.
                 </li>
                 <li>
                   <strong>Track on Kanban.</strong> Drag cards through your pipeline. Status stays
