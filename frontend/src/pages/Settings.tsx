@@ -336,7 +336,7 @@ export function SettingsPage() {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 12,
+                gap: "var(--space-3)",
                 flexWrap: "wrap",
               }}
             >
@@ -344,17 +344,17 @@ export function SettingsPage() {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 8,
+                  gap: "var(--space-2)",
                   background: "var(--success-bg)",
                   border: "1px solid var(--success)",
-                  borderRadius: 7,
+                  borderRadius: "var(--radius-sm)",
                   padding: "8px 14px",
                 }}
               >
                 <Check size={14} style={{ color: "var(--success)" }} />
                 <span
                   style={{
-                    fontSize: 13,
+                    fontSize: "var(--text-sm)",
                     color: "var(--success)",
                     fontWeight: 500,
                   }}
@@ -365,7 +365,7 @@ export function SettingsPage() {
               <button
                 onClick={() => fileRef.current?.click()}
                 className="btn btn-ghost"
-                style={{ fontSize: 12 }}
+                style={{ fontSize: "var(--text-xs)" }}
               >
                 <Upload size={13} /> Replace
               </button>
@@ -377,11 +377,11 @@ export function SettingsPage() {
                 }}
                 disabled={deleteCvMutation.isPending}
                 className="btn btn-ghost"
-                style={{ fontSize: 12, color: "var(--danger)" }}
+                style={{ fontSize: "var(--text-xs)", color: "var(--danger)" }}
               >
                 <Trash2 size={13} /> Delete CV
               </button>
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
                 {cv.structured?.skills?.length} skills · {cv.structured?.projects?.length} projects
                 · {cv.structured?.experience?.length} roles
               </span>
@@ -397,24 +397,28 @@ export function SettingsPage() {
                 width: "100%",
                 padding: "32px 20px",
                 border: "2px dashed var(--border)",
-                borderRadius: 10,
+                borderRadius: "var(--radius)",
                 background: "var(--bg-secondary)",
                 cursor: "pointer",
-                gap: 8,
+                gap: "var(--space-2)",
               }}
             >
               {uploading ? (
                 <>
                   <Loader size={20} className="animate-spin" style={{ color: "var(--accent)" }} />
-                  <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Uploading...</span>
+                  <span style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+                    Uploading...
+                  </span>
                 </>
               ) : (
                 <>
                   <Upload size={20} style={{ color: "var(--text-muted)" }} />
-                  <span style={{ fontSize: 13, color: "var(--text)" }}>
+                  <span style={{ fontSize: "var(--text-sm)", color: "var(--text)" }}>
                     Click to upload your CV
                   </span>
-                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>PDF · Max 5MB</span>
+                  <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                    PDF · Max 5MB
+                  </span>
                 </>
               )}
             </button>
@@ -431,11 +435,11 @@ export function SettingsPage() {
         {/* About you — NEW */}
         <Section
           title="About you"
-          subtitle="Career context fed directly to the rating engine. Pivot goals, constraints, priorities — injected before the JD so the LLM factors it into strengths, not just gaps."
+          subtitle="Career context fed directly to the rating engine. Pivot goals, constraints, priorities, injected before the JD so the LLM factors it into strengths, not just gaps."
         >
           <textarea
             className="input"
-            placeholder="e.g. Looking to move from backend into AI engineering. Built production LangChain apps but PyTorch isn't on my CV — comfortable learning on the job. Not interested in pure enterprise Java roles."
+            placeholder="e.g. Looking to move from backend into AI engineering. Built production LangChain apps but PyTorch isn't on my CV, comfortable learning on the job. Not interested in pure enterprise Java roles."
             value={localPrefs.about_me}
             onChange={(e) => update({ about_me: e.target.value })}
             rows={4}
@@ -448,16 +452,16 @@ export function SettingsPage() {
         {/* Email reminders */}
         <Section
           title="Email reminders"
-          subtitle="Get up to 2 emails per day when you have unapplied jobs scoring 8+/10 — same nudge as the dashboard banner."
+          subtitle="Get up to 2 emails per day when you have unapplied jobs scoring 8+/10, same nudge as the dashboard banner."
         >
           <label
             style={{
               display: "flex",
               alignItems: "flex-start",
-              gap: 12,
+              gap: "var(--space-3)",
               cursor: "pointer",
               padding: "12px 14px",
-              borderRadius: 8,
+              borderRadius: "var(--radius-sm)",
               border: "1px solid var(--border)",
               background: "var(--bg-secondary)",
             }}
@@ -473,11 +477,11 @@ export function SettingsPage() {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 6,
-                  fontSize: 14,
+                  gap: "var(--space-2)",
+                  fontSize: "var(--text-base)",
                   fontWeight: 600,
                   color: "var(--text)",
-                  marginBottom: 4,
+                  marginBottom: "var(--space-1)",
                 }}
               >
                 <Mail size={15} />
@@ -485,7 +489,7 @@ export function SettingsPage() {
               </span>
               <span
                 style={{
-                  fontSize: 13,
+                  fontSize: "var(--text-sm)",
                   color: "var(--text-muted)",
                   lineHeight: 1.5,
                 }}
@@ -501,7 +505,7 @@ export function SettingsPage() {
       <SectionGroup id="preferences" icon={SlidersHorizontal} label="Job search preferences">
         {/* Role */}
         <Section title="Role" subtitle="What roles should we search for?">
-          <div style={{ marginBottom: 12 }}>
+          <div style={{ marginBottom: "var(--space-3)" }}>
             <label className="label">Primary role</label>
             <input
               className="input settings-field-narrow"
@@ -515,8 +519,8 @@ export function SettingsPage() {
               style={{
                 display: "flex",
                 flexWrap: "wrap",
-                gap: 6,
-                marginBottom: 8,
+                gap: "var(--space-2)",
+                marginBottom: "var(--space-2)",
               }}
             >
               {localPrefs.secondary_roles.map((r) => (
@@ -555,7 +559,7 @@ export function SettingsPage() {
                   style={{
                     flex: 1,
                     padding: "10px 14px",
-                    borderRadius: 8,
+                    borderRadius: "var(--radius-sm)",
                     cursor: "pointer",
                     border: active ? "1.5px solid var(--accent)" : "1px solid var(--border)",
                     background: active ? "var(--accent-light)" : "var(--bg-secondary)",
@@ -565,7 +569,7 @@ export function SettingsPage() {
                 >
                   <div
                     style={{
-                      fontSize: 13,
+                      fontSize: "var(--text-sm)",
                       fontWeight: 600,
                       color: active ? "var(--accent)" : "var(--text)",
                     }}
@@ -574,7 +578,7 @@ export function SettingsPage() {
                   </div>
                   <div
                     style={{
-                      fontSize: 11,
+                      fontSize: "var(--text-xs)",
                       color: "var(--text-muted)",
                       marginTop: 2,
                     }}
@@ -594,7 +598,7 @@ export function SettingsPage() {
         >
           <input
             className="input"
-            placeholder="e.g. Stamp 1G, Ireland — no sponsorship needed"
+            placeholder="e.g. Stamp 1G, Ireland, no sponsorship needed"
             value={localPrefs.work_authorization}
             onChange={(e) => update({ work_authorization: e.target.value })}
           />
@@ -602,21 +606,21 @@ export function SettingsPage() {
             style={{
               display: "flex",
               alignItems: "flex-start",
-              gap: 6,
-              marginTop: 8,
+              gap: "var(--space-2)",
+              marginTop: "var(--space-2)",
             }}
           >
             <Info size={13} style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }} />
             <p
               style={{
-                fontSize: 11.5,
+                fontSize: "var(--text-xs)",
                 color: "var(--text-muted)",
                 margin: 0,
                 lineHeight: 1.5,
               }}
             >
-              Be specific — "Stamp 1G, no sponsorship needed" works much better than just "Irish
-              work visa."
+              Be specific: "Stamp 1G, no sponsorship needed" works much better than just "Irish work
+              visa."
             </p>
           </div>
         </Section>
@@ -626,7 +630,14 @@ export function SettingsPage() {
           title="Locations"
           subtitle="Every location gets its own separate search. Add as many as you want."
         >
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "var(--space-2)",
+              marginBottom: "var(--space-2)",
+            }}
+          >
             {localPrefs.preferred_locations.map((l) => (
               <Tag
                 key={l}
@@ -646,17 +657,17 @@ export function SettingsPage() {
             placeholder="e.g. Dublin Ireland"
           />
           {/* quick-add examples */}
-          <div style={{ marginTop: 10 }}>
+          <div style={{ marginTop: "var(--space-3)" }}>
             <p
               style={{
-                fontSize: 11.5,
+                fontSize: "var(--text-xs)",
                 color: "var(--text-muted)",
                 margin: "0 0 6px",
               }}
             >
               Quick add:
             </p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
               {LOCATION_EXAMPLES.filter((ex) => !localPrefs.preferred_locations.includes(ex)).map(
                 (ex) => (
                   <button
@@ -667,9 +678,9 @@ export function SettingsPage() {
                       })
                     }
                     style={{
-                      fontSize: 11,
+                      fontSize: "var(--text-xs)",
                       padding: "3px 9px",
-                      borderRadius: 20,
+                      borderRadius: "var(--radius-pill)",
                       cursor: "pointer",
                       border: "1px dashed var(--border)",
                       background: "transparent",
@@ -689,16 +700,16 @@ export function SettingsPage() {
           title="Work mode"
           subtitle="Onsite-only roles will be flagged as a mismatch if not selected here."
         >
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
             {(["remote", "hybrid", "onsite"] as const).map((mode) => (
               <label
                 key={mode}
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 6,
+                  gap: "var(--space-2)",
                   cursor: "pointer",
-                  fontSize: 13,
+                  fontSize: "var(--text-sm)",
                 }}
               >
                 <input
@@ -721,7 +732,7 @@ export function SettingsPage() {
 
         {/* Job types */}
         <Section title="Job types" subtitle="What types of roles to include?">
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
             {(Object.keys(localPrefs.job_types) as (keyof typeof localPrefs.job_types)[])
               .filter((key) => key !== "remote")
               .map((key) => (
@@ -730,9 +741,9 @@ export function SettingsPage() {
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 6,
+                    gap: "var(--space-2)",
                     cursor: "pointer",
-                    fontSize: 13,
+                    fontSize: "var(--text-sm)",
                   }}
                 >
                   <input
@@ -760,7 +771,14 @@ export function SettingsPage() {
           title="Industries to avoid"
           subtitle="Jobs in these sectors will be flagged even if technically a skills fit."
         >
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "var(--space-2)",
+              marginBottom: "var(--space-2)",
+            }}
+          >
             {localPrefs.avoid_industries.map((ind) => (
               <Tag
                 key={ind}
@@ -785,7 +803,14 @@ export function SettingsPage() {
 
         {/* Key skills */}
         <Section title="Key skills" subtitle="Used to generate personalised search queries.">
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "var(--space-2)",
+              marginBottom: "var(--space-2)",
+            }}
+          >
             {localPrefs.key_skills.map((s) => (
               <Tag
                 key={s}
@@ -817,7 +842,7 @@ export function SettingsPage() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 10,
+              gap: "var(--space-3)",
               flexWrap: "wrap",
             }}
           >
@@ -850,20 +875,20 @@ export function SettingsPage() {
               }}
               style={{ maxWidth: 140 }}
             />
-            <span style={{ fontSize: 13, color: "var(--text-muted)" }}>per year</span>
+            <span style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>per year</span>
           </div>
           <div
             style={{
               display: "flex",
               alignItems: "flex-start",
-              gap: 6,
-              marginTop: 8,
+              gap: "var(--space-2)",
+              marginTop: "var(--space-2)",
             }}
           >
             <Info size={13} style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }} />
             <p
               style={{
-                fontSize: 11.5,
+                fontSize: "var(--text-xs)",
                 color: "var(--text-muted)",
                 margin: 0,
                 lineHeight: 1.5,
@@ -885,8 +910,8 @@ export function SettingsPage() {
               style={{
                 display: "flex",
                 flexDirection: "column",
-                gap: 8,
-                marginBottom: 14,
+                gap: "var(--space-2)",
+                marginBottom: "var(--space-4)",
               }}
             >
               {overrides.map((o) => (
@@ -895,9 +920,9 @@ export function SettingsPage() {
                   style={{
                     display: "flex",
                     alignItems: "flex-start",
-                    gap: 10,
+                    gap: "var(--space-3)",
                     background: "var(--purple-bg)",
-                    borderRadius: 8,
+                    borderRadius: "var(--radius-sm)",
                     padding: "10px 12px",
                     border: "1px solid var(--border)",
                   }}
@@ -913,7 +938,7 @@ export function SettingsPage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
-                        fontSize: 12.5,
+                        fontSize: "var(--text-xs)",
                         fontWeight: 600,
                         color: "var(--purple)",
                         marginBottom: 2,
@@ -923,7 +948,7 @@ export function SettingsPage() {
                     </div>
                     <div
                       style={{
-                        fontSize: 12,
+                        fontSize: "var(--text-xs)",
                         color: "var(--text-secondary)",
                         lineHeight: 1.5,
                       }}
@@ -955,13 +980,13 @@ export function SettingsPage() {
             <button
               onClick={() => setAddingOverride(true)}
               className="btn btn-ghost"
-              style={{ fontSize: 12.5 }}
+              style={{ fontSize: "var(--text-xs)" }}
             >
               <Plus size={13} /> Add skill override
             </button>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+              <div style={{ display: "flex", gap: "var(--space-2)" }}>
                 <input
                   className="input"
                   placeholder="Skill (e.g. plotly)"
@@ -983,10 +1008,10 @@ export function SettingsPage() {
                   }
                 />
               </div>
-              <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: 0 }}>
+              <p style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", margin: 0 }}>
                 e.g. "plotly" → "used in BEng for ML model visualisation across 3 projects"
               </p>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: "var(--space-2)" }}>
                 <button
                   onClick={() => addOverrideMutation.mutate()}
                   disabled={
@@ -995,7 +1020,7 @@ export function SettingsPage() {
                     addOverrideMutation.isPending
                   }
                   className="btn btn-primary"
-                  style={{ fontSize: 12 }}
+                  style={{ fontSize: "var(--text-xs)" }}
                 >
                   {addOverrideMutation.isPending ? "Saving..." : "Save override"}
                 </button>
@@ -1006,7 +1031,7 @@ export function SettingsPage() {
                     setNewOverrideContext("");
                   }}
                   className="btn btn-ghost"
-                  style={{ fontSize: 12 }}
+                  style={{ fontSize: "var(--text-xs)" }}
                 >
                   Cancel
                 </button>
@@ -1018,7 +1043,7 @@ export function SettingsPage() {
 
       <SectionGroup id="account" icon={KeyRound} label="Account & security">
         <Section title="Password" subtitle="Change your sign-in password">
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
             <div>
               <label className="label">Current password</label>
               <input
@@ -1075,7 +1100,7 @@ export function SettingsPage() {
             >
               {changingPassword ? "Updating..." : "Change password"}
             </button>
-            <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>
+            <p style={{ margin: 0, fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
               Forgot your password?{" "}
               <a href="/forgot-password" style={{ color: "var(--accent)" }}>
                 Reset via email
@@ -1117,7 +1142,7 @@ export function SettingsPage() {
             alignItems: "center",
             justifyContent: "center",
             zIndex: 1000,
-            padding: 16,
+            padding: "var(--space-4)",
           }}
         >
           <div
@@ -1126,7 +1151,7 @@ export function SettingsPage() {
             style={{
               maxWidth: 420,
               width: "100%",
-              padding: 24,
+              padding: "var(--space-6)",
               boxShadow: "var(--shadow-lg)",
             }}
           >
@@ -1134,17 +1159,19 @@ export function SettingsPage() {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 10,
-                marginBottom: 14,
+                gap: "var(--space-3)",
+                marginBottom: "var(--space-4)",
               }}
             >
               <Skull size={22} style={{ color: "var(--danger)" }} />
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Delete everything?</h3>
+              <h3 style={{ margin: 0, fontSize: "var(--text-xl)", fontWeight: 600 }}>
+                Delete everything?
+              </h3>
             </div>
             <p
               style={{
                 margin: "0 0 14px",
-                fontSize: 14,
+                fontSize: "var(--text-base)",
                 color: "var(--text-secondary)",
                 lineHeight: 1.55,
               }}
@@ -1155,7 +1182,7 @@ export function SettingsPage() {
             <p
               style={{
                 margin: "0 0 8px",
-                fontSize: 12,
+                fontSize: "var(--text-xs)",
                 color: "var(--text-muted)",
               }}
             >
@@ -1168,16 +1195,16 @@ export function SettingsPage() {
               onChange={(e) => setDeletePassword(e.target.value)}
               placeholder="Your password"
               autoComplete="current-password"
-              style={{ marginBottom: 10 }}
+              style={{ marginBottom: "var(--space-3)" }}
             />
             <input
               className="input"
               value={deleteConfirm}
               onChange={(e) => setDeleteConfirm(e.target.value)}
               placeholder="DELETE"
-              style={{ marginBottom: 16 }}
+              style={{ marginBottom: "var(--space-4)" }}
             />
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
               <button
                 onClick={() => deleteAccountMutation.mutate()}
                 disabled={
@@ -1207,14 +1234,18 @@ export function SettingsPage() {
         <div className="settings-save-bar" role="region" aria-label="Unsaved changes">
           <span className="settings-save-bar-label">You have unsaved changes</span>
           <div className="settings-save-bar-actions">
-            <button onClick={discardChanges} className="btn btn-ghost" style={{ fontSize: 13 }}>
+            <button
+              onClick={discardChanges}
+              className="btn btn-ghost"
+              style={{ fontSize: "var(--text-sm)" }}
+            >
               Discard
             </button>
             <button
               onClick={() => saveMutation.mutate()}
               disabled={saveMutation.isPending}
               className="btn btn-primary"
-              style={{ fontSize: 13 }}
+              style={{ fontSize: "var(--text-sm)" }}
             >
               {saveMutation.isPending ? (
                 <>
@@ -1299,7 +1330,7 @@ function JobCleanupSection() {
       const res = await jobsApi.previewCleanup(buildReq());
       setPreview(res.count);
     } catch {
-      toast.error("Preview failed — try again");
+      toast.error("Preview failed, try again");
     } finally {
       setLoading(false);
     }
@@ -1329,19 +1360,19 @@ function JobCleanupSection() {
         style={{
           display: "flex",
           alignItems: "flex-start",
-          gap: 10,
+          gap: "var(--space-3)",
           padding: "10px 14px",
-          borderRadius: 8,
+          borderRadius: "var(--radius-sm)",
           background: "var(--warning-bg)",
           border: "1px solid var(--warning-border)",
-          marginBottom: 16,
+          marginBottom: "var(--space-4)",
         }}
       >
         <AlertTriangle size={14} style={{ color: "var(--warning)", flexShrink: 0, marginTop: 2 }} />
         <p
           style={{
             margin: 0,
-            fontSize: 12,
+            fontSize: "var(--text-xs)",
             color: "var(--text-secondary)",
             lineHeight: 1.5,
           }}
@@ -1356,8 +1387,8 @@ function JobCleanupSection() {
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
-          gap: 8,
-          marginBottom: 16,
+          gap: "var(--space-2)",
+          marginBottom: "var(--space-4)",
         }}
       >
         {USER_CLEANUP_OPTIONS.map((opt) => {
@@ -1372,7 +1403,7 @@ function JobCleanupSection() {
               }}
               style={{
                 padding: "12px 14px",
-                borderRadius: 10,
+                borderRadius: "var(--radius)",
                 border: `1.5px solid ${active ? "var(--accent)" : "var(--border)"}`,
                 background: active ? "var(--accent-light)" : "var(--bg-secondary)",
                 cursor: "pointer",
@@ -1383,14 +1414,14 @@ function JobCleanupSection() {
               <div
                 style={{
                   color: active ? "var(--accent)" : "var(--text-muted)",
-                  marginBottom: 6,
+                  marginBottom: "var(--space-2)",
                 }}
               >
                 {opt.icon}
               </div>
               <div
                 style={{
-                  fontSize: 13,
+                  fontSize: "var(--text-sm)",
                   fontWeight: 600,
                   color: active ? "var(--accent)" : "var(--text)",
                   marginBottom: 2,
@@ -1400,7 +1431,7 @@ function JobCleanupSection() {
               </div>
               <div
                 style={{
-                  fontSize: 11,
+                  fontSize: "var(--text-xs)",
                   color: "var(--text-muted)",
                   lineHeight: 1.4,
                 }}
@@ -1418,11 +1449,13 @@ function JobCleanupSection() {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 10,
-            marginBottom: 14,
+            gap: "var(--space-3)",
+            marginBottom: "var(--space-4)",
           }}
         >
-          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Older than</span>
+          <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
+            Older than
+          </span>
           <input
             type="number"
             value={olderThanDays}
@@ -1435,22 +1468,22 @@ function JobCleanupSection() {
             className="input"
             style={{ maxWidth: 80, textAlign: "center" }}
           />
-          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>days</span>
+          <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>days</span>
         </div>
       )}
 
       {filterType === "by_status" && (
-        <div style={{ marginBottom: 14 }}>
+        <div style={{ marginBottom: "var(--space-4)" }}>
           <p
             style={{
               margin: "0 0 8px",
-              fontSize: 12,
+              fontSize: "var(--text-xs)",
               color: "var(--text-muted)",
             }}
           >
             Include these stages:
           </p>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
             {TERMINAL_STATUSES.map((s) => {
               const checked = selectedStatuses.includes(s);
               return (
@@ -1463,11 +1496,11 @@ function JobCleanupSection() {
                   }}
                   style={{
                     padding: "5px 14px",
-                    borderRadius: 20,
+                    borderRadius: "var(--radius-pill)",
                     border: checked ? "1.5px solid var(--accent)" : "1px solid var(--border)",
                     background: checked ? "var(--accent-light)" : "var(--bg-secondary)",
                     color: checked ? "var(--accent)" : "var(--text-secondary)",
-                    fontSize: 12,
+                    fontSize: "var(--text-xs)",
                     fontWeight: checked ? 600 : 400,
                     cursor: "pointer",
                     transition: "all 0.15s",
@@ -1486,7 +1519,7 @@ function JobCleanupSection() {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
+          gap: "var(--space-3)",
           flexWrap: "wrap",
         }}
       >
@@ -1495,7 +1528,7 @@ function JobCleanupSection() {
           onClick={handlePreview}
           disabled={loading}
           className="btn btn-secondary"
-          style={{ fontSize: 13 }}
+          style={{ fontSize: "var(--text-sm)" }}
         >
           {loading && preview === null ? "Checking..." : "Preview count"}
         </button>
@@ -1505,12 +1538,12 @@ function JobCleanupSection() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 6,
+              gap: "var(--space-2)",
               padding: "6px 12px",
-              borderRadius: 8,
+              borderRadius: "var(--radius-sm)",
               background: preview > 0 ? "var(--warning-bg)" : "var(--success-bg)",
               border: `1px solid ${preview > 0 ? "var(--warning-border)" : "var(--success-border)"}`,
-              fontSize: 13,
+              fontSize: "var(--text-sm)",
               fontWeight: 600,
               color: preview > 0 ? "var(--warning)" : "var(--success)",
             }}
@@ -1523,18 +1556,18 @@ function JobCleanupSection() {
       </div>
 
       {preview !== null && preview > 0 && (
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginTop: "var(--space-4)" }}>
           <label
             style={{
               display: "flex",
               alignItems: "flex-start",
-              gap: 10,
+              gap: "var(--space-3)",
               cursor: "pointer",
               padding: "12px 14px",
-              borderRadius: 8,
+              borderRadius: "var(--radius-sm)",
               border: `1px solid ${confirmed ? "var(--danger)" : "var(--border)"}`,
               background: confirmed ? "var(--danger-bg)" : "var(--bg-secondary)",
-              marginBottom: 10,
+              marginBottom: "var(--space-3)",
               transition: "all 0.15s",
             }}
           >
@@ -1544,7 +1577,7 @@ function JobCleanupSection() {
               onChange={(e) => setConfirmed(e.target.checked)}
               style={{ marginTop: 3, accentColor: "var(--danger)" }}
             />
-            <span style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>
+            <span style={{ fontSize: "var(--text-sm)", color: "var(--text)", lineHeight: 1.5 }}>
               I understand these {preview} jobs will be permanently deleted. They may reappear after
               the next crawl.
             </span>
@@ -1556,7 +1589,7 @@ function JobCleanupSection() {
               onClick={handleDelete}
               disabled={loading}
               className="btn btn-danger"
-              style={{ fontSize: 13, gap: 6 }}
+              style={{ fontSize: "var(--text-sm)", gap: "var(--space-2)" }}
             >
               <Trash2 size={13} />
               {loading ? "Deleting..." : `Delete ${preview} jobs`}
@@ -1587,15 +1620,15 @@ function DataPrivacySection({
         style={{
           background: "var(--warning-bg)",
           border: "1px solid var(--warning-border)",
-          borderRadius: 10,
+          borderRadius: "var(--radius)",
           padding: "14px 16px",
-          marginBottom: 16,
+          marginBottom: "var(--space-4)",
         }}
       >
         <div
           style={{
             display: "flex",
-            gap: 10,
+            gap: "var(--space-3)",
             alignItems: "flex-start",
           }}
         >
@@ -1604,7 +1637,7 @@ function DataPrivacySection({
             <p
               style={{
                 margin: "0 0 8px",
-                fontSize: 14,
+                fontSize: "var(--text-base)",
                 fontWeight: 600,
                 color: "var(--text)",
                 lineHeight: 1.45,
@@ -1615,7 +1648,7 @@ function DataPrivacySection({
             <p
               style={{
                 margin: 0,
-                fontSize: 12,
+                fontSize: "var(--text-xs)",
                 color: "var(--text-secondary)",
                 lineHeight: 1.55,
               }}
@@ -1623,7 +1656,7 @@ function DataPrivacySection({
               {summary?.legal_note ??
                 "Job listings come from third-party APIs. Your CV may be sent to an AI for matching. Download or delete your data anytime below."}
             </p>
-            <p style={{ margin: "8px 0 0", fontSize: 12 }}>
+            <p style={{ margin: "8px 0 0", fontSize: "var(--text-xs)" }}>
               <Link to="/privacy" target="_blank" style={{ color: "var(--accent)" }}>
                 Privacy Policy
               </Link>
@@ -1641,10 +1674,10 @@ function DataPrivacySection({
           <p
             className="label"
             style={{
-              marginBottom: 10,
+              marginBottom: "var(--space-3)",
               display: "flex",
               alignItems: "center",
-              gap: 6,
+              gap: "var(--space-2)",
             }}
           >
             <ShieldAlert size={14} /> What's on file right now
@@ -1653,8 +1686,8 @@ function DataPrivacySection({
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-              gap: 8,
-              marginBottom: 14,
+              gap: "var(--space-2)",
+              marginBottom: "var(--space-4)",
             }}
           >
             <DataStat label="Jobs saved" value={String(summary.jobs.total)} />
@@ -1666,13 +1699,13 @@ function DataPrivacySection({
           {summary.cv && (
             <p
               style={{
-                fontSize: 12,
+                fontSize: "var(--text-xs)",
                 color: "var(--text-secondary)",
                 margin: "0 0 12px",
                 lineHeight: 1.5,
               }}
             >
-              CV: <strong>{summary.cv.filename}</strong> — {summary.cv.skills_count} skills,{" "}
+              CV: <strong>{summary.cv.filename}</strong> · {summary.cv.skills_count} skills,{" "}
               {summary.cv.experience_count} roles, {summary.cv.projects_count} projects
             </p>
           )}
@@ -1684,7 +1717,7 @@ function DataPrivacySection({
               listStyle: "none",
               display: "flex",
               flexDirection: "column",
-              gap: 6,
+              gap: "var(--space-2)",
             }}
           >
             {summary.stored_items.map((item) => (
@@ -1693,8 +1726,8 @@ function DataPrivacySection({
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 8,
-                  fontSize: 13,
+                  gap: "var(--space-2)",
+                  fontSize: "var(--text-sm)",
                   color: item.stored ? "var(--text)" : "var(--text-muted)",
                 }}
               >
@@ -1712,14 +1745,14 @@ function DataPrivacySection({
             ))}
           </ul>
 
-          <p className="label" style={{ marginBottom: 8 }}>
+          <p className="label" style={{ marginBottom: "var(--space-2)" }}>
             Third-party services we use
           </p>
           <ul
             style={{
               margin: "0 0 16px",
               paddingLeft: 18,
-              fontSize: 12,
+              fontSize: "var(--text-xs)",
               color: "var(--text-secondary)",
               lineHeight: 1.6,
             }}
@@ -1730,12 +1763,18 @@ function DataPrivacySection({
           </ul>
         </>
       ) : (
-        <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
+        <p
+          style={{
+            fontSize: "var(--text-sm)",
+            color: "var(--text-muted)",
+            marginBottom: "var(--space-4)",
+          }}
+        >
           Loading your data summary...
         </p>
       )}
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
         <button onClick={onExport} className="btn btn-secondary">
           <Download size={14} /> Download my data
         </button>
@@ -1761,8 +1800,18 @@ function DataPrivacySection({
 function DataStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="admin-stat-box">
-      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text)" }}>{value}</div>
+      <div
+        style={{
+          fontSize: "var(--text-xs)",
+          color: "var(--text-muted)",
+          marginBottom: "var(--space-1)",
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: "var(--text-lg)", fontWeight: 600, color: "var(--text)" }}>
+        {value}
+      </div>
     </div>
   );
 }
@@ -1804,7 +1853,7 @@ function Section({
     <div className="card settings-section-card">
       <h3
         style={{
-          fontSize: 14,
+          fontSize: "var(--text-base)",
           fontWeight: 600,
           margin: "0 0 2px",
           color: "var(--text)",
@@ -1812,7 +1861,9 @@ function Section({
       >
         {title}
       </h3>
-      <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 14px" }}>{subtitle}</p>
+      <p style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", margin: "0 0 14px" }}>
+        {subtitle}
+      </p>
       {children}
     </div>
   );
@@ -1834,12 +1885,12 @@ function Tag({
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 4,
+        gap: "var(--space-1)",
         background: color,
         color: textColor,
         padding: "3px 8px 3px 10px",
-        borderRadius: 20,
-        fontSize: 12,
+        borderRadius: "var(--radius-pill)",
+        fontSize: "var(--text-xs)",
         fontWeight: 500,
         border: "1px solid var(--border)",
       }}

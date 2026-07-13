@@ -63,7 +63,7 @@ export function PrivacyPage() {
           <p style={{ marginBottom: 10 }}>
             <strong style={{ color: "var(--text)" }}>Account data:</strong> your name, email
             address, and a securely hashed password. We never store your password in plain text and
-            cannot recover it — only reset it.
+            cannot recover it, only reset it.
           </p>
           <p style={{ marginBottom: 10 }}>
             <strong style={{ color: "var(--text)" }}>CV data:</strong> when you upload a CV, we
@@ -87,7 +87,7 @@ export function PrivacyPage() {
           <p>
             Your CV and preferences are used to search job boards on your behalf and to generate AI
             fit ratings, tailoring tips, and application briefs. We use your account data solely to
-            authenticate you and operate the service — never for advertising, and never sold to
+            authenticate you and operate the service, never for advertising, and never sold to
             anyone.
           </p>
         </Section>
@@ -95,7 +95,7 @@ export function PrivacyPage() {
         <Section title="Protecting your contact details from AI providers">
           <p>
             When your CV is parsed, we redact your phone number and email address before sending the
-            text to our AI provider — the provider never sees them. Your real contact details are
+            text to our AI provider, so the provider never sees them. Your real contact details are
             extracted locally and restored directly into your stored CV data, so your structured CV
             and any documents generated from it still include them correctly.
           </p>
@@ -150,13 +150,13 @@ export function PrivacyPage() {
         <Section title="Cookies and tracking">
           <p style={{ marginBottom: 10 }}>
             JobRadar does not use cookies, analytics, or advertising trackers. The public landing
-            page loads no third-party scripts or CDN assets — fonts and JavaScript are self-hosted
+            page loads no third-party scripts or CDN assets. Fonts and JavaScript are self-hosted
             and bundled at build time (Vite), so visiting the homepage does not contact Google,
             Cloudflare, or any other external tracker.
           </p>
           <p>
             After you sign in, your session token and theme preference are stored in your browser's
-            local storage, not cookies, and are only sent to our own API — never to third-party
+            local storage, not cookies, and are only sent to our own API, never to third-party
             analytics or ad networks.
           </p>
         </Section>
@@ -170,8 +170,11 @@ export function PrivacyPage() {
 
         <Section title="Contact">
           <p>
-            Questions about this policy or your data? Reach out to the site operator through the
-            contact details published on the production site.
+            Questions about this policy or your data? Email{" "}
+            <a href="mailto:saimkaskar1@gmail.com" style={{ color: "var(--accent)" }}>
+              saimkaskar1@gmail.com
+            </a>
+            .
           </p>
         </Section>
       </main>

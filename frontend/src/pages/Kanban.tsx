@@ -36,7 +36,7 @@ const COLUMNS: { status: JobStatus; label: string; color: string }[] = [
 const REJECTION_QUOTES = [
   "Every no gets you closer to a yes.",
   "Rejection is redirection.",
-  "Keep going — something better is coming.",
+  "Keep going, something better is coming.",
   "Even the best get rejected. It's part of the process.",
 ];
 
@@ -56,8 +56,8 @@ function StatusSelect({
         style={{
           appearance: "none",
           width: "auto",
-          fontSize: 12,
-          padding: "6px 28px 6px 10px",
+          fontSize: "var(--text-xs)",
+          padding: "var(--space-2) 28px var(--space-2) var(--space-3)",
           minWidth: 130,
         }}
       >
@@ -71,7 +71,7 @@ function StatusSelect({
         size={14}
         style={{
           position: "absolute",
-          right: 8,
+          right: "var(--space-2)",
           top: "50%",
           transform: "translateY(-50%)",
           pointerEvents: "none",
@@ -98,7 +98,7 @@ function DraggableKanbanCard({ job }: { job: Job }) {
     <div ref={setNodeRef} className="kanban-card" style={style} {...attributes} {...listeners}>
       <p
         style={{
-          margin: "0 0 8px",
+          margin: "0 0 var(--space-2)",
           fontWeight: 500,
           color: "var(--text)",
           lineHeight: 1.4,
@@ -115,7 +115,7 @@ function DraggableKanbanCard({ job }: { job: Job }) {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: 6,
+          gap: "var(--space-2)",
         }}
       >
         <ScoreBadge score={job.score} size="sm" />
@@ -147,9 +147,9 @@ function MobileKanbanCard({
     <div className="kanban-mobile-card">
       <p
         style={{
-          margin: "0 0 10px",
+          margin: "0 0 var(--space-3)",
           fontWeight: 600,
-          fontSize: 14,
+          fontSize: "var(--text-base)",
           color: "var(--text)",
           lineHeight: 1.45,
         }}
@@ -161,12 +161,12 @@ function MobileKanbanCard({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: 10,
+          gap: "var(--space-3)",
           flexWrap: "wrap",
         }}
       >
         <ScoreBadge score={job.score} size="sm" />
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           <StatusSelect value={job.status} onChange={(status) => onStatusChange(job.id, status)} />
           {job.url && (
             <a
@@ -174,7 +174,7 @@ function MobileKanbanCard({
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn-ghost"
-              style={{ padding: "7px 9px" }}
+              style={{ padding: "var(--space-2) var(--space-3)" }}
             >
               <ExternalLink size={14} />
             </a>
@@ -201,15 +201,15 @@ function DesktopKanbanColumn({
   return (
     <div className="kanban-column">
       <div className="kanban-column-header" style={{ borderBottom: `2px solid ${color}` }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color }}>{label}</span>
+        <span style={{ fontSize: "var(--text-xs)", fontWeight: 600, color }}>{label}</span>
         <span
           style={{
-            fontSize: 11,
+            fontSize: "var(--text-xs)",
             fontFamily: "monospace",
             background: "var(--bg-secondary)",
             color: "var(--text-muted)",
-            padding: "1px 6px",
-            borderRadius: 20,
+            padding: "1px var(--space-2)",
+            borderRadius: "var(--radius-pill)",
           }}
         >
           {jobs.length}
@@ -221,10 +221,10 @@ function DesktopKanbanColumn({
           {jobs.length === 0 ? (
             <div
               style={{
-                fontSize: 12,
+                fontSize: "var(--text-xs)",
                 color: "var(--text-muted)",
                 textAlign: "center",
-                padding: "30px 0",
+                padding: "var(--space-7) 0",
               }}
             >
               Drop here
@@ -312,7 +312,7 @@ function DesktopKanbanBoard({
           >
             <p
               style={{
-                margin: "0 0 8px",
+                margin: "0 0 var(--space-2)",
                 fontWeight: 500,
                 color: "var(--text)",
               }}
@@ -366,11 +366,11 @@ function MobileKanbanBoard({
               {label}
               <span
                 style={{
-                  fontSize: 10,
+                  fontSize: "var(--text-xs)",
                   fontFamily: "monospace",
                   background: "var(--bg)",
-                  padding: "1px 5px",
-                  borderRadius: 20,
+                  padding: "1px var(--space-1)",
+                  borderRadius: "var(--radius-pill)",
                   color: "var(--text-muted)",
                 }}
               >
@@ -386,21 +386,21 @@ function MobileKanbanBoard({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          marginBottom: 12,
-          paddingBottom: 8,
+          marginBottom: "var(--space-3)",
+          paddingBottom: "var(--space-2)",
           borderBottom: `2px solid ${activeMeta?.color ?? "var(--border)"}`,
         }}
       >
         <span
           style={{
-            fontSize: 13,
+            fontSize: "var(--text-sm)",
             fontWeight: 600,
             color: activeMeta?.color ?? "var(--text)",
           }}
         >
           {activeMeta?.label}
         </span>
-        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
           {columnJobs.length} job{columnJobs.length === 1 ? "" : "s"}
         </span>
       </div>
@@ -409,10 +409,10 @@ function MobileKanbanBoard({
         <div
           className="card"
           style={{
-            padding: 28,
+            padding: "var(--space-6)",
             textAlign: "center",
             color: "var(--text-muted)",
-            fontSize: 14,
+            fontSize: "var(--text-base)",
           }}
         >
           No jobs in this stage yet.
@@ -465,25 +465,25 @@ export function KanbanPage() {
         toast.success(`Moved to ${targetStatus.replace("_", " ")}`);
       }
     } catch {
-      toast.error("Failed to update — reverting");
+      toast.error("Failed to update, reverting");
       queryClient.invalidateQueries({ queryKey: ["kanban"] });
     }
   };
 
   return (
     <div className="kanban-page">
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: "var(--space-4)" }}>
         <h1
           style={{
-            fontSize: isMobile ? 20 : 24,
+            fontSize: isMobile ? "var(--text-xl)" : "var(--text-2xl)",
             fontWeight: 700,
-            margin: "0 0 4px",
+            margin: "0 0 var(--space-1)",
             color: "var(--text)",
           }}
         >
           Pipeline
         </h1>
-        <p style={{ margin: 0, fontSize: 14, color: "var(--text-muted)" }}>
+        <p style={{ margin: 0, fontSize: "var(--text-base)", color: "var(--text-muted)" }}>
           {isLoading
             ? "Loading your board..."
             : `${jobs.length} job${jobs.length === 1 ? "" : "s"} on your board`}
@@ -493,9 +493,9 @@ export function KanbanPage() {
       {isLoading ? (
         <div
           style={{
-            fontSize: 13,
+            fontSize: "var(--text-sm)",
             color: "var(--text-muted)",
-            padding: "40px 0",
+            padding: "var(--space-8) 0",
           }}
         >
           Loading pipeline...
@@ -504,10 +504,10 @@ export function KanbanPage() {
         <div
           className="card"
           style={{
-            padding: 40,
+            padding: "var(--space-8)",
             textAlign: "center",
             color: "var(--text-muted)",
-            fontSize: 14,
+            fontSize: "var(--text-base)",
           }}
         >
           No jobs on your board yet. Move jobs from the Jobs page or search for new roles.

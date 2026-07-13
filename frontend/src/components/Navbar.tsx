@@ -30,7 +30,7 @@ export function Navbar({ onHelpClick }: Props = {}) {
         style={{
           maxWidth: 1200,
           margin: "0 auto",
-          padding: "0 20px",
+          padding: "0 var(--space-5)",
           display: "flex",
           alignItems: "center",
           height: 60,
@@ -40,7 +40,7 @@ export function Navbar({ onHelpClick }: Props = {}) {
         <Link
           to="/"
           className="nav-brand"
-          style={{ textDecoration: "none", marginRight: 36, flexShrink: 0 }}
+          style={{ textDecoration: "none", marginRight: "var(--space-7)", flexShrink: 0 }}
         >
           <Logo size={28} wordmarkSize={17} />
         </Link>
@@ -48,7 +48,7 @@ export function Navbar({ onHelpClick }: Props = {}) {
         <div
           style={{
             display: "flex",
-            gap: 4,
+            gap: "var(--space-1)",
             flex: 1,
             minWidth: 0,
             overflowX: "auto",
@@ -63,10 +63,10 @@ export function Navbar({ onHelpClick }: Props = {}) {
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 7,
-                    padding: "7px 14px",
-                    borderRadius: 8,
-                    fontSize: 14,
+                    gap: "var(--space-2)",
+                    padding: "var(--space-2) var(--space-4)",
+                    borderRadius: "var(--radius-sm)",
+                    fontSize: "var(--text-sm)",
                     fontWeight: 500,
                     color: active ? "var(--accent)" : "var(--text-secondary)",
                     background: active ? "var(--accent-light)" : "transparent",
@@ -85,10 +85,10 @@ export function Navbar({ onHelpClick }: Props = {}) {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 7,
-                  padding: "7px 14px",
-                  borderRadius: 8,
-                  fontSize: 14,
+                  gap: "var(--space-2)",
+                  padding: "var(--space-2) var(--space-4)",
+                  borderRadius: "var(--radius-sm)",
+                  fontSize: "var(--text-sm)",
                   fontWeight: 500,
                   color: location.pathname === "/admin" ? "var(--accent)" : "var(--text-secondary)",
                   background:
@@ -102,12 +102,12 @@ export function Navbar({ onHelpClick }: Props = {}) {
           )}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           {onHelpClick && (
             <button
               onClick={onHelpClick}
               className="btn btn-ghost"
-              style={{ padding: "8px 10px" }}
+              style={{ padding: "var(--space-2) var(--space-3)" }}
               title="How JobRadar works"
               aria-label="Help"
             >
@@ -122,7 +122,7 @@ export function Navbar({ onHelpClick }: Props = {}) {
               window.location.href = "/login";
             }}
             className="btn btn-ghost"
-            style={{ padding: "8px 10px" }}
+            style={{ padding: "var(--space-2) var(--space-3)" }}
             title="Sign out"
           >
             <LogOut size={16} />

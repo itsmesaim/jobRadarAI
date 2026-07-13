@@ -64,7 +64,7 @@ export function ManualJDModal({
         title: f.title || data.title.split("|")[0].trim().slice(0, 80),
       }));
       setTab("paste");
-      toast.success("Job details fetched — review and rate");
+      toast.success("Job details fetched, review and rate");
     } catch {
       toast.error("Could not fetch URL. Paste the JD manually.");
       setTab("paste");
@@ -76,7 +76,7 @@ export function ManualJDModal({
   const handleRate = async () => {
     if (!canRate) {
       toast.error(
-        "Daily rating limit reached — job can be saved but not rated until your quota resets.",
+        "Daily rating limit reached. Job can be saved but not rated until your quota resets.",
         { duration: 6000 },
       );
       onLimitReached?.("rating");
@@ -95,8 +95,8 @@ export function ManualJDModal({
         const detail =
           res.detail ||
           (isToken
-            ? "Daily AI token limit reached. Job saved — try again tomorrow or contact support."
-            : "Daily rating limit reached. Job saved — you can rate it later from your list.");
+            ? "Daily AI token limit reached. Job saved, try again tomorrow or contact support."
+            : "Daily rating limit reached. Job saved, you can rate it later from your list.");
         toast.error(detail, { duration: 6000 });
         onAdded();
         onClose();
@@ -139,7 +139,7 @@ export function ManualJDModal({
         alignItems: "center",
         justifyContent: "center",
         zIndex: 50,
-        padding: 16,
+        padding: "var(--space-4)",
       }}
     >
       <div
@@ -157,11 +157,11 @@ export function ManualJDModal({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "16px 20px",
+            padding: "var(--space-4) var(--space-5)",
             borderBottom: "1px solid var(--border)",
           }}
         >
-          <span style={{ fontWeight: 600, fontSize: 14 }}>Add a job</span>
+          <span style={{ fontWeight: 600, fontSize: "var(--text-base)" }}>Add a job</span>
           <button
             onClick={onClose}
             style={{
@@ -176,7 +176,7 @@ export function ManualJDModal({
           </button>
         </div>
 
-        <div style={{ padding: 20 }}>
+        <div style={{ padding: "var(--space-5)" }}>
           {!result ? (
             <>
               {/* Tab toggle */}
@@ -184,9 +184,9 @@ export function ManualJDModal({
                 style={{
                   display: "flex",
                   background: "var(--bg-secondary)",
-                  borderRadius: 8,
-                  padding: 3,
-                  marginBottom: 16,
+                  borderRadius: "var(--radius)",
+                  padding: "var(--space-1)",
+                  marginBottom: "var(--space-4)",
                 }}
               >
                 {[
@@ -201,10 +201,10 @@ export function ManualJDModal({
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      gap: 6,
-                      padding: "6px 12px",
-                      borderRadius: 6,
-                      fontSize: 12,
+                      gap: "var(--space-2)",
+                      padding: "var(--space-2) var(--space-3)",
+                      borderRadius: "var(--radius-sm)",
+                      fontSize: "var(--text-xs)",
                       fontWeight: 500,
                       border: "none",
                       cursor: "pointer",
@@ -221,9 +221,9 @@ export function ManualJDModal({
               </div>
 
               {tab === "url" ? (
-                <div style={{ marginBottom: 16 }}>
+                <div style={{ marginBottom: "var(--space-4)" }}>
                   <label className="label">Job posting URL</label>
-                  <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ display: "flex", gap: "var(--space-2)" }}>
                     <input
                       className="input"
                       placeholder="https://irishjobs.ie/job/..."
@@ -242,21 +242,21 @@ export function ManualJDModal({
                   </div>
                   <p
                     style={{
-                      fontSize: 11,
+                      fontSize: "var(--text-xs)",
                       color: "var(--text-muted)",
-                      marginTop: 6,
+                      marginTop: "var(--space-2)",
                     }}
                   >
                     We'll extract the job description automatically
                   </p>
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
                   <div
                     style={{
                       display: "grid",
                       gridTemplateColumns: "1fr 1fr",
-                      gap: 10,
+                      gap: "var(--space-3)",
                     }}
                   >
                     <div>
@@ -298,19 +298,19 @@ export function ManualJDModal({
                     />
                     <p
                       style={{
-                        fontSize: 11,
+                        fontSize: "var(--text-xs)",
                         color: "var(--text-muted)",
-                        marginTop: 4,
+                        marginTop: "var(--space-1)",
                       }}
                     >
-                      {form.jd_text.length} characters — more text = better rating
+                      {form.jd_text.length} characters, more text = better rating
                     </p>
                   </div>
                   {!canRate && (
                     <p
                       style={{
-                        margin: "0 0 10px",
-                        fontSize: 12,
+                        margin: "0 0 var(--space-3)",
+                        fontSize: "var(--text-xs)",
                         color: "#b91c1c",
                         lineHeight: 1.5,
                       }}
@@ -328,7 +328,7 @@ export function ManualJDModal({
                     style={{
                       width: "100%",
                       justifyContent: "center",
-                      padding: "10px",
+                      padding: "var(--space-3)",
                       opacity: canRate ? 1 : 0.55,
                     }}
                   >
@@ -346,7 +346,7 @@ export function ManualJDModal({
               )}
             </>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
               <div
                 style={{
                   display: "flex",
@@ -354,15 +354,15 @@ export function ManualJDModal({
                   justifyContent: "space-between",
                 }}
               >
-                <span style={{ fontSize: 13, fontWeight: 600 }}>
-                  {form.title} — {form.company}
+                <span style={{ fontSize: "var(--text-sm)", fontWeight: 600 }}>
+                  {form.title} · {form.company}
                 </span>
                 <ScoreBadge score={result.score} size="md" />
               </div>
 
               <p
                 style={{
-                  fontSize: 13,
+                  fontSize: "var(--text-sm)",
                   color: "var(--text-secondary)",
                   lineHeight: 1.6,
                   margin: 0,
@@ -375,10 +375,10 @@ export function ManualJDModal({
                 <div>
                   <div
                     style={{
-                      fontSize: 11,
+                      fontSize: "var(--text-xs)",
                       fontWeight: 600,
                       color: "var(--success)",
-                      marginBottom: 8,
+                      marginBottom: "var(--space-2)",
                       textTransform: "uppercase",
                       letterSpacing: "0.06em",
                     }}
@@ -386,9 +386,18 @@ export function ManualJDModal({
                     Strengths
                   </div>
                   {result.matched_strengths.map((s, i) => (
-                    <div key={i} style={{ display: "flex", gap: 8, marginBottom: 5 }}>
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        gap: "var(--space-2)",
+                        marginBottom: "var(--space-1)",
+                      }}
+                    >
                       <span style={{ color: "var(--success)", fontWeight: 700 }}>+</span>
-                      <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{s}</span>
+                      <span style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)" }}>
+                        {s}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -398,10 +407,10 @@ export function ManualJDModal({
                 <div>
                   <div
                     style={{
-                      fontSize: 11,
+                      fontSize: "var(--text-xs)",
                       fontWeight: 600,
                       color: "#f97316",
-                      marginBottom: 8,
+                      marginBottom: "var(--space-2)",
                       textTransform: "uppercase",
                       letterSpacing: "0.06em",
                     }}
@@ -409,15 +418,24 @@ export function ManualJDModal({
                     Gaps to address
                   </div>
                   {result.gaps.map((g, i) => (
-                    <div key={i} style={{ display: "flex", gap: 8, marginBottom: 5 }}>
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        gap: "var(--space-2)",
+                        marginBottom: "var(--space-1)",
+                      }}
+                    >
                       <span style={{ color: "#f97316", fontWeight: 700 }}>−</span>
-                      <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{g}</span>
+                      <span style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)" }}>
+                        {g}
+                      </span>
                     </div>
                   ))}
                 </div>
               )}
 
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: "var(--space-2)" }}>
                 <button
                   onClick={onClose}
                   className="btn btn-primary"

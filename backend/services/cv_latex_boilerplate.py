@@ -15,6 +15,7 @@ CV_LATEX_BOILERPLATE = r"""\documentclass[10pt, a4paper]{article}
 \usepackage{microtype}
 \usepackage{parskip}
 \usepackage{xcolor}
+\usepackage{lmodern}
 
 \hypersetup{colorlinks=true, urlcolor=black, linkcolor=black}
 
@@ -29,7 +30,7 @@ CV_LATEX_BOILERPLATE = r"""\documentclass[10pt, a4paper]{article}
 \begin{document}
 
 \begin{center}
-  {\LARGE \textbf{{{NAME}}}}\\[4pt]
+  {\LARGE \textbf{NAME_PLACEHOLDER}}\\[4pt]
   {{{LOCATION}}} \quad\textbar\quad
   {{{PHONE}}} \quad\textbar\quad
   \href{mailto:{{{EMAIL}}}}{{{EMAIL}}}\\[2pt]
@@ -183,7 +184,7 @@ def personalize_boilerplate(user: dict) -> str:
 
     tex = CV_LATEX_BOILERPLATE
     replacements = {
-        "{{{NAME}}}": name,
+        "NAME_PLACEHOLDER": name,
         "{{{LOCATION}}}": location,
         "{{{PHONE}}}": phone,
         "{{{EMAIL}}}": email,

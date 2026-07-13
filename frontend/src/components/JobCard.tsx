@@ -71,17 +71,17 @@ const REJECTION_QUOTES = [
   "Thomas Edison failed 10,000 times before the lightbulb. You got this.",
   "A 'no' today doesn't cancel the 'yes' coming next week.",
   "Michael Jordan got cut from his high school team. Look him up.",
-  "This role wasn't it. The right one hasn't opened yet — that's all this means.",
+  "This role wasn't it. The right one hasn't opened yet, that's all this means.",
   "You didn't lose a job, you avoided one that wasn't a fit. Onward.",
   "Every strong candidate racks up rejections on the way to an offer. You're on track.",
-  "Companies pass on great people constantly — for budget, timing, internal politics. Rarely about you.",
+  "Companies pass on great people constantly, for budget, timing, internal politics. Rarely about you.",
   "Stephen King's first novel got 30 rejections. He kept a spike on the wall for them.",
   "Interview reps are still reps. This one counts toward the next win.",
   "The market is noisy right now. Your skills didn't just get worse because of one 'no'.",
   "Log it, forget it, apply to the next one. Momentum beats dwelling.",
   "J.K. Rowling was rejected by 12 publishers before Harry Potter took off.",
   "Some of the best hires were someone else's rejected candidate first.",
-  "This just means the timing or fit was off — not that you're not good enough.",
+  "This just means the timing or fit was off, not that you're not good enough.",
   "Keep the applications moving. Volume plus quality is how offers happen.",
   "Take five minutes to feel it, then get back to the next role. You've got this.",
 ];
@@ -179,7 +179,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
             <div className="job-card-meta-row">
               <span
                 style={{
-                  fontSize: 10.5,
+                  fontSize: "var(--text-xs)",
                   fontWeight: 600,
                   letterSpacing: "0.05em",
                   textTransform: "uppercase",
@@ -202,11 +202,11 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                 <span
                   title={timeTooltip}
                   style={{
-                    fontSize: 10,
+                    fontSize: "var(--text-xs)",
                     color: "var(--text-muted)",
                     display: "flex",
                     alignItems: "center",
-                    gap: 3,
+                    gap: "var(--space-1)",
                   }}
                 >
                   <Clock size={10} /> {postedLabel} {postedTime}
@@ -215,7 +215,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
               {freshness === "today" && (
                 <span
                   style={{
-                    fontSize: 10.5,
+                    fontSize: "var(--text-xs)",
                     fontWeight: 700,
                     color: "var(--success)",
                     letterSpacing: "0.03em",
@@ -229,8 +229,8 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
-                    gap: 4,
-                    fontSize: 10.5,
+                    gap: "var(--space-1)",
+                    fontSize: "var(--text-xs)",
                     fontWeight: 500,
                     color: "var(--text-muted)",
                   }}
@@ -254,7 +254,6 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                     background: "var(--success-bg)",
                     color: "var(--success)",
                     border: "1px solid var(--success-border)",
-                    fontSize: 10.5,
                   }}
                 >
                   Strong match
@@ -267,7 +266,6 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                     background: "var(--danger-bg)",
                     color: "var(--danger)",
                     border: "1px solid var(--danger-border)",
-                    fontSize: 10.5,
                   }}
                 >
                   Auto-reject
@@ -277,11 +275,11 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
 
             <h3
               style={{
-                fontSize: 14.5,
+                fontSize: "var(--text-base)",
                 fontWeight: 600,
                 color: "var(--text)",
                 lineHeight: 1.4,
-                margin: "0 0 5px",
+                margin: "0 0 var(--space-1)",
                 display: "-webkit-box",
                 WebkitLineClamp: 2,
                 WebkitBoxOrient: "vertical",
@@ -297,7 +295,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 10,
+                  gap: "var(--space-3)",
                   flexWrap: "wrap",
                 }}
               >
@@ -306,8 +304,8 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 4,
-                      fontSize: 12,
+                      gap: "var(--space-1)",
+                      fontSize: "var(--text-xs)",
                       color: "var(--text-secondary)",
                       minWidth: 0,
                     }}
@@ -330,8 +328,8 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 4,
-                      fontSize: 12,
+                      gap: "var(--space-1)",
+                      fontSize: "var(--text-xs)",
                       color: "var(--text-secondary)",
                       minWidth: 0,
                       flex: "1 1 auto",
@@ -358,7 +356,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
               display: "flex",
               flexDirection: "column",
               alignItems: "flex-end",
-              gap: 8,
+              gap: "var(--space-2)",
               flexShrink: 0,
             }}
           >
@@ -378,16 +376,16 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
         </div>
 
         {/* Verdict — clamped at 2 lines, ellipsis not mid-word cut */}
-        <div style={{ flex: 1, minHeight: 0, marginBottom: 12 }}>
+        <div style={{ flex: 1, minHeight: 0, marginBottom: "var(--space-3)" }}>
           {isRating ? (
             <p
               style={{
-                fontSize: 12,
+                fontSize: "var(--text-xs)",
                 color: "var(--accent)",
                 margin: 0,
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
+                gap: "var(--space-2)",
               }}
             >
               <span className="score-badge-spinner" style={{ width: 10, height: 10 }} />
@@ -396,7 +394,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
           ) : !isUnrated && job.verdict && job.verdict !== "Not rated yet" ? (
             <p
               style={{
-                fontSize: 12.5,
+                fontSize: "var(--text-sm)",
                 color: "var(--text-secondary)",
                 margin: 0,
                 lineHeight: 1.55,
@@ -410,8 +408,8 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
               {job.verdict}
             </p>
           ) : (
-            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
-              {isUnrated ? "Not rated yet — run Search to rate" : ""}
+            <p style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", margin: 0 }}>
+              {isUnrated ? "Not rated yet, run Search to rate" : ""}
             </p>
           )}
         </div>

@@ -18,24 +18,24 @@ export function AuthPageShell({ children, title, subtitle, showBrand = true }: A
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: 16,
+        padding: "var(--space-4)",
         background: "var(--bg)",
         position: "relative",
       }}
     >
-      <div style={{ position: "absolute", top: 16, right: 16 }}>
+      <div style={{ position: "absolute", top: "var(--space-4)", right: "var(--space-4)" }}>
         <ThemeToggle />
       </div>
 
       <div style={{ width: "100%", maxWidth: 380 }}>
         {showBrand && (
-          <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ textAlign: "center", marginBottom: "var(--space-7)" }}>
             <Link
               to="/"
               style={{
                 display: "flex",
                 justifyContent: "center",
-                marginBottom: 10,
+                marginBottom: "var(--space-3)",
                 textDecoration: "none",
               }}
             >
@@ -43,7 +43,7 @@ export function AuthPageShell({ children, title, subtitle, showBrand = true }: A
             </Link>
             <p
               style={{
-                fontSize: 13,
+                fontSize: "var(--text-sm)",
                 color: "var(--text-muted)",
                 margin: 0,
               }}
@@ -54,13 +54,13 @@ export function AuthPageShell({ children, title, subtitle, showBrand = true }: A
         )}
 
         {(title || subtitle) && (
-          <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ textAlign: "center", marginBottom: "var(--space-6)" }}>
             {title && (
               <h1
                 style={{
-                  fontSize: 20,
+                  fontSize: "var(--text-xl)",
                   fontWeight: 700,
-                  margin: "0 0 6px",
+                  margin: "0 0 var(--space-2)",
                   color: "var(--text)",
                 }}
               >
@@ -70,7 +70,7 @@ export function AuthPageShell({ children, title, subtitle, showBrand = true }: A
             {subtitle && (
               <p
                 style={{
-                  fontSize: 13,
+                  fontSize: "var(--text-sm)",
                   color: "var(--text-muted)",
                   margin: 0,
                 }}

@@ -13,6 +13,7 @@ import {
   Ban,
   AlertTriangle,
 } from "lucide-react";
+import { ProgressBar } from "../components/ProgressBar";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useAuthStore } from "../hooks/useStores";
 import { adminApi } from "../api";
@@ -160,12 +161,12 @@ function UnlimitedBadge() {
   return (
     <span
       style={{
-        fontSize: 10,
+        fontSize: "var(--text-xs)",
         fontWeight: 700,
         color: "var(--success)",
         background: "var(--success-bg)",
         border: "1px solid var(--success-border)",
-        borderRadius: 20,
+        borderRadius: "var(--radius-pill)",
         padding: "1px 6px",
         lineHeight: 1.6,
         fontFamily: "sans-serif",
@@ -179,8 +180,18 @@ function UnlimitedBadge() {
 function DataStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="admin-stat-box">
-      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text)" }}>{value}</div>
+      <div
+        style={{
+          fontSize: "var(--text-xs)",
+          color: "var(--text-muted)",
+          marginBottom: "var(--space-1)",
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: "var(--text-lg)", fontWeight: 600, color: "var(--text)" }}>
+        {value}
+      </div>
     </div>
   );
 }
@@ -201,10 +212,23 @@ function UsageStat({
   const pct = getPct(used, limit);
   return (
     <div className="admin-stat-box">
-      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+      <div
+        style={{
+          fontSize: "var(--text-xs)",
+          color: "var(--text-muted)",
+          marginBottom: "var(--space-1)",
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
         <span
-          style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 14, color: "var(--text)" }}
+          style={{
+            fontFamily: "monospace",
+            fontWeight: 600,
+            fontSize: "var(--text-base)",
+            color: "var(--text)",
+          }}
         >
           {formatTokens(used)}
           {!unlimited && ` / ${formatTokens(limit)}`}
@@ -212,12 +236,12 @@ function UsageStat({
         {unlimited && (
           <span
             style={{
-              fontSize: 10,
+              fontSize: "var(--text-xs)",
               fontWeight: 700,
               color: "var(--success)",
               background: "var(--success-bg)",
               border: "1px solid var(--success-border)",
-              borderRadius: 20,
+              borderRadius: "var(--radius-pill)",
               padding: "1px 6px",
               lineHeight: 1.6,
             }}
@@ -226,11 +250,7 @@ function UsageStat({
           </span>
         )}
       </div>
-      {!unlimited && (
-        <div className="admin-progress">
-          <span style={{ width: `${pct}%`, background: color }} />
-        </div>
-      )}
+      {!unlimited && <ProgressBar pct={pct} color={color} />}
     </div>
   );
 }
@@ -317,20 +337,20 @@ function UserEditForm({
   return (
     <div
       style={{
-        marginTop: 14,
+        marginTop: "var(--space-4)",
         paddingTop: 14,
         borderTop: "1px solid var(--border)",
       }}
     >
-      <p className="label" style={{ marginBottom: 8 }}>
+      <p className="label" style={{ marginBottom: "var(--space-2)" }}>
         Access level
       </p>
       <div
         style={{
           display: "flex",
           flexWrap: "wrap",
-          gap: 6,
-          marginBottom: 14,
+          gap: "var(--space-2)",
+          marginBottom: "var(--space-4)",
         }}
       >
         {ACCESS_LEVELS.map(({ value, label }) => (
@@ -350,13 +370,13 @@ function UserEditForm({
         form.access_level === "temp_1d") && (
         <div
           style={{
-            fontSize: 13,
+            fontSize: "var(--text-sm)",
             color: "var(--success)",
             background: "var(--success-bg)",
             border: "1px solid var(--success-border)",
-            borderRadius: 8,
+            borderRadius: "var(--radius-sm)",
             padding: "10px 12px",
-            marginBottom: 14,
+            marginBottom: "var(--space-4)",
           }}
         >
           {form.access_level === "full"
@@ -365,7 +385,7 @@ function UserEditForm({
         </div>
       )}
 
-      <div style={{ marginBottom: 14 }}>
+      <div style={{ marginBottom: "var(--space-4)" }}>
         <label className="label">Notes</label>
         <input
           value={form.notes}
@@ -380,8 +400,8 @@ function UserEditForm({
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-            gap: 10,
-            marginBottom: 14,
+            gap: "var(--space-3)",
+            marginBottom: "var(--space-4)",
           }}
         >
           {form.access_level === "limited" && (
@@ -461,7 +481,7 @@ function UserEditForm({
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
         <button type="button" onClick={onSave} className="btn btn-primary">
           Save changes
         </button>
@@ -497,14 +517,14 @@ function AdminUserCard({ user, onOpen }: { user: AdminUser; onOpen: () => void }
           display: "flex",
           alignItems: "flex-start",
           justifyContent: "space-between",
-          gap: 10,
+          gap: "var(--space-3)",
         }}
       >
         <div style={{ minWidth: 0, flex: 1 }}>
           <div
             style={{
               fontWeight: 600,
-              fontSize: 15,
+              fontSize: "var(--text-base)",
               color: "var(--text)",
               wordBreak: "break-word",
             }}
@@ -513,7 +533,7 @@ function AdminUserCard({ user, onOpen }: { user: AdminUser; onOpen: () => void }
           </div>
           <div
             style={{
-              fontSize: 12,
+              fontSize: "var(--text-xs)",
               color: "var(--text-muted)",
               fontFamily: "monospace",
               marginTop: 2,
@@ -552,8 +572,8 @@ function AdminUserCard({ user, onOpen }: { user: AdminUser; onOpen: () => void }
 
       <div
         style={{
-          marginTop: 12,
-          fontSize: 12,
+          marginTop: "var(--space-3)",
+          fontSize: "var(--text-xs)",
           color: inactive ? "var(--text-muted)" : "var(--text-secondary)",
         }}
       >
@@ -565,7 +585,7 @@ function AdminUserCard({ user, onOpen }: { user: AdminUser; onOpen: () => void }
         <p
           style={{
             margin: "8px 0 0",
-            fontSize: 12,
+            fontSize: "var(--text-xs)",
             color: "var(--text-secondary)",
             lineHeight: 1.5,
           }}
@@ -619,10 +639,18 @@ function buildAccessPayload(form: EditForm): Record<string, unknown> {
 function ActivityStat({ label, value, stale }: { label: string; value: string; stale?: boolean }) {
   return (
     <div className="admin-stat-box">
-      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
       <div
         style={{
-          fontSize: 14,
+          fontSize: "var(--text-xs)",
+          color: "var(--text-muted)",
+          marginBottom: "var(--space-1)",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: "var(--text-base)",
           fontWeight: 600,
           color: stale ? "var(--text-muted)" : "var(--text)",
         }}
@@ -746,14 +774,14 @@ function UserDetailModal({
         style={{
           background: "var(--bg-card)",
           color: "var(--text)",
-          borderRadius: 16,
+          borderRadius: "var(--radius-lg)",
           width: "100%",
           maxWidth: 560,
           maxHeight: "92vh",
           overflowY: "auto",
           boxShadow: "var(--shadow-lg)",
           border: "1px solid var(--border)",
-          padding: 24,
+          padding: "var(--space-6)",
         }}
       >
         <div
@@ -761,8 +789,8 @@ function UserDetailModal({
             display: "flex",
             alignItems: "flex-start",
             justifyContent: "space-between",
-            gap: 10,
-            marginBottom: 18,
+            gap: "var(--space-3)",
+            marginBottom: "var(--space-5)",
           }}
         >
           <div style={{ minWidth: 0 }}>
@@ -770,7 +798,7 @@ function UserDetailModal({
               id="admin-user-modal-title"
               style={{
                 margin: 0,
-                fontSize: 18,
+                fontSize: "var(--text-xl)",
                 fontWeight: 700,
                 color: "var(--text)",
                 wordBreak: "break-word",
@@ -780,7 +808,7 @@ function UserDetailModal({
             </h3>
             <div
               style={{
-                fontSize: 13,
+                fontSize: "var(--text-sm)",
                 color: "var(--text-muted)",
                 fontFamily: "monospace",
                 marginTop: 2,
@@ -797,29 +825,29 @@ function UserDetailModal({
           <div
             style={{
               padding: "10px 12px",
-              borderRadius: 8,
+              borderRadius: "var(--radius-sm)",
               background: "var(--danger-bg)",
               border: "1px solid var(--danger-border)",
               color: "var(--danger)",
-              fontSize: 12.5,
-              marginBottom: 16,
+              fontSize: "var(--text-xs)",
+              marginBottom: "var(--space-4)",
               lineHeight: 1.5,
             }}
           >
             Paused {formatRelativeTime(user.suspended_at)}
-            {user.suspended_reason ? ` — ${user.suspended_reason}` : ""}
+            {user.suspended_reason ? `: ${user.suspended_reason}` : ""}
           </div>
         )}
 
-        <p className="label" style={{ marginBottom: 8 }}>
+        <p className="label" style={{ marginBottom: "var(--space-2)" }}>
           Activity
         </p>
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-            gap: 10,
-            marginBottom: 18,
+            gap: "var(--space-3)",
+            marginBottom: "var(--space-5)",
           }}
         >
           <ActivityStat
@@ -842,10 +870,10 @@ function UserDetailModal({
           />
         </div>
 
-        <p className="label" style={{ marginBottom: 8 }}>
+        <p className="label" style={{ marginBottom: "var(--space-2)" }}>
           Usage
         </p>
-        <div className="admin-stat-row" style={{ marginBottom: 18, marginTop: 0 }}>
+        <div className="admin-stat-row" style={{ marginBottom: "var(--space-5)", marginTop: 0 }}>
           <UsageStat
             label="Searches"
             used={user.searches_used}
@@ -872,17 +900,24 @@ function UserDetailModal({
         {user.ai_usage && (
           <div
             style={{
-              marginBottom: 18,
+              marginBottom: "var(--space-5)",
               padding: "10px 12px",
-              borderRadius: 8,
+              borderRadius: "var(--radius-sm)",
               background: "var(--bg-secondary)",
               border: "1px solid var(--border)",
-              fontSize: 12,
+              fontSize: "var(--text-xs)",
               color: "var(--text-secondary)",
               lineHeight: 1.55,
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                marginBottom: "var(--space-1)",
+              }}
+            >
               <Cpu size={13} style={{ color: "var(--accent)" }} />
               <span style={{ fontWeight: 600, color: "var(--text)" }}>AI usage</span>
             </div>
@@ -910,7 +945,7 @@ function UserDetailModal({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            marginBottom: 8,
+            marginBottom: "var(--space-2)",
           }}
         >
           <p className="label" style={{ margin: 0 }}>
@@ -921,7 +956,7 @@ function UserDetailModal({
               type="button"
               onClick={() => setEditingAccess(true)}
               className="btn btn-secondary"
-              style={{ fontSize: 12, padding: "6px 10px" }}
+              style={{ fontSize: "var(--text-xs)", padding: "6px 10px" }}
             >
               Manage access
             </button>
@@ -936,28 +971,34 @@ function UserDetailModal({
             onCancel={() => setEditingAccess(false)}
           />
         ) : (
-          <p style={{ margin: "0 0 18px", fontSize: 13, color: "var(--text-secondary)" }}>
+          <p
+            style={{
+              margin: "0 0 18px",
+              fontSize: "var(--text-sm)",
+              color: "var(--text-secondary)",
+            }}
+          >
             {user.admin_notes || "No notes."}
           </p>
         )}
 
         <div
           style={{
-            marginTop: 20,
+            marginTop: "var(--space-5)",
             paddingTop: 18,
             borderTop: "1px solid var(--border)",
           }}
         >
-          <p className="label" style={{ marginBottom: 10, color: "var(--danger)" }}>
+          <p className="label" style={{ marginBottom: "var(--space-3)", color: "var(--danger)" }}>
             Danger zone
           </p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
             <button
               type="button"
               onClick={toggleSuspend}
               disabled={busy}
               className="btn btn-secondary"
-              style={{ gap: 6 }}
+              style={{ gap: "var(--space-2)" }}
             >
               <Ban size={14} />
               {user.suspended ? "Reactivate account" : "Pause account"}
@@ -967,7 +1008,7 @@ function UserDetailModal({
               onClick={handleDelete}
               disabled={busy}
               className="btn btn-danger"
-              style={{ gap: 6 }}
+              style={{ gap: "var(--space-2)" }}
             >
               <Trash2 size={14} />
               Delete account
@@ -979,7 +1020,7 @@ function UserDetailModal({
           type="button"
           onClick={onClose}
           className="btn btn-ghost"
-          style={{ width: "100%", marginTop: 20, justifyContent: "center" }}
+          style={{ width: "100%", marginTop: "var(--space-5)", justifyContent: "center" }}
         >
           Close
         </button>
@@ -1113,7 +1154,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
   const selectedOpt = FILTER_OPTIONS.find((o) => o.value === filterType)!;
 
   return (
-    <div className="card" style={{ padding: 0, marginTop: 24, overflow: "hidden" }}>
+    <div className="card" style={{ padding: 0, marginTop: "var(--space-6)", overflow: "hidden" }}>
       {/* Header toggle */}
       <button
         onClick={() => setOpen((o) => !o)}
@@ -1126,15 +1167,15 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
           background: "none",
           border: "none",
           cursor: "pointer",
-          gap: 10,
+          gap: "var(--space-3)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
           <div
             style={{
               width: 32,
               height: 32,
-              borderRadius: 8,
+              borderRadius: "var(--radius-sm)",
               background: "var(--danger-bg)",
               border: "1px solid var(--danger-border)",
               display: "flex",
@@ -1146,11 +1187,11 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
             <Trash2 size={15} style={{ color: "var(--danger)" }} />
           </div>
           <div style={{ textAlign: "left" }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>
+            <div style={{ fontSize: "var(--text-base)", fontWeight: 600, color: "var(--text)" }}>
               Job database cleanup
             </div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              Permanently delete jobs — scoped per user, cannot be undone
+            <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+              Permanently delete jobs, scoped per user, cannot be undone
             </div>
           </div>
         </div>
@@ -1169,8 +1210,8 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
-                marginBottom: 10,
+                gap: "var(--space-2)",
+                marginBottom: "var(--space-3)",
               }}
             >
               <span
@@ -1180,7 +1221,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                   borderRadius: "50%",
                   background: "var(--accent)",
                   color: "#fff",
-                  fontSize: 11,
+                  fontSize: "var(--text-xs)",
                   fontWeight: 700,
                   display: "flex",
                   alignItems: "center",
@@ -1190,7 +1231,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
               >
                 1
               </span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+              <span style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text)" }}>
                 Select user
               </span>
             </div>
@@ -1203,7 +1244,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
               className="input"
               style={{ maxWidth: 360 }}
             >
-              <option value="">— Select a user —</option>
+              <option value="">Select a user…</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.name} · {u.email}
@@ -1218,8 +1259,8 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
-                marginBottom: 10,
+                gap: "var(--space-2)",
+                marginBottom: "var(--space-3)",
               }}
             >
               <span
@@ -1229,7 +1270,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                   borderRadius: "50%",
                   background: "var(--accent)",
                   color: "#fff",
-                  fontSize: 11,
+                  fontSize: "var(--text-xs)",
                   fontWeight: 700,
                   display: "flex",
                   alignItems: "center",
@@ -1239,7 +1280,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
               >
                 2
               </span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+              <span style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text)" }}>
                 Choose filter
               </span>
             </div>
@@ -1247,7 +1288,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-                gap: 8,
+                gap: "var(--space-2)",
               }}
             >
               {FILTER_OPTIONS.map((opt) => {
@@ -1283,7 +1324,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                     }}
                     style={{
                       padding: "12px 14px",
-                      borderRadius: 10,
+                      borderRadius: "var(--radius)",
                       border: `1.5px solid ${borderColor}`,
                       background: bgColor,
                       cursor: "pointer",
@@ -1291,13 +1332,26 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                       transition: "all 0.15s",
                     }}
                   >
-                    <div style={{ color: iconColor, marginBottom: 6 }}>{opt.icon}</div>
+                    <div style={{ color: iconColor, marginBottom: "var(--space-2)" }}>
+                      {opt.icon}
+                    </div>
                     <div
-                      style={{ fontSize: 13, fontWeight: 600, color: textColor, marginBottom: 2 }}
+                      style={{
+                        fontSize: "var(--text-sm)",
+                        fontWeight: 600,
+                        color: textColor,
+                        marginBottom: 2,
+                      }}
                     >
                       {opt.label}
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4 }}>
+                    <div
+                      style={{
+                        fontSize: "var(--text-xs)",
+                        color: "var(--text-muted)",
+                        lineHeight: 1.4,
+                      }}
+                    >
                       {opt.desc}
                     </div>
                   </button>
@@ -1312,8 +1366,8 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
-                marginBottom: 10,
+                gap: "var(--space-2)",
+                marginBottom: "var(--space-3)",
               }}
             >
               <span
@@ -1323,7 +1377,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                   borderRadius: "50%",
                   background: "var(--accent)",
                   color: "#fff",
-                  fontSize: 11,
+                  fontSize: "var(--text-xs)",
                   fontWeight: 700,
                   display: "flex",
                   alignItems: "center",
@@ -1333,8 +1387,8 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
               >
                 3
               </span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
-                Configure —{" "}
+              <span style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text)" }}>
+                Configure:{" "}
                 <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>
                   {selectedOpt.label}
                 </span>
@@ -1346,19 +1400,26 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                 style={{
                   display: "flex",
                   alignItems: "flex-start",
-                  gap: 10,
+                  gap: "var(--space-3)",
                   padding: "12px 14px",
-                  borderRadius: 10,
+                  borderRadius: "var(--radius)",
                   background: "var(--danger-bg)",
                   border: "1px solid var(--danger-border)",
-                  marginBottom: 4,
+                  marginBottom: "var(--space-1)",
                 }}
               >
                 <AlertTriangle
                   size={15}
                   style={{ color: "var(--danger)", flexShrink: 0, marginTop: 1 }}
                 />
-                <p style={{ margin: 0, fontSize: 13, color: "var(--danger)", lineHeight: 1.5 }}>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: "var(--text-sm)",
+                    color: "var(--danger)",
+                    lineHeight: 1.5,
+                  }}
+                >
                   This will delete <strong>every</strong> job crawled by the selected user. There is
                   no undo.
                 </p>
@@ -1366,8 +1427,8 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
             )}
 
             {filterType === "old" && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+                <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                   Crawled more than
                 </span>
                 <input
@@ -1382,13 +1443,17 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                   className="input"
                   style={{ maxWidth: 80, textAlign: "center" }}
                 />
-                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>days ago</span>
+                <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
+                  days ago
+                </span>
               </div>
             )}
 
             {filterType === "low_score" && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>AI score ≤</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+                <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
+                  AI score ≤
+                </span>
                 <input
                   type="number"
                   value={maxScore}
@@ -1402,13 +1467,22 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                   className="input"
                   style={{ maxWidth: 70, textAlign: "center" }}
                 />
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>out of 10 (0–9)</span>
+                <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                  out of 10 (0–9)
+                </span>
               </div>
             )}
 
             {filterType === "below_score" && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--space-3)",
+                  flexWrap: "wrap",
+                }}
+              >
+                <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                   Delete jobs scored below
                 </span>
                 <input
@@ -1424,18 +1498,24 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                   className="input"
                   style={{ maxWidth: 70, textAlign: "center" }}
                 />
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                  / 10 (includes score 0 — failed or weak fits)
+                <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                  / 10 (includes score 0, failed or weak fits)
                 </span>
               </div>
             )}
 
             {filterType === "by_status" && (
               <div>
-                <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--text-muted)" }}>
+                <p
+                  style={{
+                    margin: "0 0 10px",
+                    fontSize: "var(--text-xs)",
+                    color: "var(--text-muted)",
+                  }}
+                >
                   Select statuses to include in deletion:
                 </p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
                   {JOB_STATUSES.map((s) => {
                     const checked = selectedStatuses.includes(s);
                     return (
@@ -1448,11 +1528,11 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                         }}
                         style={{
                           padding: "5px 12px",
-                          borderRadius: 20,
+                          borderRadius: "var(--radius-pill)",
                           border: checked ? "1.5px solid var(--danger)" : "1px solid var(--border)",
                           background: checked ? "var(--danger-bg)" : "var(--bg-secondary)",
                           color: checked ? "var(--danger)" : "var(--text-secondary)",
-                          fontSize: 12,
+                          fontSize: "var(--text-xs)",
                           fontWeight: checked ? 600 : 400,
                           cursor: "pointer",
                           transition: "all 0.15s",
@@ -1467,7 +1547,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
             )}
 
             {(filterType === "unrated" || filterType === "auto_rejected") && (
-              <p style={{ margin: 0, fontSize: 13, color: "var(--text-secondary)" }}>
+              <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                 No extra configuration needed. Preview to see how many match.
               </p>
             )}
@@ -1479,8 +1559,8 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
-                marginBottom: 14,
+                gap: "var(--space-2)",
+                marginBottom: "var(--space-4)",
               }}
             >
               <span
@@ -1490,7 +1570,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                   borderRadius: "50%",
                   background: preview && preview.count > 0 ? "var(--danger)" : "var(--accent)",
                   color: "#fff",
-                  fontSize: 11,
+                  fontSize: "var(--text-xs)",
                   fontWeight: 700,
                   display: "flex",
                   alignItems: "center",
@@ -1500,18 +1580,25 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
               >
                 4
               </span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+              <span style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text)" }}>
                 Preview & confirm
               </span>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-3)",
+                flexWrap: "wrap",
+              }}
+            >
               <button
                 type="button"
                 onClick={handlePreview}
                 disabled={loading || !userId}
                 className="btn btn-secondary"
-                style={{ fontSize: 13 }}
+                style={{ fontSize: "var(--text-sm)" }}
               >
                 {loading && !preview ? "Checking..." : "Preview count"}
               </button>
@@ -1521,9 +1608,9 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 8,
+                    gap: "var(--space-2)",
                     padding: "8px 14px",
-                    borderRadius: 10,
+                    borderRadius: "var(--radius)",
                     background: preview.count > 0 ? "var(--danger-bg)" : "var(--success-bg)",
                     border: `1px solid ${preview.count > 0 ? "var(--danger-border)" : "var(--success-border)"}`,
                   }}
@@ -1533,13 +1620,13 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                   ) : null}
                   <span
                     style={{
-                      fontSize: 13,
+                      fontSize: "var(--text-sm)",
                       fontWeight: 600,
                       color: preview.count > 0 ? "var(--danger)" : "var(--success)",
                     }}
                   >
                     {preview.count === 0
-                      ? "Nothing to delete — filter matches 0 jobs"
+                      ? "Nothing to delete, filter matches 0 jobs"
                       : `${preview.count} job${preview.count !== 1 ? "s" : ""} match for ${preview.email}`}
                   </span>
                 </div>
@@ -1547,19 +1634,19 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
             </div>
 
             {preview !== null && preview.count > 0 && (
-              <div style={{ marginTop: 14 }}>
+              <div style={{ marginTop: "var(--space-4)" }}>
                 <label
                   style={{
                     display: "flex",
                     alignItems: "flex-start",
-                    gap: 10,
+                    gap: "var(--space-3)",
                     cursor: "pointer",
                     padding: "12px 14px",
-                    borderRadius: 8,
+                    borderRadius: "var(--radius-sm)",
                     border: `1px solid ${confirmed ? "var(--danger)" : "var(--border)"}`,
                     background: confirmed ? "var(--danger-bg)" : "var(--bg-secondary)",
                     transition: "all 0.15s",
-                    marginBottom: 12,
+                    marginBottom: "var(--space-3)",
                   }}
                 >
                   <input
@@ -1568,7 +1655,9 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                     onChange={(e) => setConfirmed(e.target.checked)}
                     style={{ marginTop: 2, accentColor: "var(--danger)" }}
                   />
-                  <span style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>
+                  <span
+                    style={{ fontSize: "var(--text-sm)", color: "var(--text)", lineHeight: 1.5 }}
+                  >
                     I understand that deleting {preview.count} job{preview.count !== 1 ? "s" : ""}{" "}
                     for <strong>{preview.email}</strong> is permanent and cannot be undone.
                   </span>
@@ -1580,7 +1669,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
                     onClick={handleDelete}
                     disabled={loading}
                     className="btn btn-danger"
-                    style={{ width: "100%", justifyContent: "center", gap: 8 }}
+                    style={{ width: "100%", justifyContent: "center", gap: "var(--space-2)" }}
                   >
                     <Trash2 size={14} />
                     {loading ? "Deleting..." : `Delete ${preview.count} jobs permanently`}
@@ -1657,10 +1746,10 @@ export function AdminPage() {
 
   return (
     <div className="page-shell">
-      <div style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom: "var(--space-5)" }}>
         <h1
           style={{
-            fontSize: 24,
+            fontSize: "var(--text-2xl)",
             fontWeight: 700,
             margin: "0 0 4px",
             color: "var(--text)",
@@ -1668,8 +1757,8 @@ export function AdminPage() {
         >
           Admin panel
         </h1>
-        <p style={{ margin: 0, fontSize: 14, color: "var(--text-muted)" }}>
-          Manage user access — full access or temporary grants (12h / 1 day)
+        <p style={{ margin: 0, fontSize: "var(--text-base)", color: "var(--text-muted)" }}>
+          Manage user access, full access or temporary grants (12h / 1 day)
         </p>
       </div>
 
@@ -1677,8 +1766,8 @@ export function AdminPage() {
         <div
           className="card"
           style={{
-            padding: 16,
-            marginBottom: 16,
+            padding: "var(--space-4)",
+            marginBottom: "var(--space-4)",
             background: "var(--accent-light)",
           }}
         >
@@ -1686,15 +1775,15 @@ export function AdminPage() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 8,
-              marginBottom: 12,
+              gap: "var(--space-2)",
+              marginBottom: "var(--space-3)",
             }}
           >
             <Zap size={18} style={{ color: "var(--accent)" }} />
             <h2
               style={{
                 margin: 0,
-                fontSize: 15,
+                fontSize: "var(--text-base)",
                 fontWeight: 600,
                 color: "var(--text)",
               }}
@@ -1706,8 +1795,8 @@ export function AdminPage() {
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-              gap: 10,
-              marginBottom: 10,
+              gap: "var(--space-3)",
+              marginBottom: "var(--space-3)",
             }}
           >
             <DataStat label="Today tokens" value={formatTokens(aiSummary.today?.total_tokens)} />
@@ -1738,7 +1827,7 @@ export function AdminPage() {
           <p
             style={{
               margin: 0,
-              fontSize: 12,
+              fontSize: "var(--text-xs)",
               color: "var(--text-secondary)",
               lineHeight: 1.5,
             }}
@@ -1748,7 +1837,7 @@ export function AdminPage() {
               ? aiSummary.monthly_budget_usd
                 ? ` · Monthly budget: ${formatUsd(aiSummary.monthly_budget_usd, true)}`
                 : ` · Month cost: ${formatUsd(aiSummary.this_month?.estimated_cost_usd, true)}`
-              : " · Showing tokens only — set AI_COST_PER_1K_* in .env for $ estimates"}
+              : " · Showing tokens only, set AI_COST_PER_1K_* in .env for $ estimates"}
           </p>
         </div>
       )}
@@ -1759,7 +1848,7 @@ export function AdminPage() {
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
         className="input"
-        style={{ marginBottom: 16, maxWidth: "100%" }}
+        style={{ marginBottom: "var(--space-4)", maxWidth: "100%" }}
       />
 
       {loading ? (
@@ -1768,7 +1857,7 @@ export function AdminPage() {
             padding: "48px 0",
             textAlign: "center",
             color: "var(--text-muted)",
-            fontSize: 14,
+            fontSize: "var(--text-base)",
           }}
         >
           Loading users...
@@ -1777,16 +1866,16 @@ export function AdminPage() {
         <div
           className="card"
           style={{
-            padding: 40,
+            padding: "var(--space-8)",
             textAlign: "center",
             color: "var(--text-muted)",
-            fontSize: 14,
+            fontSize: "var(--text-base)",
           }}
         >
           No users found
         </div>
       ) : isMobile ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
           {filteredUsers.map((u) => (
             <AdminUserCard key={u.id} user={u} onOpen={() => setSelectedUserId(u.id)} />
           ))}
@@ -1797,7 +1886,7 @@ export function AdminPage() {
             <table
               style={{
                 width: "100%",
-                fontSize: 13,
+                fontSize: "var(--text-sm)",
                 borderCollapse: "collapse",
               }}
             >
@@ -1850,7 +1939,7 @@ export function AdminPage() {
                         <div style={{ fontWeight: 600 }}>{u.name || "Unnamed"}</div>
                         <div
                           style={{
-                            fontSize: 11,
+                            fontSize: "var(--text-xs)",
                             color: "var(--text-muted)",
                             fontFamily: "monospace",
                             marginTop: 2,
@@ -1877,7 +1966,7 @@ export function AdminPage() {
                           style={{
                             display: "flex",
                             alignItems: "center",
-                            gap: 5,
+                            gap: "var(--space-1)",
                             fontFamily: "monospace",
                             fontWeight: 600,
                           }}
@@ -1891,20 +1980,14 @@ export function AdminPage() {
                             </span>
                           )}
                         </div>
-                        {!isFull && (
-                          <div className="admin-progress">
-                            <span
-                              style={{ width: `${searchPct}%`, background: "var(--success)" }}
-                            />
-                          </div>
-                        )}
+                        {!isFull && <ProgressBar pct={searchPct} color="var(--success)" />}
                       </td>
                       <td style={{ padding: "14px 16px", minWidth: 120 }}>
                         <div
                           style={{
                             display: "flex",
                             alignItems: "center",
-                            gap: 5,
+                            gap: "var(--space-1)",
                             fontFamily: "monospace",
                             fontWeight: 600,
                           }}
@@ -1918,23 +2001,17 @@ export function AdminPage() {
                             </span>
                           )}
                         </div>
-                        {!isFull && (
-                          <div className="admin-progress">
-                            <span
-                              style={{ width: `${ratingPct}%`, background: "var(--warning)" }}
-                            />
-                          </div>
-                        )}
+                        {!isFull && <ProgressBar pct={ratingPct} color="var(--warning)" />}
                       </td>
                       <td style={{ padding: "14px 16px", minWidth: 130 }}>
                         <div
                           style={{
                             display: "flex",
                             alignItems: "center",
-                            gap: 5,
+                            gap: "var(--space-1)",
                             fontFamily: "monospace",
                             fontWeight: 600,
-                            fontSize: 12,
+                            fontSize: "var(--text-xs)",
                           }}
                         >
                           {formatTokens(u.daily_tokens_used ?? u.ai_usage?.today?.total_tokens)}{" "}
@@ -1947,7 +2024,13 @@ export function AdminPage() {
                             </span>
                           )}
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                        <div
+                          style={{
+                            fontSize: "var(--text-xs)",
+                            color: "var(--text-muted)",
+                            marginTop: 2,
+                          }}
+                        >
                           {formatTokens(u.ai_usage?.this_month?.total_tokens)} this month
                           {u.ai_usage?.cost_estimation_enabled &&
                             ` · ${formatUsd(u.ai_usage?.this_month?.estimated_cost_usd, true)}`}
@@ -1970,7 +2053,7 @@ export function AdminPage() {
                             setSelectedUserId(u.id);
                           }}
                           className="btn btn-ghost"
-                          style={{ fontSize: 12, padding: "6px 10px" }}
+                          style={{ fontSize: "var(--text-xs)", padding: "6px 10px" }}
                         >
                           Manage
                         </button>
@@ -1997,8 +2080,8 @@ export function AdminPage() {
 
       <p
         style={{
-          marginTop: 24,
-          fontSize: 12,
+          marginTop: "var(--space-6)",
+          fontSize: "var(--text-xs)",
           color: "var(--text-muted)",
           lineHeight: 1.6,
           maxWidth: 480,

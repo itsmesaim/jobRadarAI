@@ -4,8 +4,11 @@ interface Props {
   loading?: boolean;
 }
 
+const TEXT_XS = 12; // floor — nothing in the app renders smaller than this
+
 export function ScoreBadge({ score, size = "sm", loading = false }: Props) {
   const dims = { sm: 12, md: 14, lg: 22 }[size];
+  const suffixSize = Math.max(TEXT_XS, dims * 0.7);
   const padding = { sm: "3px 8px", md: "5px 11px", lg: "6px 14px" }[size];
 
   if (loading) {
@@ -18,12 +21,12 @@ export function ScoreBadge({ score, size = "sm", loading = false }: Props) {
           gap: 5,
           color: "var(--accent)",
           fontFamily: "var(--font-mono)",
-          fontSize: dims * 0.85,
+          fontSize: Math.max(TEXT_XS, dims * 0.85),
           fontWeight: 600,
           padding,
           border: "1px solid var(--accent-light)",
           background: "var(--accent-light)",
-          borderRadius: 7,
+          borderRadius: "var(--radius-sm)",
         }}
       >
         <span className="score-badge-spinner" style={{ width: dims * 0.7, height: dims * 0.7 }} />
@@ -38,10 +41,10 @@ export function ScoreBadge({ score, size = "sm", loading = false }: Props) {
         style={{
           color: "var(--text-muted)",
           fontFamily: "var(--font-mono)",
-          fontSize: dims,
+          fontSize: Math.max(TEXT_XS, dims),
           padding,
           border: "1px dashed var(--border)",
-          borderRadius: 7,
+          borderRadius: "var(--radius-sm)",
           display: "inline-block",
         }}
       >
@@ -87,15 +90,15 @@ export function ScoreBadge({ score, size = "sm", loading = false }: Props) {
         color,
         border: `1px solid ${border}`,
         padding,
-        borderRadius: 7,
+        borderRadius: "var(--radius-sm)",
         fontFamily: "var(--font-mono)",
         fontWeight: 700,
-        fontSize: dims,
+        fontSize: Math.max(TEXT_XS, dims),
         whiteSpace: "nowrap",
       }}
     >
       {score}
-      <span style={{ fontSize: dims * 0.7, fontWeight: 500, opacity: 0.65 }}>/10</span>
+      <span style={{ fontSize: suffixSize, fontWeight: 500, opacity: 0.65 }}>/10</span>
     </span>
   );
 }

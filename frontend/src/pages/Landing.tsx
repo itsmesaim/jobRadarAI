@@ -23,6 +23,7 @@ import {
 import { Logo } from "../components/Logo";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { ScoreBadge } from "../components/ScoreBadge";
+import { StatTile } from "../components/StatTile";
 
 const FEATURES = [
   {
@@ -138,10 +139,10 @@ const PREVIEW_JOBS = [
   },
 ];
 
-const HERO_STATS = [
-  { label: "Boards searched", value: "2", accent: "is-accent" },
-  { label: "Profile inputs", value: "10+", accent: "" },
-  { label: "AI fit score", value: "1-10", accent: "is-success" },
+const HERO_STATS: { label: string; value: string; tone?: "accent" | "success" }[] = [
+  { label: "Boards searched", value: "2", tone: "accent" },
+  { label: "Profile inputs", value: "10+" },
+  { label: "AI fit score", value: "1-10", tone: "success" },
 ];
 
 const heroWords = "Stop scrolling job boards. Let the radar find your matches.".split(" ");
@@ -173,7 +174,7 @@ function PreviewJobCard({
           <div className="job-card-meta-row">
             <span
               style={{
-                fontSize: 10.5,
+                fontSize: "var(--text-xs)",
                 fontWeight: 600,
                 letterSpacing: "0.05em",
                 textTransform: "uppercase",
@@ -184,11 +185,11 @@ function PreviewJobCard({
             </span>
             <span
               style={{
-                fontSize: 10,
+                fontSize: "var(--text-xs)",
                 color: "var(--text-muted)",
                 display: "flex",
                 alignItems: "center",
-                gap: 3,
+                gap: "var(--space-1)",
               }}
             >
               <Clock size={10} /> Posted 3h ago
@@ -196,22 +197,29 @@ function PreviewJobCard({
           </div>
           <h3
             style={{
-              fontSize: 13.5,
+              fontSize: "var(--text-base)",
               fontWeight: 600,
               color: "var(--text)",
               lineHeight: 1.4,
-              margin: "0 0 4px",
+              margin: "0 0 var(--space-1)",
             }}
           >
             {title}
           </h3>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-2)",
+              flexWrap: "wrap",
+            }}
+          >
             <span
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 4,
-                fontSize: 11.5,
+                gap: "var(--space-1)",
+                fontSize: "var(--text-xs)",
                 color: "var(--text-secondary)",
               }}
             >
@@ -221,8 +229,8 @@ function PreviewJobCard({
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 4,
-                fontSize: 11.5,
+                gap: "var(--space-1)",
+                fontSize: "var(--text-xs)",
                 color: "var(--text-secondary)",
               }}
             >
@@ -230,23 +238,33 @@ function PreviewJobCard({
             </span>
           </div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: "var(--space-2)",
+          }}
+        >
           <ScoreBadge score={score} size="sm" />
           <ExternalLink size={11} style={{ color: "var(--text-muted)" }} />
         </div>
       </div>
       <p
         style={{
-          fontSize: 11.5,
+          fontSize: "var(--text-xs)",
           color: "var(--text-secondary)",
-          margin: "0 0 10px",
+          margin: "0 0 var(--space-3)",
           lineHeight: 1.5,
         }}
       >
         {summary}
       </p>
-      <div className="job-card-footer" style={{ paddingTop: 10 }}>
-        <span className="job-card-status-select" style={{ color: "var(--accent)", fontSize: 10.5 }}>
+      <div className="job-card-footer" style={{ paddingTop: "var(--space-3)" }}>
+        <span
+          className="job-card-status-select"
+          style={{ color: "var(--accent)", fontSize: "var(--text-xs)" }}
+        >
           {status}
         </span>
       </div>
@@ -260,11 +278,6 @@ export function LandingPage() {
 
   return (
     <div className="landing-page">
-      <div className="landing-bg" aria-hidden>
-        <div className="landing-orb landing-orb-1" />
-        <div className="landing-orb landing-orb-2" />
-      </div>
-
       <header className="landing-nav">
         <div className="landing-nav-inner">
           <Link to="/" className="landing-nav-brand">
@@ -347,10 +360,7 @@ export function LandingPage() {
 
             <div className="landing-stats">
               {HERO_STATS.map((stat) => (
-                <div key={stat.label} className="dash-metric">
-                  <span className="dash-metric-label">{stat.label}</span>
-                  <span className={`dash-metric-value ${stat.accent}`.trim()}>{stat.value}</span>
-                </div>
+                <StatTile key={stat.label} label={stat.label} value={stat.value} tone={stat.tone} />
               ))}
             </div>
           </div>
@@ -387,22 +397,10 @@ export function LandingPage() {
                 <p className="landing-preview-greet-name">Saim.</p>
 
                 <div className="dash-metrics landing-preview-metrics">
-                  <div className="dash-metric">
-                    <span className="dash-metric-label">Total jobs</span>
-                    <span className="dash-metric-value">47</span>
-                  </div>
-                  <div className="dash-metric">
-                    <span className="dash-metric-label">Strong matches</span>
-                    <span className="dash-metric-value is-success">12</span>
-                  </div>
-                  <div className="dash-metric">
-                    <span className="dash-metric-label">Applied</span>
-                    <span className="dash-metric-value is-accent">8</span>
-                  </div>
-                  <div className="dash-metric">
-                    <span className="dash-metric-label">Unrated</span>
-                    <span className="dash-metric-value is-warning">5</span>
-                  </div>
+                  <StatTile label="Total jobs" value={47} />
+                  <StatTile label="Strong matches" value={12} tone="success" />
+                  <StatTile label="Applied" value={8} tone="accent" />
+                  <StatTile label="Unrated" value={5} tone="warning" />
                 </div>
 
                 <div className="landing-preview-toolbar">

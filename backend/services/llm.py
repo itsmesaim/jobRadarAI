@@ -11,14 +11,19 @@ There are TWO different LLMs in this app:
 
 These two can be completely different providers/models.
 
-You can mix OpenAI + Grok freely (see RATING_PROVIDER + RATING_MODEL).
+You can mix providers freely (see RATING_PROVIDER + RATING_MODEL), e.g. parse
+CVs with OpenAI but rate jobs for free on a local Ollama model, or on cheap
+DeepSeek.
 
 The code respects these common env var names from your .env:
   - GROK_API_KEY / XAI_API_KEY
   - GROK_MODEL / XAI_MODEL
+  - DEEPSEEK_API_KEY / DEEPSEEK_MODEL
   - RATING_PROVIDER / RATING_MODEL
 
-Embeddings (for fast pre-filter) usually use OpenAI embeddings even if your LLM is Grok.
+Embeddings (for fast pre-filter) follow LLM_PROVIDER, not RATING_PROVIDER —
+if LLM_PROVIDER=openai, embeddings stay on OpenAI even when RATING_PROVIDER
+is ollama/deepseek (embedding calls are cheap; not worth a separate switch).
 """
 
 from functools import lru_cache
@@ -107,7 +112,25 @@ def _make_llm(provider: str, model: str, **extra) -> BaseChatModel:
             openai_params["base_url"] = "https://api.x.ai/v1"
             return ChatOpenAI(**openai_params)
 
-    raise ValueError(f"Unknown LLM provider: {p!r}. Use 'ollama', 'openai', or 'xai'.")
+    if p == "deepseek":
+        from langchain_openai import ChatOpenAI
+
+        resolved_model = model or settings.deepseek_model
+        if not resolved_model:
+            raise ValueError("No DEEPSEEK_MODEL set in .env for deepseek provider.")
+
+        params = {
+            "api_key": settings.deepseek_api_key,
+            "model": resolved_model,
+            "base_url": "https://api.deepseek.com/v1",
+            "temperature": 0.1,
+            **extra,
+        }
+        return ChatOpenAI(**params)
+
+    raise ValueError(
+        f"Unknown LLM provider: {p!r}. Use 'ollama', 'openai', 'xai', or 'deepseek'."
+    )
 
 
 @lru_cache(maxsize=1)

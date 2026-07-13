@@ -58,7 +58,7 @@ const COPY: Record<
     subject: "JobRadar - Request more AI credits",
   },
   apply_pack: {
-    title: "Apply pack — Pro feature",
+    title: "Apply pack: Pro feature",
     subtitle: "You've used your free apply pack for today (or need premium access).",
     body: (
       <>
@@ -66,8 +66,8 @@ const COPY: Record<
         and a LaTeX snippet tailored to each job.
         <br />
         <br />
-        Free accounts get <strong>1 apply pack per day</strong>. Premium (full access) is unlimited
-        — email the admin to upgrade.
+        Free accounts get <strong>1 apply pack per day</strong>. Premium (full access) is unlimited,
+        email the admin to upgrade.
       </>
     ),
     subject: "JobRadar - Request Apply pack / premium access",
@@ -105,7 +105,7 @@ export function LimitContactModal({ kind, onClose }: { kind: LimitKind; onClose:
         alignItems: "center",
         justifyContent: "center",
         zIndex: 1000,
-        padding: 16,
+        padding: "var(--space-4)",
       }}
     >
       <div
@@ -113,8 +113,8 @@ export function LimitContactModal({ kind, onClose }: { kind: LimitKind; onClose:
         style={{
           background: "var(--bg-card)",
           color: "var(--text)",
-          borderRadius: 16,
-          padding: 28,
+          borderRadius: "var(--radius-lg)",
+          padding: "var(--space-6)",
           maxWidth: 420,
           width: "100%",
           boxShadow: "var(--shadow-lg)",
@@ -125,8 +125,8 @@ export function LimitContactModal({ kind, onClose }: { kind: LimitKind; onClose:
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 12,
-            marginBottom: 16,
+            gap: "var(--space-3)",
+            marginBottom: "var(--space-4)",
           }}
         >
           <div
@@ -149,7 +149,7 @@ export function LimitContactModal({ kind, onClose }: { kind: LimitKind; onClose:
               id="limit-modal-title"
               style={{
                 margin: 0,
-                fontSize: 19,
+                fontSize: "var(--text-xl)",
                 fontWeight: 600,
                 color: "var(--text)",
               }}
@@ -158,8 +158,8 @@ export function LimitContactModal({ kind, onClose }: { kind: LimitKind; onClose:
             </h3>
             <p
               style={{
-                margin: "4px 0 0",
-                fontSize: 13,
+                margin: "var(--space-1) 0 0",
+                fontSize: "var(--text-sm)",
                 color: "var(--text-secondary)",
                 lineHeight: 1.45,
               }}
@@ -174,17 +174,17 @@ export function LimitContactModal({ kind, onClose }: { kind: LimitKind; onClose:
             background: "var(--danger-bg)",
             border: "1px solid var(--danger-border)",
             color: "var(--text-secondary)",
-            padding: "14px 16px",
-            borderRadius: 10,
-            marginBottom: 20,
-            fontSize: 14,
+            padding: "var(--space-3) var(--space-4)",
+            borderRadius: "var(--radius)",
+            marginBottom: "var(--space-5)",
+            fontSize: "var(--text-base)",
             lineHeight: 1.6,
           }}
         >
           <div style={{ color: "var(--text)" }}>{copy.body}</div>
         </div>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
           <a
             href={mailto}
             className="btn btn-primary"
@@ -194,7 +194,7 @@ export function LimitContactModal({ kind, onClose }: { kind: LimitKind; onClose:
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              gap: 8,
+              gap: "var(--space-2)",
             }}
           >
             <Mail size={16} /> Email for more access
@@ -211,10 +211,10 @@ export function LimitContactModal({ kind, onClose }: { kind: LimitKind; onClose:
 
         <div
           style={{
-            fontSize: 12,
+            fontSize: "var(--text-xs)",
             color: "var(--text-muted)",
             textAlign: "center",
-            marginTop: 16,
+            marginTop: "var(--space-4)",
             lineHeight: 1.55,
           }}
         >

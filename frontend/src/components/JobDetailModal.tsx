@@ -116,7 +116,7 @@ export function JobDetailModal({ job, onClose }: Props) {
     ? "Unlimited · ATS keywords, full LaTeX CV boilerplate, MASTER CV + JD context"
     : applyPacksRemaining > 0
       ? `${applyPacksRemaining} free today · one prompt: tailored CV .tex + cover note`
-      : "Daily limit used — upgrade for unlimited apply packs";
+      : "Daily limit used, upgrade for unlimited apply packs";
 
   const handleCopyBrief = async () => {
     try {
@@ -173,7 +173,7 @@ export function JobDetailModal({ job, onClose }: Props) {
       await jobsApi.submitRatingFeedback(job.id, comment, starRating || undefined);
       setFeedbackSubmitted(true);
       setFeedbackText("");
-      toast.success("Thanks — this will help calibrate future ratings on similar jobs");
+      toast.success("Thanks, this will help calibrate future ratings on similar jobs");
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { detail?: string } } };
       toast.error(ax.response?.data?.detail || "Could not save feedback");
@@ -243,13 +243,13 @@ export function JobDetailModal({ job, onClose }: Props) {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
-                marginBottom: 6,
+                gap: "var(--space-2)",
+                marginBottom: "var(--space-2)",
               }}
             >
               <span
                 style={{
-                  fontSize: 11,
+                  fontSize: "var(--text-xs)",
                   fontWeight: 600,
                   letterSpacing: "0.05em",
                   textTransform: "uppercase",
@@ -272,7 +272,7 @@ export function JobDetailModal({ job, onClose }: Props) {
               {job.posted_at_actual && (
                 <span
                   title={`Posted: ${fullDate(job.posted_at_actual)}`}
-                  style={{ display: "flex", alignItems: "center", gap: 4 }}
+                  style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}
                 >
                   <Clock size={11} /> Posted {timeAgo(job.posted_at_actual)}
                 </span>
@@ -280,7 +280,7 @@ export function JobDetailModal({ job, onClose }: Props) {
               {job.crawled_at && (
                 <span
                   title={`Pulled by JobRadar: ${fullDate(job.crawled_at)}`}
-                  style={{ display: "flex", alignItems: "center", gap: 4 }}
+                  style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}
                 >
                   <CalendarClock size={11} /> Pulled {timeAgo(job.crawled_at)}
                 </span>
@@ -288,7 +288,7 @@ export function JobDetailModal({ job, onClose }: Props) {
               {rating.rated_at && (
                 <span
                   title={`Last rated: ${fullDate(rating.rated_at)}`}
-                  style={{ display: "flex", alignItems: "center", gap: 4 }}
+                  style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}
                 >
                   <Sparkles size={11} /> Rated {timeAgo(rating.rated_at)}
                 </span>
@@ -299,29 +299,31 @@ export function JobDetailModal({ job, onClose }: Props) {
               style={{
                 display: "flex",
                 flexWrap: "wrap",
-                gap: 12,
-                fontSize: 13,
+                gap: "var(--space-3)",
+                fontSize: "var(--text-sm)",
                 color: "var(--text-secondary)",
               }}
             >
               {company && (
-                <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
                   <Building2 size={13} /> {company}
                 </span>
               )}
               {location && (
-                <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
                   <MapPin size={13} /> {location}
                 </span>
               )}
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <div
+            style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}
+          >
             <ScoreBadge score={rating.score} size="lg" loading={!!job.rating_in_progress} />
             <button
               onClick={onClose}
               className="btn btn-ghost"
-              style={{ padding: "8px 10px" }}
+              style={{ padding: "var(--space-2) var(--space-3)" }}
               aria-label="Close"
             >
               <X size={16} />
@@ -330,37 +332,37 @@ export function JobDetailModal({ job, onClose }: Props) {
         </div>
 
         {/* Body — scrollable */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-5) var(--space-6)" }}>
           {job.rating_in_progress && (
             <p
               style={{
-                fontSize: 14,
+                fontSize: "var(--text-base)",
                 color: "var(--accent)",
                 lineHeight: 1.6,
-                margin: "0 0 20px",
-                padding: "12px 14px",
+                margin: "0 0 var(--space-5)",
+                padding: "var(--space-3) var(--space-4)",
                 background: "var(--accent-light)",
-                borderRadius: 8,
+                borderRadius: "var(--radius)",
                 border: "1px solid var(--accent-light)",
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
+                gap: "var(--space-2)",
               }}
             >
               <span className="score-badge-spinner" style={{ width: 13, height: 13 }} />
-              AI is rating this job against your CV right now — check back in a moment.
+              AI is rating this job against your CV right now, check back in a moment.
             </p>
           )}
           {rating.verdict && rating.verdict !== "Not rated yet" && (
             <p
               style={{
-                fontSize: 14,
+                fontSize: "var(--text-base)",
                 color: "var(--text-secondary)",
                 lineHeight: 1.65,
-                margin: "0 0 20px",
-                padding: "12px 14px",
+                margin: "0 0 var(--space-5)",
+                padding: "var(--space-3) var(--space-4)",
                 background: "var(--bg-secondary)",
-                borderRadius: 8,
+                borderRadius: "var(--radius)",
                 border: "1px solid var(--border)",
               }}
             >
@@ -369,21 +371,24 @@ export function JobDetailModal({ job, onClose }: Props) {
           )}
 
           {rating.matched_strengths && rating.matched_strengths.length > 0 && (
-            <div style={{ marginBottom: 20 }}>
+            <div style={{ marginBottom: "var(--space-5)" }}>
               <p
                 style={{
-                  fontSize: 11,
+                  fontSize: "var(--text-xs)",
                   fontWeight: 600,
                   color: "var(--success)",
                   textTransform: "uppercase",
                   letterSpacing: "0.05em",
-                  marginBottom: 10,
+                  marginBottom: "var(--space-3)",
                 }}
               >
                 Strengths
               </p>
               {rating.matched_strengths.map((s, i) => (
-                <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <div
+                  key={i}
+                  style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}
+                >
                   <span
                     style={{
                       color: "var(--success)",
@@ -395,7 +400,7 @@ export function JobDetailModal({ job, onClose }: Props) {
                   </span>
                   <span
                     style={{
-                      fontSize: 14,
+                      fontSize: "var(--text-base)",
                       color: "var(--text-secondary)",
                       lineHeight: 1.6,
                     }}
@@ -408,25 +413,28 @@ export function JobDetailModal({ job, onClose }: Props) {
           )}
 
           {rating.gaps && rating.gaps.length > 0 && (
-            <div style={{ marginBottom: 20 }}>
+            <div style={{ marginBottom: "var(--space-5)" }}>
               <p
                 style={{
-                  fontSize: 11,
+                  fontSize: "var(--text-xs)",
                   fontWeight: 600,
                   color: "#f97316",
                   textTransform: "uppercase",
                   letterSpacing: "0.05em",
-                  marginBottom: 10,
+                  marginBottom: "var(--space-3)",
                 }}
               >
                 Gaps
               </p>
               {rating.gaps.map((g, i) => (
-                <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <div
+                  key={i}
+                  style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}
+                >
                   <span style={{ color: "#f97316", fontWeight: 700, flexShrink: 0 }}>−</span>
                   <span
                     style={{
-                      fontSize: 14,
+                      fontSize: "var(--text-base)",
                       color: "var(--text-secondary)",
                       lineHeight: 1.6,
                     }}
@@ -441,21 +449,21 @@ export function JobDetailModal({ job, onClose }: Props) {
           {rating.score !== null && rating.score > 0 && (
             <div
               style={{
-                marginBottom: 20,
-                padding: "12px 14px",
+                marginBottom: "var(--space-5)",
+                padding: "var(--space-3) var(--space-4)",
                 background: "var(--bg-secondary)",
-                borderRadius: 8,
+                borderRadius: "var(--radius)",
                 border: "1px solid var(--border)",
               }}
             >
               <p
                 style={{
-                  fontSize: 11,
+                  fontSize: "var(--text-xs)",
                   fontWeight: 600,
                   color: "var(--text-muted)",
                   textTransform: "uppercase",
                   letterSpacing: "0.05em",
-                  marginBottom: 10,
+                  marginBottom: "var(--space-3)",
                 }}
               >
                 Rate this AI review
@@ -463,9 +471,9 @@ export function JobDetailModal({ job, onClose }: Props) {
               <StarRating value={starRating} onChange={setStarRating} />
               <p
                 style={{
-                  fontSize: 12,
+                  fontSize: "var(--text-xs)",
                   color: "var(--text-muted)",
-                  margin: "10px 0 8px",
+                  margin: "var(--space-3) 0 var(--space-2)",
                 }}
               >
                 Did this rating miss something? Your rating and note help calibrate ratings on
@@ -479,22 +487,22 @@ export function JobDetailModal({ job, onClose }: Props) {
                 style={{
                   width: "100%",
                   resize: "vertical",
-                  fontSize: 13.5,
-                  padding: "8px 10px",
-                  borderRadius: 6,
+                  fontSize: "var(--text-sm)",
+                  padding: "var(--space-2) var(--space-3)",
+                  borderRadius: "var(--radius-sm)",
                   border: "1px solid var(--border)",
                   background: "var(--bg-primary)",
                   color: "var(--text-primary)",
                   fontFamily: "inherit",
                 }}
               />
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
                 <button
                   type="button"
                   onClick={handleSubmitFeedback}
                   disabled={feedbackSubmitting || (!feedbackText.trim() && !starRating)}
                   className="btn btn-primary"
-                  style={{ padding: "6px 12px", fontSize: 13 }}
+                  style={{ padding: "var(--space-2) var(--space-3)", fontSize: "var(--text-sm)" }}
                 >
                   {feedbackSubmitting ? (
                     <Loader size={13} className="animate-spin" />
@@ -512,19 +520,19 @@ export function JobDetailModal({ job, onClose }: Props) {
             <div>
               <p
                 style={{
-                  fontSize: 11,
+                  fontSize: "var(--text-xs)",
                   fontWeight: 600,
                   color: "var(--text-muted)",
                   textTransform: "uppercase",
                   letterSpacing: "0.05em",
-                  marginBottom: 10,
+                  marginBottom: "var(--space-3)",
                 }}
               >
                 Full job description
               </p>
               <p
                 style={{
-                  fontSize: 13.5,
+                  fontSize: "var(--text-sm)",
                   color: "var(--text-secondary)",
                   lineHeight: 1.7,
                   whiteSpace: "pre-wrap",
@@ -557,7 +565,7 @@ export function JobDetailModal({ job, onClose }: Props) {
                 {packLoading
                   ? "Building your apply pack…"
                   : copiedPack
-                    ? "Copied — paste into ChatGPT / Claude"
+                    ? "Copied, paste into ChatGPT / Claude"
                     : "Copy apply pack for LLM"}
               </button>
               <p className="job-modal-pack-hint" title={packHint}>

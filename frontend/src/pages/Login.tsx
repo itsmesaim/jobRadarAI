@@ -55,15 +55,15 @@ export function LoginPage() {
 
   return (
     <AuthPageShell>
-      <div className="card" style={{ padding: 28 }}>
+      <div className="card" style={{ padding: "var(--space-6)" }}>
         {/* Mode toggle */}
         <div
           style={{
             display: "flex",
             background: "var(--bg-secondary)",
-            borderRadius: 8,
-            padding: 3,
-            marginBottom: 24,
+            borderRadius: "var(--radius)",
+            padding: "var(--space-1)",
+            marginBottom: "var(--space-6)",
           }}
         >
           {(["login", "register"] as const).map((m) => (
@@ -75,9 +75,9 @@ export function LoginPage() {
               }}
               style={{
                 flex: 1,
-                padding: "7px 12px",
-                borderRadius: 6,
-                fontSize: 13,
+                padding: "var(--space-2) var(--space-3)",
+                borderRadius: "var(--radius-sm)",
+                fontSize: "var(--text-sm)",
                 fontWeight: 500,
                 border: "none",
                 cursor: "pointer",
@@ -93,7 +93,7 @@ export function LoginPage() {
           ))}
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
           {mode === "register" && (
             <div>
               <label className="label">Full name</label>
@@ -107,9 +107,9 @@ export function LoginPage() {
               {errors.name && (
                 <p
                   style={{
-                    fontSize: 11,
+                    fontSize: "var(--text-xs)",
                     color: "var(--danger)",
-                    marginTop: 4,
+                    marginTop: "var(--space-1)",
                   }}
                 >
                   {errors.name}
@@ -129,7 +129,15 @@ export function LoginPage() {
               style={errors.email ? { borderColor: "var(--danger)" } : {}}
             />
             {errors.email && (
-              <p style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>{errors.email}</p>
+              <p
+                style={{
+                  fontSize: "var(--text-xs)",
+                  color: "var(--danger)",
+                  marginTop: "var(--space-1)",
+                }}
+              >
+                {errors.email}
+              </p>
             )}
           </div>
 
@@ -145,15 +153,21 @@ export function LoginPage() {
               style={errors.password ? { borderColor: "var(--danger)" } : {}}
             />
             {errors.password && (
-              <p style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>
+              <p
+                style={{
+                  fontSize: "var(--text-xs)",
+                  color: "var(--danger)",
+                  marginTop: "var(--space-1)",
+                }}
+              >
                 {errors.password}
               </p>
             )}
             {mode === "login" && (
               <p
                 style={{
-                  margin: "6px 0 0",
-                  fontSize: 12,
+                  margin: "var(--space-2) 0 0",
+                  fontSize: "var(--text-xs)",
                   textAlign: "right",
                 }}
               >
@@ -170,8 +184,8 @@ export function LoginPage() {
                 style={{
                   display: "flex",
                   alignItems: "flex-start",
-                  gap: 8,
-                  fontSize: 12,
+                  gap: "var(--space-2)",
+                  fontSize: "var(--text-xs)",
                   color: "var(--text-secondary)",
                   cursor: "pointer",
                 }}
@@ -194,7 +208,15 @@ export function LoginPage() {
                 </span>
               </label>
               {errors.terms && (
-                <p style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>{errors.terms}</p>
+                <p
+                  style={{
+                    fontSize: "var(--text-xs)",
+                    color: "var(--danger)",
+                    marginTop: "var(--space-1)",
+                  }}
+                >
+                  {errors.terms}
+                </p>
               )}
             </div>
           )}
@@ -206,9 +228,8 @@ export function LoginPage() {
             style={{
               width: "100%",
               justifyContent: "center",
-              padding: "10px",
-              marginTop: 4,
-              fontSize: 14,
+              padding: "var(--space-3)",
+              marginTop: "var(--space-1)",
             }}
           >
             {loading ? "Please wait..." : mode === "login" ? "Sign in" : "Create account"}
@@ -219,9 +240,9 @@ export function LoginPage() {
       <p
         style={{
           textAlign: "center",
-          fontSize: 12,
+          fontSize: "var(--text-xs)",
           color: "var(--text-muted)",
-          marginTop: 20,
+          marginTop: "var(--space-5)",
         }}
       >
         Your data stays on your server. No ads, no tracking.

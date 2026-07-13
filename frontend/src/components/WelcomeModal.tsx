@@ -47,7 +47,7 @@ const STEPS = [
     color: "var(--warning)",
     bg: "var(--warning-bg)",
     title: "Rate the AI's ratings",
-    desc: "Open a job and use the star rating + note under its review to tell us when it got something wrong — that feedback calibrates how similar jobs get rated next time.",
+    desc: "Open a job and use the star rating + note under its review to tell us when it got something wrong. That feedback calibrates how similar jobs get rated next time.",
     action: null,
   },
 ];
@@ -93,7 +93,7 @@ export function WelcomeModal({ forceOpen = false, onClose }: Props = {}) {
         alignItems: "center",
         justifyContent: "center",
         zIndex: 1200,
-        padding: 16,
+        padding: "var(--space-4)",
       }}
     >
       <div
@@ -102,7 +102,7 @@ export function WelcomeModal({ forceOpen = false, onClose }: Props = {}) {
         style={{
           maxWidth: 440,
           width: "100%",
-          padding: 28,
+          padding: "var(--space-6)",
           boxShadow: "var(--shadow-lg)",
           position: "relative",
         }}
@@ -112,14 +112,14 @@ export function WelcomeModal({ forceOpen = false, onClose }: Props = {}) {
           onClick={dismiss}
           style={{
             position: "absolute",
-            top: 14,
-            right: 14,
+            top: "var(--space-3)",
+            right: "var(--space-3)",
             background: "none",
             border: "none",
             cursor: "pointer",
             color: "var(--text-muted)",
             display: "flex",
-            padding: 4,
+            padding: "var(--space-1)",
           }}
           title="Skip"
         >
@@ -127,7 +127,7 @@ export function WelcomeModal({ forceOpen = false, onClose }: Props = {}) {
         </button>
 
         {/* Step dots */}
-        <div style={{ display: "flex", gap: 5, marginBottom: 24 }}>
+        <div style={{ display: "flex", gap: "var(--space-1)", marginBottom: "var(--space-6)" }}>
           {STEPS.map((_, i) => (
             <button
               key={i}
@@ -135,7 +135,7 @@ export function WelcomeModal({ forceOpen = false, onClose }: Props = {}) {
               style={{
                 width: i === step ? 20 : 7,
                 height: 7,
-                borderRadius: 999,
+                borderRadius: "var(--radius-pill)",
                 border: "none",
                 cursor: "pointer",
                 background: i === step ? "var(--accent)" : "var(--border)",
@@ -151,12 +151,12 @@ export function WelcomeModal({ forceOpen = false, onClose }: Props = {}) {
           style={{
             width: 48,
             height: 48,
-            borderRadius: 12,
+            borderRadius: "var(--radius)",
             background: current.bg,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            marginBottom: 16,
+            marginBottom: "var(--space-4)",
           }}
         >
           <Icon size={22} style={{ color: current.color }} />
@@ -165,21 +165,21 @@ export function WelcomeModal({ forceOpen = false, onClose }: Props = {}) {
         {/* Content */}
         <p
           style={{
-            fontSize: 11,
+            fontSize: "var(--text-xs)",
             fontWeight: 600,
             color: "var(--text-muted)",
             textTransform: "uppercase",
             letterSpacing: "0.05em",
-            margin: "0 0 6px",
+            margin: "0 0 var(--space-2)",
           }}
         >
           Step {step + 1} of {STEPS.length}
         </p>
         <h3
           style={{
-            fontSize: 19,
+            fontSize: "var(--text-xl)",
             fontWeight: 700,
-            margin: "0 0 10px",
+            margin: "0 0 var(--space-3)",
             color: "var(--text)",
             letterSpacing: "-0.02em",
           }}
@@ -188,9 +188,9 @@ export function WelcomeModal({ forceOpen = false, onClose }: Props = {}) {
         </h3>
         <p
           style={{
-            fontSize: 14,
+            fontSize: "var(--text-base)",
             color: "var(--text-secondary)",
-            margin: "0 0 24px",
+            margin: "0 0 var(--space-6)",
             lineHeight: 1.6,
           }}
         >
@@ -198,7 +198,7 @@ export function WelcomeModal({ forceOpen = false, onClose }: Props = {}) {
         </p>
 
         {/* Actions */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
           {isLast ? (
             <button
               onClick={dismiss}
@@ -211,7 +211,7 @@ export function WelcomeModal({ forceOpen = false, onClose }: Props = {}) {
             <button
               onClick={() => setStep((s) => s + 1)}
               className="btn btn-primary"
-              style={{ flex: 1, justifyContent: "center", gap: 6 }}
+              style={{ flex: 1, justifyContent: "center", gap: "var(--space-2)" }}
             >
               Next <ArrowRight size={14} />
             </button>
@@ -222,7 +222,7 @@ export function WelcomeModal({ forceOpen = false, onClose }: Props = {}) {
               href={current.action.href}
               onClick={dismiss}
               className="btn btn-ghost"
-              style={{ fontSize: 13, whiteSpace: "nowrap" }}
+              style={{ fontSize: "var(--text-sm)", whiteSpace: "nowrap" }}
             >
               {current.action.label}
             </a>
@@ -232,7 +232,7 @@ export function WelcomeModal({ forceOpen = false, onClose }: Props = {}) {
             <button
               onClick={() => setStep((s) => s - 1)}
               className="btn btn-ghost"
-              style={{ padding: "9px 12px", fontSize: 13 }}
+              style={{ padding: "var(--space-2) var(--space-3)", fontSize: "var(--text-sm)" }}
             >
               Back
             </button>
@@ -244,11 +244,11 @@ export function WelcomeModal({ forceOpen = false, onClose }: Props = {}) {
             onClick={dismiss}
             style={{
               display: "block",
-              margin: "14px auto 0",
+              margin: "var(--space-4) auto 0",
               background: "none",
               border: "none",
               cursor: "pointer",
-              fontSize: 12,
+              fontSize: "var(--text-xs)",
               color: "var(--text-muted)",
             }}
           >

@@ -14,7 +14,7 @@ export function ResetPasswordPage() {
 
   const handleSubmit = async () => {
     if (!token) {
-      toast.error("Missing reset token — request a new link");
+      toast.error("Missing reset token, request a new link");
       return;
     }
     if (password.length < 8) {

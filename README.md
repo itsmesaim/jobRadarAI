@@ -1,6 +1,6 @@
 # JobRadar AI
 
-An AI-powered job hunting assistant that finds roles for you, rates them intelligently against your CV (with separate fast rating models), shows when jobs were posted, and helps you track applications — with built-in freemium limits and an admin panel.
+An AI-powered job hunting assistant. Upload your CV, set your preferences, hit **Search jobs**, and JobRadar crawls listings, rates each one against your profile (1–10) with strengths/gaps/tailoring tips, learns from the star ratings and notes you leave on its own ratings, and keeps your applications on a Kanban board.
 
 ---
 
@@ -10,10 +10,10 @@ An AI-powered job hunting assistant that finds roles for you, rates them intelli
 
 | Layer | Tech | Role |
 |-------|------|------|
-| **Backend** | FastAPI, Motor (MongoDB), LangChain, LangSmith, PyMuPDF | Auth, CV parsing, job crawling, AI rating, REST API |
-| **Frontend** | React 18, TypeScript, Vite, TanStack Query, Zustand, @dnd-kit, Tailwind CSS | Login, job dashboard, drag-and-drop Kanban, settings |
+| **Backend** | FastAPI, Motor (MongoDB), LangChain, FAISS, PyMuPDF | Auth, CV parsing, job crawling, AI rating + calibration, REST API |
+| **Frontend** | React 18, TypeScript, Vite, TanStack Query, Zustand, @dnd-kit | Landing page, dashboard, drag-and-drop Kanban, settings |
 
-The core idea: upload your CV once, set your preferences, hit **Search jobs**, and the system discovers listings, rates each one against your profile (1–10), and gives you strengths, gaps, and a verdict — so you spend time on roles that actually fit.
+The rating engine isn't a one-shot prompt: a cosine-similarity pre-filter skips the LLM entirely for obvious mismatches, FAISS retrieves the most relevant JD chunks instead of truncating long postings, and every rating you correct with a star + note gets pulled back in as calibration context the next time a similar job shows up.
 
 ---
 
@@ -21,25 +21,25 @@ The core idea: upload your CV once, set your preferences, hit **Search jobs**, a
 
 ### High-Level Overview
 
-JobRadar is a three-tier system: a React SPA talks to a FastAPI backend, which orchestrates MongoDB persistence, external job APIs, and **split LLM providers** via LangChain.
-
-You can use one model/provider for CV parsing and briefs, and a different (usually faster/cheaper) model for bulk job rating. xAI/Grok is fully supported for rating.
+A React SPA talks to a FastAPI backend, which orchestrates MongoDB persistence, two job-board APIs, and a **split LLM provider** setup via LangChain — one model for CV parsing/apply-pack generation, a separate (often cheaper/faster) model for bulk job rating, controlled entirely through `.env`.
 
 ```mermaid
 flowchart TB
     subgraph Client["Frontend — React SPA (Vite)"]
-        Pages["Pages: Login · Dashboard · Kanban · Settings"]
+        Pages["Pages: Landing · Login · Dashboard · Kanban · Settings · Admin"]
         State["Zustand (auth) + TanStack Query (server state)"]
-        Axios["Axios client + JWT interceptor"]
+        Fetch["fetch()-based API client + JWT interceptor"]
     end
 
     subgraph Backend["Backend — FastAPI"]
-        Routes["API Routes<br/>auth · cv · crawler · jobs · users"]
+        Routes["Routes: auth · cv · crawler · jobs · users · admin"]
         Deps["JWT auth dependency"]
         subgraph Services["Service Layer"]
             CVParser["cv_parser.py"]
-            Rating["rating.py"]
-            Crawlers["jooble · jobsapi · adzuna · tavily"]
+            Rating["rating.py — prefilter + RAG + calibration"]
+            Vectorstore["vectorstore.py — FAISS chunk/retrieve"]
+            ApplyPack["apply_pack.py + cv_latex_boilerplate.py"]
+            Crawlers["jooble_crawler.py · jobsapi_indeed_crawler.py"]
             LLM["llm.py — provider abstraction"]
         end
         Security["core/security.py — bcrypt + JWT"]
@@ -52,97 +52,26 @@ flowchart TB
     subgraph External["External Services"]
         Jooble["Jooble API"]
         JobsAPI["JobsAPI (Indeed)"]
-        Adzuna["Adzuna API"]
-        Tavily["Tavily Search"]
-        Ollama["Ollama (local)"]
-        OpenAI["OpenAI API"]
+        Ollama["Ollama (local, free)"]
+        OpenAI["OpenAI / xAI / DeepSeek"]
     end
 
-    Pages --> State --> Axios
-    Axios -->|"REST + Bearer JWT"| Routes
+    Pages --> State --> Fetch
+    Fetch -->|"REST + Bearer JWT"| Routes
     Routes --> Deps --> Security
     Routes --> Services
     Services --> MongoDB
     CVParser --> LLM
+    Rating --> Vectorstore
     Rating --> LLM
-    Crawlers --> Jooble & JobsAPI & Adzuna & Tavily
-    LLM --> Ollama & OpenAI & xAI
-```
-
-### Backend Layered Architecture
-
-The backend follows a thin-routes, fat-services pattern. Routes handle HTTP concerns; services own business logic; `llm.py` abstracts the AI providers.
-
-A key design: **main LLM** (for CV parsing, briefs) vs **rating LLM** (for fast bulk job scoring). They can use completely different providers/models controlled only via `.env`.
-
-```mermaid
-flowchart TB
-    subgraph Presentation["Presentation — FastAPI Routes"]
-        auth_r["routes/auth.py"]
-        cv_r["routes/cv.py"]
-        crawler_r["routes/crawler.py"]
-        jobs_r["routes/jobs.py"]
-        users_r["routes/users.py"]
-    end
-
-    subgraph Business["Business — Services"]
-        cv_s["cv_parser.py<br/>PDF → text → JSON"]
-        rating_s["rating.py<br/>CV vs JD scoring"]
-        jooble_s["jooble_crawler.py"]
-        jobsapi_s["jobsapi_indeed_crawler.py"]
-        adzuna_s["adzuna_crawler.py"]
-        tavily_s["crawler.py (Tavily)"]
-        llm_s["llm.py — main + rating LLM split + xAI support"]
-    end
-
-    subgraph Core["Core"]
-        security["security.py"]
-        deps["deps.py"]
-        models["models/user.py"]
-    end
-
-    subgraph Infra["Infrastructure"]
-        config["config.py"]
-        database["database.py (Motor)"]
-    end
-
-    auth_r & cv_r & crawler_r & jobs_r & users_r --> Business
-    auth_r --> security
-    Presentation --> deps
-    Business --> llm_s
-    Business --> database
-    database --> MongoDB[("MongoDB")]
-    Infra --> database
-```
-
-### Frontend Architecture
-
-```mermaid
-flowchart LR
-    subgraph UI["UI Layer"]
-        Login["Login.tsx"]
-        Dashboard["Dashboard.tsx"]
-        Kanban["Kanban.tsx"]
-        Settings["Settings.tsx"]
-        Components["JobCard · ManualJDModal · ScoreBadge · Navbar"]
-    end
-
-    subgraph DataLayer["Data Layer"]
-        Zustand["Zustand — JWT token"]
-        TQ["TanStack Query — jobs, crawl status"]
-        API["api/client.ts + api/index.ts"]
-    end
-
-    Login --> Zustand
-    Dashboard & Kanban & Settings --> TQ
-    Dashboard & Kanban --> Components
-    TQ --> API
-    API -->|"http://localhost:8000"| FastAPI["FastAPI Backend"]
+    ApplyPack --> LLM
+    Crawlers --> Jooble & JobsAPI
+    LLM --> Ollama & OpenAI
 ```
 
 ### Data Model
 
-Jobs are stored in a shared collection; per-user data (ratings, Kanban status, hidden flag) is embedded on each job document using `{user_id}` keys. This lets multiple users rate the same listing independently without duplicating job records.
+Jobs live in one shared collection; per-user data (ratings, feedback, Kanban status, hidden flag) is embedded on each job document keyed by `{user_id}`, so multiple users can independently rate the same listing without duplicating it.
 
 ```mermaid
 erDiagram
@@ -151,52 +80,37 @@ erDiagram
         string name
         string email UK
         string password_hash
-        datetime created_at
-        string cv_raw_text
-        object cv_parsed
+        object cv "raw_text + structured + cv_embedding"
         object preferences
-        datetime last_crawl_at
-        int manual_crawl_count_today
+        string about_me "LLM-cleaned free text"
+        object skill_overrides
+        object usage "search/rating/token counters"
     }
 
     JOBS {
         ObjectId _id PK
         string title
-        string url
         string url_hash UK
-        string snippet
         string full_text
         string source
-        string company
-        string location
-        datetime crawled_at
-        datetime posted_at
-        object ratings
+        object jd_embedding "cosine pre-filter"
+        object jd_chunks "FAISS chunks for RAG retrieval"
+        object ratings "ratings.{user_id}"
+        object rating_feedback "rating_feedback.{user_id}: stars + comment"
         string status_per_user
         bool hidden_per_user
     }
 
-    USERS ||--o{ JOBS : "rates and tracks via embedded fields"
+    USERS ||--o{ JOBS : "rates, tracks, and calibrates against via embedded fields"
 ```
 
-**`ratings.{user_id}`** stores `score`, `matched_strengths`, `gaps`, `verdict`, `auto_reject`, `rated_at`.
+**`ratings.{user_id}`**: `score`, `matched_strengths`, `gaps`, `verdict`, `auto_reject`, `structural_mismatch`, `tailoring_tips`, `rated_at`.
 
-**`status_{user_id}`** tracks Kanban pipeline: `NEW` → `SAVED` → `HALF_APPLIED` → `APPLIED` → `FOLLOWUP` → `INTERVIEWING` → `OFFER` / `REJECTED`.
+**`rating_feedback.{user_id}`**: `stars` (1-5), `comment` (LLM-cleaned), `created_at` — surfaced back into the rating prompt the next time a similar job is rated.
 
-### Deployment Topology
+**`status_{user_id}`**: `NEW` → `SAVED` → `HALF_APPLIED` → `APPLIED` → `FOLLOWUP` → `INTERVIEWING` → `OFFER` / `REJECTED`.
 
-```mermaid
-flowchart LR
-    Browser["Browser"] --> Vite["Vite dev server<br/>:5173"]
-    Vite --> FastAPI["FastAPI + Uvicorn<br/>:8000"]
-    FastAPI --> Mongo["MongoDB<br/>:27017 or Atlas"]
-    FastAPI --> Ollama["Ollama<br/>:11434"]
-    FastAPI --> JobAPIs["Jooble · JobsAPI · Adzuna"]
-    FastAPI -.->|"optional"| OpenAI["OpenAI API"]
-    FastAPI -.->|"optional"| Tavily["Tavily API"]
-```
-
-### Sequence: Job Discovery & AI Rating
+### Sequence: Job Discovery, Rating & Calibration
 
 ```mermaid
 sequenceDiagram
@@ -204,267 +118,74 @@ sequenceDiagram
     participant FE as React Frontend
     participant API as FastAPI
     participant Crawler as Job Crawlers
-    participant Ext as Jooble / JobsAPI
     participant DB as MongoDB
-    participant Rating as rating.py (prefilter + concurrency)
-    participant LLM as Main LLM + Rating LLM (split, xAI supported)
+    participant Rating as rating.py
+    participant Vec as vectorstore.py (FAISS)
+    participant LLM as Rating LLM
 
     User->>FE: Click "Search jobs"
     FE->>API: POST /crawler/search (JWT)
     API->>API: Check search + token quota
-
     par Parallel crawl
         API->>Crawler: crawl_jobs_for_user_jooble()
-        Crawler->>Ext: Search with roles + skills
-        Ext-->>Crawler: Listings
         API->>Crawler: crawl_jobs_for_user_jobsapi()
-        Crawler->>Ext: Search with roles + skills
-        Ext-->>Crawler: Listings
     end
-
     Crawler->>DB: Dedupe by url_hash, skip short JDs, insert new
-    API-->>FE: found / stored / skipped
 
-    FE->>API: POST /jobs/rate-all (background task)
-    loop Each unrated job for user
+    FE->>API: POST /jobs/rate-all (background)
+    loop Each unrated job
         Rating->>DB: Load user CV + job
         Rating->>Rating: Embedding pre-filter (cosine similarity)
         alt Low similarity
-            Rating->>DB: Cheap low score (no LLM)
+            Rating->>DB: Cheap graduated low score (no LLM call)
         else
-            Rating->>LLM: Rating LLM (can be different provider)
+            Rating->>Vec: Retrieve most relevant JD chunks + user's similar past-rated jobs
+            Vec-->>Rating: Ranked chunks + calibration context (past stars/comments)
+            Rating->>LLM: Full rating prompt (CV + about_me + calibration + JD chunks)
             LLM-->>Rating: score, strengths, gaps, verdict, tailoring_tips
         end
         Rating->>DB: Set ratings.{user_id}
     end
 
-    FE->>API: GET /jobs (poll every 30s)
-    API-->>FE: Rated job cards for dashboard
-```
-
-### Sequence: CV Upload & Parsing
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant FE as React Frontend
-    participant API as FastAPI
-    participant CV as cv_parser.py
-    participant PDF as PyMuPDF
-    participant LLM as Ollama / OpenAI
-    participant DB as MongoDB
-
-    User->>FE: Upload PDF (max 5 MB)
-    FE->>API: POST /cv/upload (multipart)
-    API->>CV: process_cv(pdf_bytes)
-    CV->>PDF: extract_text_from_pdf()
-    PDF-->>CV: Raw text
-    CV->>LLM: parse_cv_with_llm() → structured JSON
-    LLM-->>CV: name, skills, experience, projects, education
-    CV->>DB: Save cv_raw_text + cv_parsed on user doc
-    API-->>FE: Parsed CV summary
-```
-
-### Sequence: Authentication
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant FE as React Frontend
-    participant API as FastAPI
-    participant DB as MongoDB
-
-    User->>FE: Register or login
-    FE->>API: POST /auth/register or /auth/login
-    API->>DB: Lookup / create user (bcrypt hash)
-    API-->>FE: JWT access_token (7-day expiry)
-    FE->>FE: Store token in Zustand + localStorage
-
-    Note over FE,API: All protected routes
-    FE->>API: Request with Authorization: Bearer {token}
-    API->>API: deps.py decodes JWT, loads user
-    API-->>FE: Authenticated response
+    User->>FE: Rate the rating (stars + note)
+    FE->>API: POST /jobs/{id}/rating-feedback
+    API->>DB: Set rating_feedback.{user_id} (feeds the next similar rating)
 ```
 
 ---
 
-## How It Works (End-to-End Flow)
-
-```mermaid
-flowchart LR
-    A[Register / Login] --> B[Upload CV PDF]
-    B --> C[LLM parses CV to JSON]
-    C --> D[Set preferences in Settings]
-    D --> E[Search jobs]
-    E --> F[Jooble + JobsAPI]
-    F --> G[Store jobs in MongoDB]
-    G --> H["Pre-filter + Rating LLM (split model) rates jobs"]
-    H --> I["Dashboard (with posted date) + Kanban + usage pills"]
-```
+## How It Works
 
 ### 1. Authentication
-
-- Users register and log in with email + password.
-- Passwords are hashed with bcrypt; sessions use JWT (7-day expiry).
-- Every protected route reads the Bearer token and loads the user from MongoDB.
-- One account per email (enforced with a unique index).
+Email + password, bcrypt-hashed, JWT sessions (7-day expiry, `token_version` invalidates old tokens after a password change). Every protected route resolves the user from the Bearer token.
 
 ### 2. CV Upload & Parsing
+PyMuPDF extracts raw text from the uploaded PDF (max 5MB, no API call). Contact details (email/phone) are redacted before the text goes to the LLM; the LLM returns structured JSON (skills, experience, projects, education); the real contact info is spliced back in locally. Both raw text and structured data are saved on the user document.
 
-When you upload a PDF (max 5MB):
+### 3. Preferences & About Me
+Settings captures target roles, locations, experience level, work mode, salary floor, key skills, work authorization, and a free-text `about_me`. `about_me` and rating-feedback comments are run through an LLM cleanup pass on save (`services/text_cleanup.py`) — tidies messy free text into clear prose, falls back to the raw text if the LLM call fails.
 
-1. **PyMuPDF** extracts raw text from the PDF (no API call).
-2. **LangChain LLM** turns that text into structured JSON: name, skills, experience, projects, education, etc.
-3. Both raw text and structured data are saved on your user document in MongoDB.
+### 4. Job Discovery
+`POST /crawler/search` runs **Jooble** and **JobsAPI (Indeed)** in parallel — the only two crawlers currently wired into the live endpoint. Every job is deduplicated by SHA-256 of its URL, scoped per user. You can also paste a job description directly (**Paste JD**) via URL-fetch or manual text.
 
-The structured CV is what the rating engine uses later.
+### 5. AI Rating — prefilter, RAG, and calibration
+- **Cosine pre-filter**: low-similarity jobs get a cheap graduated score (1-4), no LLM call.
+- **RAG chunk retrieval** (`services/vectorstore.py`): long JDs are chunked and FAISS retrieves the chunks most relevant to the candidate, instead of naive truncation losing tail content.
+- **Calibration**: the user's own past-rated similar jobs (including any star rating + comment they left) are retrieved and injected into the prompt, so the LLM stays consistent with corrections made before.
+- **Structured output**: `JobRating` Pydantic model — `score`, `matched_strengths`, `gaps`, `structural_mismatch`, `verdict`, `auto_reject`, `tailoring_tips`.
+- **Rate the rating**: every job's detail view has an always-visible star (1-5) + comment panel, feeding directly into the calibration loop above.
 
-### 3. User Preferences
+### 6. Apply Packs (premium)
+For jobs scoring 6+, `GET /jobs/{id}/apply-pack` generates ATS keyword matching, Google XYZ-format bullets (only where a real metric exists in the CV — never invented), a tailored cover-note opener, and a full one-shot prompt + LaTeX CV boilerplate you paste into ChatGPT/Claude/Grok to produce a compilable, tailored CV. Gated by score, daily quota, and AI token quota.
 
-In **Settings**, you configure:
+### 7. Freemium & Admin
+Three-layer quota, enforced server-side with atomic Mongo increments: searches (default 3/day), ratings (10/day, reserved before the LLM call and refunded on failure), AI tokens (250k/day). Admin panel (`/{ADMIN_SECRET_PATH}/`) lists users, sets per-user overrides, grants temporary/permanent full access, and shows a platform-wide AI cost summary. Admin bypasses all limits.
 
-- Primary role and secondary roles (e.g. Full Stack Developer, AI Engineer)
-- Preferred locations (e.g. Dublin Ireland)
-- Job types: full-time, internship, contract, graduate, remote
-- Key skills (used to build search queries)
-- Minimum salary
+### 8. Kanban & Freshness
+Each job carries a per-user pipeline status. Dashboard shows relative post/crawl time ("2d ago"); Kanban gives desktop drag-and-drop and a mobile tabbed view.
 
-These preferences drive how job searches are built for you.
-
-### 4. Job Discovery (Crawlers)
-
-Manual search (`POST /crawler/search`) runs **two APIs in parallel**:
-
-| Source | How it works |
-|--------|----------------|
-| **Jooble** | POST API; keywords + Dublin, Ireland; jobs from last 7 days; fetches full JD from link if snippet is short |
-| **JobsAPI (Indeed)** | GET API; searches by role + skills; returns structured title, company, location, salary, description |
-
-**Adzuna** is also implemented (`adzuna_crawler.py`) but currently disabled in the live search endpoint.
-
-**Shared logic for all crawlers:**
-
-- Build search terms from your roles and skills
-- Hash each job URL (SHA-256) for deduplication
-- Skip jobs already in the database
-- Skip listings with too little text (< 100–300 chars depending on source)
-- Store: title, URL, company, location, full JD text, source, timestamp
-
-There is also a **Tavily-based crawler** (`services/crawler.py`) that uses web search with personalised dork-style queries. It is implemented but the live search endpoint currently uses Jooble + Adzuna.
-
-**Rate limit:** Free users get `FREE_SEARCH_LIMIT` manual searches per day (default **3**). Enforced in `services/limits.py` together with AI token caps.
-
-### 5. AI Job Rating (LangChain + Performance)
-
-After new jobs are stored, the frontend triggers `POST /jobs/rate-all` in the background.
-
-The rating engine has several optimizations for speed and cost:
-
-- **Embedding pre-filter**: Computes cosine similarity between your CV and each job. Low-similarity jobs get a cheap score (1-4) instantly with **no LLM call**.
-- **Split LLMs**: You can use a fast/cheap model (e.g. xAI Grok) **only for rating**, while keeping another model for CV parsing and briefs.
-- **Concurrency**: Up to 10 jobs rated in parallel.
-- **Structured output**: Uses `JobRating` Pydantic model for reliable JSON.
-
-**Rating fields** (returned by the rating LLM):
-
-| Field | Meaning |
-|-------|---------|
-| `score` | 1–10 fit score (honest, not inflated) |
-| `matched_strengths` | Specific ways your profile matches the JD |
-| `gaps` | Requirements you are missing or weak on |
-| `verdict` | One-sentence summary + actionable suggestion |
-| `auto_reject` | True if there are hard blockers (visa, location, etc.) |
-| `tailoring_tips` | Concrete advice on what to emphasize when applying |
-
-Ratings are stored per user (`ratings.{user_id}`).
-
-**Configuration** (all via `.env` only):
-- `LLM_PROVIDER` + `OPENAI_MODEL` / `OLLAMA_MODEL` (main LLM)
-- `RATING_PROVIDER` + `RATING_MODEL` (can be `xai` + a fast Grok model)
-- Full xAI support (native or OpenAI-compatible fallback)
-
-### 6. Manual Job Entry
-
-You can paste a job description directly (**Paste JD** on the dashboard):
-
-1. Job is saved with `source: manual`
-2. **Rating quota is reserved atomically** before the AI runs (`check_and_increment_rating`)
-3. If daily rating or AI token limit is hit → job is saved **unrated**, user sees `LimitContactModal`
-4. If rating fails (no CV, short JD, LLM error) → quota slot is **refunded**
-
-The modal and rate button are disabled when the dashboard shows limit reached. Manual JD always uses the **full LLM path** (no embedding pre-filter).
-
-### 7. Job Brief Export
-
-For rated jobs, **Copy details** generates a formatted brief including:
-- Score, matched strengths, gaps, verdict
-- Actionable **tailoring tips** (new)
-- Snapshot of your profile + constraints
-- JD excerpt
-
-### 8. Admin Panel & Freemium Limits
-
-JobRadar has a three-layer quota system to control API cost:
-
-| Layer | Default (free) | Resets | Enforced on |
-|-------|----------------|--------|-------------|
-| **Searches** | 3/day | Midnight UTC | `POST /crawler/search` |
-| **Ratings** | 10/day | Midnight UTC | `POST /jobs/rate-all`, `POST /jobs/manual`, bulk background |
-| **AI tokens** | 250k/day | Midnight UTC | All LLM + embedding calls (search, rate, CV parse) |
-
-**Rating enforcement details:**
-- Quota uses **max(stored counter, actual rated jobs today)** — fixes drift when counter falls behind DB
-- Bulk rating **reserves 1 slot per job** before rating; stops mid-batch when exhausted
-- Non-billable ratings (no CV, short JD, LLM failure) **refund** the reserved slot
-- Admin email and `full_access` users bypass all limits
-
-**User-facing UI (Dashboard):**
-- Pills: searches left, ratings left, AI tokens used today
-- `LimitContactModal` — dark-theme-safe; explains reset time + email admin (works for rating, search, token limits)
-- Search no longer auto-rates in background when quota is exhausted
-
-**Admin panel** (`/{ADMIN_SECRET_PATH}/…`, admin email only):
-- User list with search/rating/token usage
-- Per-user overrides: `search_limit`, `rating_limit`, `daily_token_limit`, `monthly_token_limit`
-- Full access (permanent or 12h / 24h temporary)
-- Platform AI summary (`GET /ai-summary`) — token totals + optional cost estimates via `AI_COST_PER_1K_*`
-- **Job database cleanup** — delete jobs for any user with 6 filter modes (all, old, unrated, low-scored, by status, auto-rejected); always scoped to that user's crawled jobs; dry-run preview before deletion
-
-**User-facing cleanup** (Settings → Clean up jobs):
-- 3 filter modes: old listings (N days), terminal stages (REJECTED/OFFER/APPLIED), unrated
-- Preview count before deleting; re-crawl warning shown (deleted jobs may reappear after next auto-crawl)
-
-Limits reset daily at **midnight UTC**. See `handoff.md` for implementation notes and troubleshooting.
-
-### 9. Job Freshness
-
-Job cards now show **when the job was posted** (or first seen) using relative time (e.g. "2d ago", "5h ago").
-
-This uses `posted_at` when the source provides it, falling back to `crawled_at`.
-
-### 10. Application Tracking
-
-Each user has their own Kanban status per job (`status_{user_id}`):
-
-`NEW` → `SAVED` → `HALF_APPLIED` → `APPLIED` → `FOLLOWUP` → `INTERVIEWING` → `OFFER` / `REJECTED`
-
-- **Dashboard:** card grid with score filters, status filters, text search, pagination, and a reminder when high-scoring jobs sit unapplied
-- **Kanban:** drag-style columns to move jobs through your pipeline
-  - `GET /jobs?kanban=true` always returns pipeline jobs (Saved, Applied, etc.) even after re-searching — older board cards are not dropped
-  - **Desktop:** horizontal board with column scroll and drag-and-drop
-  - **Mobile:** tabbed single-column view with a status dropdown per card (no awkward 8-column scroll)
-
-### 11. Privacy, Data Transparency & Deletion
-
-JobRadar stores personal data (CV, preferences, job history). Settings includes a **Your data** section that:
-
-- Shows an honest disclaimer about what is stored and which third-party services are used (Jooble, JobsAPI, AI/LLM, MongoDB)
-- Displays a live inventory: jobs saved/rated, CV details, skill overrides, usage counters
-- Lets users **download** all their data as JSON (`GET /users/data-export`)
-- Lets users **delete CV only** (`DELETE /cv/me`)
-- Lets users **delete account & all data** (`DELETE /users/account`) — wipes jobs, prefs, and the account
-
-> **Not legal advice.** For a public product you should add a proper Privacy Policy and Terms. Job listings come from third-party APIs (each has its own ToS). CV text may be sent to an AI provider for matching. EU users generally have rights to access and delete personal data — the endpoints above support that.
+### 9. Privacy & Data Rights
+Settings → Data & privacy: a live inventory of what's stored, a full JSON export (`GET /users/data-export`), CV-only deletion, and full account deletion (hard delete of the user doc + every job they crawled, password re-entry required). The Privacy Policy names every third party data actually goes to (Jooble, JobsAPI, your configured LLM provider, MongoDB) and states retention/rights. **Not legal advice** — known gaps: no formal DPA on file with the LLM provider, no automatic data-retention expiry (data persists until the user deletes their account).
 
 ---
 
@@ -473,46 +194,53 @@ JobRadar stores personal data (CV, preferences, job history). Settings includes 
 ```
 JobRadar/
 ├── backend/
-│   ├── main.py              # FastAPI app + scheduler + secret admin mount
-│   ├── config.py            # Env settings (LLM, Mongo, JWT, freemium, AI cost)
-│   ├── database.py          # MongoDB connection
-│   ├── deps.py              # JWT auth dependency
-│   ├── core/security.py     # Password hashing, JWT create/decode
-│   ├── models/user.py       # Pydantic request/response schemas
+│   ├── main.py                        # FastAPI app, scheduler, LangSmith wiring
+│   ├── config.py                      # Env settings — LLM providers, quotas, JWT
+│   ├── database.py                    # MongoDB connection (Motor)
+│   ├── deps.py                        # JWT auth dependency
+│   ├── core/security.py               # bcrypt + JWT
+│   ├── models/user.py                 # Auth-related Pydantic schemas
 │   ├── routes/
-│   │   ├── auth.py          # Register, login, me (adminBasePath for admins)
-│   │   ├── cv.py            # Upload, get, delete CV (token quota check)
-│   │   ├── crawler.py       # Manual search, crawl status + quota fields
-│   │   ├── jobs.py          # List, rate-all, manual JD, brief, status
-│   │   ├── admin.py         # Secret-path admin (users, access, AI summary)
-│   │   └── users.py         # Preferences, data summary/export, account deletion
+│   │   ├── auth.py                    # Register, login, password reset
+│   │   ├── cv.py                      # Upload / get / delete CV
+│   │   ├── crawler.py                 # Manual search, crawl status
+│   │   ├── jobs.py                    # List, rate, rating-feedback, apply-pack, cleanup
+│   │   ├── users.py                   # Preferences, skill overrides, data export/deletion
+│   │   └── admin.py                   # Secret-path admin panel
 │   └── services/
-│       ├── llm.py           # Main LLM + Rating LLM split + xAI support
-│       ├── cv_parser.py     # PDF → text → structured JSON
-│       ├── rating.py        # CV vs JD scoring + pre-filter + briefs
-│       ├── limits.py        # Search/rating/token quotas + admin overrides
-│       ├── ai_usage.py      # Per-user token tracking + platform summary
-│       ├── scheduler.py     # Auto crawl + rate (respects limits)
-│       ├── adzuna_crawler.py
+│       ├── llm.py                     # Main + rating LLM split (ollama/openai/xai/deepseek)
+│       ├── cv_parser.py                # PDF → text → structured JSON, PII redaction
+│       ├── rating.py                  # Prefilter + RAG + calibration + brief/roast
+│       ├── vectorstore.py             # FAISS chunking/embedding/retrieval helpers
+│       ├── text_cleanup.py            # LLM cleanup for about_me / feedback text
+│       ├── apply_pack.py              # ATS keywords, XYZ bullets, one-shot prompt
+│       ├── cv_latex_boilerplate.py    # Compilable LaTeX CV template
+│       ├── job_dedup.py               # URL hashing + content-fingerprint dedup
+│       ├── jd_text.py                 # Incomplete-JD detection, URL enrichment
+│       ├── url_fetch.py               # SSRF-safe server-side JD URL fetch
+│       ├── limits.py                  # Search/rating/token quotas + admin overrides
+│       ├── ai_usage.py                # Per-user token tracking + platform summary
+│       ├── scheduler.py               # Auto crawl + rate (respects limits)
+│       ├── email.py / job_reminders.py
 │       ├── jooble_crawler.py
-│       ├── jobsapi_indeed_crawler.py
-│       └── crawler.py       # Tavily-based discovery (alternate)
+│       └── jobsapi_indeed_crawler.py
 ├── frontend/
 │   └── src/
 │       ├── pages/
-│       │   ├── Login.tsx
-│       │   ├── Dashboard.tsx    # Jobs, quotas, search, rate, Paste JD
+│       │   ├── Landing.tsx / Login.tsx / ForgotPassword.tsx / ResetPassword.tsx
+│       │   ├── Dashboard.tsx          # Jobs, quotas, search, rate, Paste JD
 │       │   ├── Kanban.tsx
-│       │   ├── Admin.tsx        # Users, limits, AI usage
-│       │   └── Settings.tsx     # CV, prefs, privacy (limit modal on CV upload)
+│       │   ├── Settings.tsx           # CV, preferences, privacy, skill overrides
+│       │   ├── Admin.tsx
+│       │   └── Privacy.tsx / Terms.tsx
 │       ├── components/
-│       │   ├── JobCard.tsx
-│       │   ├── ScoreBadge.tsx
-│       │   ├── ManualJDModal.tsx
-│       │   └── LimitContactModal.tsx  # Limit-reached UX (dark theme safe)
-│       └── api/                 # Axios client + API helpers
+│       │   ├── JobCard.tsx / JobDetailModal.tsx / ScoreBadge.tsx / StarRating.tsx
+│       │   ├── ManualJDModal.tsx / WelcomeModal.tsx / LimitContactModal.tsx
+│       │   ├── ProgressBar.tsx / StatTile.tsx      # shared dashboard/admin primitives
+│       │   └── Navbar.tsx / AuthPageShell.tsx / ThemeToggle.tsx / Logo.tsx
+│       └── api/                       # fetch-based client + API helpers
 ├── README.md
-└── handoff.md               # Dev handoff — limits, recent fixes, ops notes
+└── handoff.md                         # Dev handoff — session log, ops notes
 ```
 
 ---
@@ -521,47 +249,42 @@ JobRadar/
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| POST | `/auth/register` | Create account, get JWT |
-| POST | `/auth/login` | Login, get JWT |
-| POST | `/auth/forgot-password` | Request password reset email (no email enumeration) |
-| POST | `/auth/reset-password` | Set new password with reset token |
-| POST | `/auth/change-password` | Change password (logged in) |
+| POST | `/auth/register` / `/auth/login` | Create account / log in, get JWT |
+| POST | `/auth/forgot-password` / `/auth/reset-password` | Password reset flow (no email enumeration) |
+| POST | `/auth/change-password` | Change password while logged in |
 | GET | `/auth/me` | Current user profile |
-| POST | `/cv/upload` | Upload & parse PDF CV |
-| GET | `/cv/me` | Get parsed CV |
-| DELETE | `/cv/me` | Delete uploaded CV |
-| PATCH | `/users/preferences` | Update search preferences |
-| GET | `/users/data-summary` | What data JobRadar stores for the current user |
-| GET | `/users/data-export` | Download all user data as JSON |
-| DELETE | `/users/account` | Permanently delete account and all associated data |
-| POST | `/crawler/search` | Run job discovery |
-| GET | `/crawler/status` | Crawl stats, search/rating usage, **token quota** fields |
-| GET | `/jobs` | List jobs (filter by score, status, search; `kanban=true` for pipeline board) |
-| POST | `/jobs/rate-all` | Rate all unrated jobs (background, with pre-filter) |
+| POST/GET/DELETE | `/cv/upload`, `/cv/me` | Upload, fetch, delete parsed CV |
+| GET/PATCH | `/users/preferences` | Get/update search preferences + about_me |
+| POST/GET/DELETE | `/users/skill-overrides[/{skill}]` | Per-skill candidate knowledge overrides |
+| GET | `/users/data-summary` / `/users/data-export` | What's stored / full JSON export |
+| DELETE | `/users/account` | Permanently delete account + all jobs |
+| POST | `/crawler/search` | Run job discovery (Jooble + JobsAPI) |
+| GET | `/crawler/status` | Crawl stats + quota fields |
+| GET | `/jobs` | List jobs (filters; `kanban=true` for pipeline board) |
+| POST | `/jobs/rate-all` | Rate all unrated jobs (background) |
+| POST | `/jobs/{id}/rate` | Re-rate a single job |
+| POST | `/jobs/{id}/rating-feedback` | Star rating (1-5) + comment on a job's AI rating |
 | POST | `/jobs/manual` | Add & rate a pasted JD |
-| GET | `/jobs/{id}/brief` | Export job brief (now includes tailoring tips) |
+| POST | `/jobs/fetch-url` | Server-side JD URL fetch (SSRF-guarded) |
+| GET | `/jobs/{id}/brief` | Fit-summary export |
+| GET | `/jobs/{id}/apply-pack` | ATS keywords, XYZ bullets, LaTeX CV one-shot prompt |
 | PATCH | `/jobs/{id}/status` | Update Kanban status |
-| POST | `/jobs/cleanup/preview` | Preview how many jobs a cleanup filter would delete (current user) |
-| DELETE | `/jobs/cleanup` | Delete jobs matching a filter (current user) — filter: `old`, `by_status`, `unrated` |
-| GET | `/{ADMIN_SECRET_PATH}/users` | List users + usage (admin only) |
-| PATCH | `/{ADMIN_SECRET_PATH}/users/{id}/access` | Set limits, full access, token caps |
+| POST/DELETE | `/jobs/cleanup/preview`, `/jobs/cleanup` | Preview/delete jobs by filter (current user) |
+| GET/PATCH/DELETE | `/{ADMIN_SECRET_PATH}/users[...]` | List, adjust access/limits, suspend/delete users |
 | GET | `/{ADMIN_SECRET_PATH}/ai-summary` | Platform-wide AI token/cost summary |
-| POST | `/{ADMIN_SECRET_PATH}/jobs/cleanup` | Admin: preview or delete jobs for any user — 6 filter modes, always scoped to `crawled_by` |
+| POST | `/{ADMIN_SECRET_PATH}/jobs/cleanup` | Admin: delete jobs for any user, scoped to `crawled_by` |
 
 ---
 
 ## Getting Started
 
 ### Prerequisites
-
-- Python 3.11+
-- Node.js 18+
+- Python 3.11+, Node.js 18+
 - MongoDB (local, VPS with auth, or Atlas)
-- Ollama running locally (or OpenAI API key)
+- Ollama running locally, or an API key for OpenAI / xAI / DeepSeek
 - Jooble + JobsAPI API keys (for job search)
 
 ### Backend
-
 ```bash
 cd backend
 cp .env.example .env
@@ -570,129 +293,40 @@ cp .env.example .env
 uv sync
 uvicorn main:app --reload
 ```
-
-API runs at `http://localhost:8000`.
-
-**Useful for development**:
-- `backend/test_llms.py` — test your main LLM and rating LLM directly (bypasses the app)
-- `handoff.md` — detailed development notes and issue history from recent work
+API runs at `http://localhost:8000`. `backend/test_llms.py` and `backend/test_rag.py` test the LLM/RAG pieces directly, bypassing the app.
 
 ### Frontend
-
 ```bash
 cd frontend
 npm install
-npm run dev
-npm run format        # format all src/**/*.{ts,tsx,css} with Prettier
-npm run format:check  # check formatting without writing (useful in CI)
+npm run dev      # :5173
+npm run build     # tsc + vite build
 ```
 
-App runs at `http://localhost:5173`.
-
 ### Environment Variables
-
-**Everything is configured via `.env`** — no model names are hardcoded.
-
-See `backend/.env.example`. Important variables:
+Everything is `.env`-driven — no model names are hardcoded. See `backend/.env.example` for the full list; key ones:
 
 | Variable | Purpose |
 |----------|---------|
-| `MONGO_URI` | Full connection string (dev or Atlas). Ignored if `MONGO_USER` is set |
-| `MONGO_DB` | Database name (default: `jobradar`) |
-| `MONGO_HOST` | Mongo host for VPS auth mode (default: `localhost`) |
-| `MONGO_USER` / `MONGO_PASSWORD` | Local/VPS Mongo with `authSource=admin` — builds URI automatically |
-| `LLM_PROVIDER` | `ollama`, `openai`, or `xai` |
-| `OPENAI_MODEL` / `OLLAMA_MODEL` | Model for CV parsing, briefs, etc. |
-| `RATING_PROVIDER` | Separate provider for job rating (`xai` recommended for speed) |
-| `RATING_MODEL` | Model used only for rating (e.g. fast Grok model) |
-| `XAI_API_KEY` / `GROK_API_KEY` | For xAI rating |
-| `OPENAI_API_KEY` | For main LLM + embeddings |
-| `JWT_SECRET` | **Required in production** — long random string (`secrets.token_urlsafe(48)`) |
-| `DEBUG` | `false` in production (avoids logging password-reset links) |
-| `FRONTEND_URL` | Public app URL for reset + reminder emails |
-| `SMTP_*` | Optional SMTP for password reset and job reminder emails |
-| `ADMIN_EMAIL` | Admin account email (set in `.env` only — never commit real value) |
-| `ADMIN_SECRET_PATH` | Random string for admin URL (e.g. `k9x7p2mQvL4r`) |
-| `JOB_REMINDER_*` | Optional daily high-score apply reminder emails (see `.env.example`) |
-| `FREE_SEARCH_LIMIT` / `FREE_RATING_LIMIT` | Daily search/rating caps (default 3 / 10) |
-| `FREE_CV_UPLOAD_LIMIT` | Daily CV upload cap per user (default 3) |
-| `FREE_DAILY_TOKEN_LIMIT` / `FREE_MONTHLY_TOKEN_LIMIT` | AI token caps per user (0 = unlimited) |
-| `AI_MONTHLY_BUDGET_USD` | Optional platform budget for admin dashboard |
-| `AI_COST_PER_1K_*` | Optional cost estimates in admin |
-| `JOOBLE_API_KEY`, `JOBSAPI_KEY`, etc. | Job sources |
-
-**Key principle**: Change providers/models only in `.env`. The code stays the same.
+| `MONGO_URI` / `MONGO_HOST`+`MONGO_USER`+`MONGO_PASSWORD` | Connection (local, VPS-auth, or Atlas) |
+| `LLM_PROVIDER` | `ollama`, `openai`, `xai`, or `deepseek` — main LLM (CV parsing, apply packs) |
+| `RATING_PROVIDER` / `RATING_MODEL` | Separate provider/model for bulk rating — e.g. run rating for free on local Ollama (`qwen3:8b`) while CV parsing stays on a hosted model |
+| `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` | Cheap OpenAI-compatible provider option |
+| `XAI_API_KEY` / `GROK_API_KEY` | For xAI/Grok |
+| `JWT_SECRET` | **Required in production** — refuses to start with `DEBUG=false` if weak/default |
+| `ADMIN_EMAIL` / `ADMIN_SECRET_PATH` | Required to access the admin panel |
+| `FREE_SEARCH_LIMIT` / `FREE_RATING_LIMIT` / `FREE_DAILY_TOKEN_LIMIT` | Freemium caps (defaults: 3 / 10 / 250k) |
+| `LANGSMITH_TRACING` / `LANGSMITH_API_KEY` / `LANGSMITH_PROJECT` | Optional per-call LLM tracing (prompt/response/latency/errors) |
+| `JOOBLE_API_KEY` / `JOBSAPI_KEY` | Job sources |
+| `SMTP_*` | Optional — password reset + job reminder emails |
 
 ---
 
 ## Security
 
-JobRadar is a **personal/small-team tool**, not a hardened enterprise product. The codebase has intentional protections, but **production requires correct configuration** and awareness of data flows.
+Intentional protections already in place: bcrypt password hashing, JWT with `token_version` invalidation, in-memory brute-force rate limiting on auth routes, all job routes scoped to `crawled_by == current user` (no IDOR), server-side admin email check, no email-enumeration on forgot-password, account deletion requires password re-entry, SSRF-guarded server-side URL fetch, atomic Mongo quota increments, `/docs` disabled when `DEBUG=false`, `.env` gitignored.
 
-### What is already protected
-
-| Area | How |
-|------|-----|
-| **Passwords** | bcrypt hashing; hash never returned in API |
-| **JWT** | Access vs reset token types (`typ`); `token_version` invalidates sessions after password change/reset |
-| **JWT secret** | App refuses to start with `DEBUG=false` if secret is default or &lt; 48 chars |
-| **Auth brute-force** | In-memory rate limits on login, register, forgot-password (`core/rate_limit.py`) |
-| **Jobs (IDOR)** | All job routes scoped to `crawled_by == current user` |
-| **Admin** | Server-side email check on every `/{ADMIN_SECRET_PATH}/` route; 403 if not admin |
-| **Forgot password** | Same response whether email exists (no enumeration) |
-| **Register conflict** | Generic 409 message (no “email already registered” leak) |
-| **Account deletion** | Requires password re-entry, not JWT alone |
-| **Paste JD URL fetch** | Server-side `POST /jobs/fetch-url` with SSRF checks (no third-party proxy) |
-| **Quotas** | Server-enforced atomic Mongo increments; auto-crawl capped per cycle (`AUTO_CRAWL_MAX_STORED_PER_CYCLE`) |
-| **OpenAPI** | `/docs` disabled when `DEBUG=false` |
-| **Secrets in git** | `.env` gitignored; only `.env.example` with placeholders |
-
-### Remaining risks (read before going public)
-
-| Severity | Risk | Mitigation |
-|----------|------|------------|
-| **Critical** | `DEBUG=true` logs password-reset links | Set `DEBUG=false` in production |
-| **Critical** | CV + preferences sent to **external LLMs** (OpenAI/xAI) | Use local Ollama for PII, or disclose + get consent; disable LangSmith tracing |
-| **High** | JWT in `localStorage` (XSS → account takeover) | Keep dependencies updated; consider httpOnly cookies later |
-| **High** | In-memory rate limits reset on process restart / don’t span workers | Also rate-limit at nginx/Cloudflare in production |
-| **Medium** | Admin = email match + secret URL (not DB role) | Rotate `ADMIN_SECRET_PATH`; use strong admin password |
-| **Medium** | Auto-crawl does not consume manual search quota | Capped per cycle; manual searches still limited separately |
-| **Medium** | MongoDB without auth on localhost | Use `MONGO_USER`/`MONGO_PASSWORD` on VPS; TLS for Atlas |
-
-### Data privacy
-
-- Uploading a CV sends parsed text to your configured **LLM provider** for matching.
-- Settings → data summary / export describes stored fields; account deletion removes user + jobs.
-- Job reminder and password-reset emails require **SMTP**; links use `FRONTEND_URL`.
-
----
-
-## Summary (TL;DR)
-
-**JobRadar AI** — personalised job search with smart, fast AI rating:
-
-1. Upload CV → structured parsing
-2. Set preferences
-3. Search jobs (Jooble + JobsAPI + others)
-4. **Rate-all** → Uses embedding pre-filter + separate fast rating model (xAI supported) for hundreds of jobs
-5. Get scores + **tailoring tips** + track in Kanban
-6. Admin panel for limits & access control
-
-**Major current capabilities** (as of latest session):
-- Separate main LLM vs Rating LLM (configurable in `.env` only)
-- Fast bulk rating via cosine pre-filter + concurrency
-- **Three-layer freemium**: searches, ratings, AI tokens — admin-overridable per user
-- Accurate quota enforcement (atomic reserve, DB sync, refund on failed ratings)
-- `LimitContactModal` when limits hit (rating / search / token)
-- Platform + per-user AI token tracking in admin
-- Job posted date on cards, Kanban (desktop DnD + mobile tabs)
-- User data export and account/CV deletion in Settings
-- **Duplicate search guard** — crawl-in-progress state stored in Zustand; navigating away and back keeps the button disabled until the search fully completes, preventing double-fires and wasted quota
-- **Admin token display** — all usage columns always show real numbers; unlimited users get a small ∞ badge instead of the word "Unlimited" replacing the count
-
-**Ops + security:** see the **Security** section above and `backend/.env.example` for production checklist.
-
-The system is deliberately **.env-driven** — no model names or providers are hardcoded in code.
+**Known risks to be aware of**: CV text and job descriptions are sent to whichever external LLM provider you configure (OpenAI/xAI/DeepSeek) — contact details are redacted first, but the rest of the CV isn't; use local Ollama if that matters for your users. JWT lives in `localStorage` (XSS risk, standard SPA tradeoff). Rate limits are in-memory and don't span restarts or multiple workers — add nginx/Cloudflare rate limiting for a public deployment. See the Privacy Policy (`frontend/src/pages/Privacy.tsx`) for the current data-flow disclosure, and `handoff.md` for the full GDPR-posture audit and its open items (no formal DPA with the LLM provider, no data-retention TTL).
 
 ---
 
@@ -701,16 +335,15 @@ The system is deliberately **.env-driven** — no model names or providers are h
 | Category | Technologies |
 |----------|--------------|
 | **Language & runtime** | Python 3.11+ (backend), TypeScript (frontend) |
-| **Backend framework** | FastAPI, Uvicorn, Pydantic v2, pydantic-settings, python-dotenv |
+| **Backend framework** | FastAPI, Uvicorn, Pydantic v2, pydantic-settings |
 | **Auth & security** | bcrypt, PyJWT, email-validator |
 | **Database** | MongoDB, Motor (async driver) |
-| **AI / LLM** | LangChain, langchain-ollama, langchain-openai, langchain-xai, LangSmith (tracing), structured Pydantic output |
-| **LLM providers** | Ollama, OpenAI, or xAI (Grok). Main LLM and Rating LLM can be different. |
+| **AI / LLM** | LangChain, langchain-ollama, langchain-openai, langchain-xai, langchain-community, FAISS (RAG chunk retrieval), LangSmith (call tracing), structured Pydantic output |
+| **LLM providers** | Ollama, OpenAI, xAI (Grok), or DeepSeek — main LLM and rating LLM configured independently |
 | **PDF processing** | PyMuPDF (`fitz`) |
-| **Job discovery** | Jooble API, JobsAPI (Indeed), Adzuna, Tavily Python SDK |
-| **HTTP client** | httpx (async crawlers) |
+| **Job discovery** | Jooble API, JobsAPI (Indeed) |
 | **Scheduling** | APScheduler |
 | **Frontend framework** | React 18, Vite 5, React Router 6 |
-| **Frontend state & data** | TanStack Query, Zustand, Axios |
-| **Frontend UI** | Tailwind CSS, Lucide React (icons), react-hot-toast (notifications), @dnd-kit (Kanban drag-and-drop) |
-| **Dev tooling** | uv (Python package manager), npm, Ruff (linting) |
+| **Frontend state & data** | TanStack Query, Zustand, native `fetch` |
+| **Frontend UI** | Hand-rolled CSS design system (spacing/type/radius tokens, light+dark), Lucide React icons, react-hot-toast, @dnd-kit (Kanban drag-and-drop) |
+| **Dev tooling** | uv (Python), npm, Ruff (lint), Prettier |

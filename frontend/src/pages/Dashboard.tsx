@@ -20,6 +20,8 @@ import {
 import toast from "react-hot-toast";
 import { JobCard } from "../components/JobCard";
 import { ManualJDModal } from "../components/ManualJDModal";
+import { ProgressBar } from "../components/ProgressBar";
+import { StatTile } from "../components/StatTile";
 import {
   LimitContactModal,
   parseLimitKindFromDetail,
@@ -50,7 +52,7 @@ const SCORE_FILTER_OPTS: {
   {
     id: "7plus",
     label: "7+",
-    hint: "Score 7–10 — strong matches",
+    hint: "Score 7–10, strong matches",
     score_min: 7,
     score_max: 10,
     rating: "rated",
@@ -58,7 +60,7 @@ const SCORE_FILTER_OPTS: {
   {
     id: "8plus",
     label: "8+",
-    hint: "Score 8–10 — top picks",
+    hint: "Score 8–10, top picks",
     score_min: 8,
     score_max: 10,
     rating: "rated",
@@ -175,8 +177,8 @@ function Pagination({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        gap: 4,
-        marginTop: 32,
+        gap: "var(--space-1)",
+        marginTop: "var(--space-7)",
         flexWrap: "wrap",
       }}
     >
@@ -184,7 +186,11 @@ function Pagination({
         onClick={() => onPage(page - 1)}
         disabled={page === 1}
         className="btn btn-ghost"
-        style={{ padding: "8px 14px", fontSize: 13, gap: 4 }}
+        style={{
+          padding: "var(--space-2) var(--space-4)",
+          fontSize: "var(--text-sm)",
+          gap: "var(--space-1)",
+        }}
       >
         <ChevronLeft size={14} /> Prev
       </button>
@@ -194,9 +200,9 @@ function Pagination({
           <span
             key={`e${i}`}
             style={{
-              padding: "8px 6px",
+              padding: "var(--space-2)",
               color: "var(--text-muted)",
-              fontSize: 13,
+              fontSize: "var(--text-sm)",
             }}
           >
             …
@@ -207,9 +213,9 @@ function Pagination({
             onClick={() => onPage(p as number)}
             className={p === page ? "btn btn-primary" : "btn btn-ghost"}
             style={{
-              padding: "8px 0",
+              padding: "var(--space-2) 0",
               minWidth: 36,
-              fontSize: 13,
+              fontSize: "var(--text-sm)",
               justifyContent: "center",
             }}
           >
@@ -222,7 +228,11 @@ function Pagination({
         onClick={() => onPage(page + 1)}
         disabled={page === totalPages}
         className="btn btn-ghost"
-        style={{ padding: "8px 14px", fontSize: 13, gap: 4 }}
+        style={{
+          padding: "var(--space-2) var(--space-4)",
+          fontSize: "var(--text-sm)",
+          gap: "var(--space-1)",
+        }}
       >
         Next <ChevronRight size={14} />
       </button>
@@ -243,9 +253,9 @@ function FilterChip({
     <button
       onClick={onClick}
       style={{
-        padding: "5px 12px",
-        fontSize: 12.5,
-        borderRadius: 20,
+        padding: "var(--space-2) var(--space-3)",
+        fontSize: "var(--text-xs)",
+        borderRadius: "var(--radius-pill)",
         cursor: "pointer",
         border: active ? "none" : "1px solid var(--border)",
         background: active ? "var(--accent)" : "var(--bg-secondary)",
@@ -302,7 +312,7 @@ export function Dashboard() {
 
       if (willRate <= 0 || ratingsRemaining <= 0) {
         toast.error(
-          "Rating limit reached — unrated jobs stay in your list until your quota resets.",
+          "Rating limit reached. Unrated jobs stay in your list until your quota resets.",
           { duration: 6000 },
         );
         openLimitModal("rating");
@@ -410,8 +420,8 @@ export function Dashboard() {
         if (!isFullAccess && (ratingsLeft <= 0 || tokensBlocked)) {
           toast.error(
             tokensBlocked
-              ? "AI token limit reached — new jobs saved but not rated. Resets at midnight UTC or contact admin."
-              : "Rating limit reached — new jobs saved but not rated. Contact admin or wait for reset.",
+              ? "AI token limit reached. New jobs saved but not rated. Resets at midnight UTC or contact admin."
+              : "Rating limit reached. New jobs saved but not rated. Contact admin or wait for reset.",
             { duration: 6000 },
           );
           openLimitModal(tokensBlocked ? "token_daily" : "rating");
@@ -564,50 +574,45 @@ export function Dashboard() {
           <h1 className="page-title">Your job pipeline</h1>
           <p className="page-subtitle">
             {viewMode === "active"
-              ? "Active opportunities — applied and rejected roles are hidden unless you switch to All."
-              : "All saved jobs — filter by score, status, or keyword."}
+              ? "Active opportunities. Applied and rejected roles are hidden unless you switch to All."
+              : "All saved jobs, filter by score, status, or keyword."}
             {lastCrawlLabel && <span className="dash-last-crawl"> · {lastCrawlLabel}</span>}
           </p>
         </div>
 
         {usage && (
           <div className="dash-metrics">
-            <div className="dash-metric">
-              <span className="dash-metric-label">
-                {hasActiveFilters ? "Matching filters" : "Active pipeline"}
-              </span>
-              <span className="dash-metric-value">
-                {hasActiveFilters ? (data?.total ?? "—") : activeAccountCount}
-              </span>
-              <span className="dash-metric-hint">
-                {hasActiveFilters
+            <StatTile
+              label={hasActiveFilters ? "Matching filters" : "Active pipeline"}
+              value={hasActiveFilters ? (data?.total ?? "—") : activeAccountCount}
+              hint={
+                hasActiveFilters
                   ? `of ${activeAccountCount} active in account`
-                  : `${usage.my_jobs ?? 0} total saved`}
-              </span>
-            </div>
-            <button type="button" className="dash-metric is-clickable" onClick={showStrongMatches}>
-              <span className="dash-metric-label">Strong matches</span>
-              <span className="dash-metric-value is-success">{strongMatchesCount}</span>
-              <span className="dash-metric-hint">Score 7+ · tap to filter</span>
-            </button>
-            <button
-              type="button"
-              className={`dash-metric is-clickable${applySoonCount > 0 ? " is-highlight" : ""}`}
+                  : `${usage.my_jobs ?? 0} total saved`
+              }
+            />
+            <StatTile
+              label="Strong matches"
+              value={strongMatchesCount}
+              hint="Score 7+ · tap to filter"
+              tone="success"
+              onClick={showStrongMatches}
+            />
+            <StatTile
+              label="Apply soon"
+              value={applySoonCount}
+              hint="8+ still New · tap to view"
+              tone={applySoonCount > 0 ? "warning" : undefined}
+              highlight={applySoonCount > 0}
               onClick={showApplySoon}
-            >
-              <span className="dash-metric-label">Apply soon</span>
-              <span className={`dash-metric-value${applySoonCount > 0 ? " is-warning" : ""}`}>
-                {applySoonCount}
-              </span>
-              <span className="dash-metric-hint">8+ still New · tap to view</span>
-            </button>
-            <button type="button" className="dash-metric is-clickable" onClick={showUnrated}>
-              <span className="dash-metric-label">Needs rating</span>
-              <span className={`dash-metric-value${unratedCount > 0 ? " is-accent" : ""}`}>
-                {unratedCount}
-              </span>
-              <span className="dash-metric-hint">Waiting for AI · tap to filter</span>
-            </button>
+            />
+            <StatTile
+              label="Needs rating"
+              value={unratedCount}
+              hint="Waiting for AI · tap to filter"
+              tone={unratedCount > 0 ? "accent" : undefined}
+              onClick={showUnrated}
+            />
           </div>
         )}
       </div>
@@ -625,9 +630,10 @@ export function Dashboard() {
                 {isFull ? "Unlimited" : `${searchesRemaining} left`}
               </div>
               {!isFull && (
-                <div className="dash-usage-bar">
-                  <span style={{ width: `${Math.min(100, searchUsedPct)}%` }} />
-                </div>
+                <ProgressBar
+                  pct={searchUsedPct}
+                  color={searchesRemaining <= 1 ? "var(--warning)" : undefined}
+                />
               )}
             </div>
 
@@ -643,20 +649,27 @@ export function Dashboard() {
                 {isFull ? "Unlimited" : `${ratingsRemaining} left`}
               </div>
               {!isFull && (
-                <div className="dash-usage-bar">
-                  <span style={{ width: `${Math.min(100, ratingUsedPct)}%` }} />
-                </div>
+                <ProgressBar
+                  pct={ratingUsedPct}
+                  color={
+                    isRatingsLimited
+                      ? "var(--danger)"
+                      : ratingsRemaining <= 2
+                        ? "var(--warning)"
+                        : undefined
+                  }
+                />
               )}
               {isRatingsLimited && (
                 <button
                   onClick={() => openLimitModal("rating")}
                   className="btn btn-danger"
                   style={{
-                    marginTop: 8,
+                    marginTop: "var(--space-2)",
                     width: "100%",
                     justifyContent: "center",
-                    fontSize: 11,
-                    padding: "4px 8px",
+                    fontSize: "var(--text-xs)",
+                    padding: "var(--space-1) var(--space-2)",
                   }}
                 >
                   Request more
@@ -680,19 +693,26 @@ export function Dashboard() {
                 <div className="dash-usage-value">
                   {formatTokens(dailyTokensUsed)} / {formatTokens(dailyTokenLimit)}
                 </div>
-                <div className="dash-usage-bar">
-                  <span style={{ width: `${Math.min(100, tokenUsedPct)}%` }} />
-                </div>
+                <ProgressBar
+                  pct={tokenUsedPct}
+                  color={
+                    isTokensLimited
+                      ? "var(--danger)"
+                      : (dailyTokensRemaining ?? 0) <= dailyTokenLimit * 0.2
+                        ? "var(--warning)"
+                        : undefined
+                  }
+                />
                 {isTokensLimited && (
                   <button
                     onClick={() => openLimitModal(tokenLimitKind)}
                     className="btn btn-danger"
                     style={{
-                      marginTop: 8,
+                      marginTop: "var(--space-2)",
                       width: "100%",
                       justifyContent: "center",
-                      fontSize: 11,
-                      padding: "4px 8px",
+                      fontSize: "var(--text-xs)",
+                      padding: "var(--space-1) var(--space-2)",
                     }}
                   >
                     Request more
@@ -706,16 +726,16 @@ export function Dashboard() {
             <div
               onClick={() => openLimitModal("rating")}
               style={{
-                marginTop: 10,
-                fontSize: 11,
+                marginTop: "var(--space-3)",
+                fontSize: "var(--text-xs)",
                 color: "var(--danger)",
                 display: "flex",
                 alignItems: "center",
-                gap: 5,
+                gap: "var(--space-1)",
                 cursor: "pointer",
               }}
             >
-              <AlertCircle size={12} /> Rating limit reached — click to request more access
+              <AlertCircle size={12} /> Rating limit reached, click to request more access
             </div>
           )}
 
@@ -723,19 +743,19 @@ export function Dashboard() {
             <div
               onClick={() => openLimitModal(tokenLimitKind)}
               style={{
-                marginTop: 10,
-                fontSize: 11,
+                marginTop: "var(--space-3)",
+                fontSize: "var(--text-xs)",
                 color: "var(--danger)",
                 display: "flex",
                 alignItems: "center",
-                gap: 5,
+                gap: "var(--space-1)",
                 cursor: "pointer",
               }}
             >
               <AlertCircle size={12} />
               {isMonthlyTokensLimited
-                ? "Monthly AI limit reached — resets on the 1st, or contact admin for credits"
-                : "Daily AI limit reached — resets at midnight UTC, or contact admin for credits"}
+                ? "Monthly AI limit reached, resets on the 1st, or contact admin for credits"
+                : "Daily AI limit reached, resets at midnight UTC, or contact admin for credits"}
             </div>
           )}
         </div>
@@ -752,7 +772,11 @@ export function Dashboard() {
             <button
               onClick={showApplySoon}
               className="btn btn-secondary"
-              style={{ fontSize: 13, padding: "6px 12px", flexShrink: 0 }}
+              style={{
+                fontSize: "var(--text-sm)",
+                padding: "var(--space-2) var(--space-3)",
+                flexShrink: 0,
+              }}
             >
               View them
             </button>
@@ -786,7 +810,11 @@ export function Dashboard() {
             <button
               onClick={() => navigate("/kanban")}
               className="btn btn-secondary"
-              style={{ fontSize: 13, padding: "6px 12px", flexShrink: 0 }}
+              style={{
+                fontSize: "var(--text-sm)",
+                padding: "var(--space-2) var(--space-3)",
+                flexShrink: 0,
+              }}
             >
               Review pipeline
             </button>
@@ -878,9 +906,9 @@ export function Dashboard() {
                 background: "var(--accent)",
                 color: "#fff",
                 borderRadius: "50%",
-                width: 17,
-                height: 17,
-                fontSize: 10,
+                width: 18,
+                height: 18,
+                fontSize: "var(--text-xs)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -891,7 +919,11 @@ export function Dashboard() {
           )}
         </button>
 
-        <button onClick={() => refetch()} className="btn btn-ghost" style={{ padding: "9px 11px" }}>
+        <button
+          onClick={() => refetch()}
+          className="btn btn-ghost"
+          style={{ padding: "var(--space-2) var(--space-3)" }}
+        >
           <RefreshCw size={14} />
         </button>
       </div>
@@ -899,8 +931,8 @@ export function Dashboard() {
       {/* Always-visible filter bar: score chips + Active/All toggle — two rows so mobile never overlaps */}
       <div
         style={{
-          marginBottom: 14,
-          paddingBottom: 14,
+          marginBottom: "var(--space-4)",
+          paddingBottom: "var(--space-4)",
           borderBottom: "1px solid var(--border)",
         }}
       >
@@ -909,14 +941,14 @@ export function Dashboard() {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 6,
+            gap: "var(--space-2)",
             flexWrap: "wrap",
-            marginBottom: 10,
+            marginBottom: "var(--space-3)",
           }}
         >
           <span
             style={{
-              fontSize: 11.5,
+              fontSize: "var(--text-xs)",
               color: "var(--text-muted)",
               fontWeight: 600,
               textTransform: "uppercase",
@@ -947,14 +979,22 @@ export function Dashboard() {
             justifyContent: "flex-end",
           }}
         >
-          <span style={{ fontSize: 12, color: "var(--text-muted)", marginRight: 8 }}>Show:</span>
+          <span
+            style={{
+              fontSize: "var(--text-xs)",
+              color: "var(--text-muted)",
+              marginRight: "var(--space-2)",
+            }}
+          >
+            Show:
+          </span>
           <div
             style={{
               display: "flex",
-              gap: 2,
+              gap: "var(--space-1)",
               background: "var(--bg-secondary)",
-              borderRadius: 20,
-              padding: 3,
+              borderRadius: "var(--radius-pill)",
+              padding: "var(--space-1)",
               border: "1px solid var(--border)",
             }}
           >
@@ -965,10 +1005,10 @@ export function Dashboard() {
                 setPage(1);
               }}
               style={{
-                padding: "4px 14px",
-                borderRadius: 20,
+                padding: "var(--space-1) var(--space-4)",
+                borderRadius: "var(--radius-pill)",
                 border: "none",
-                fontSize: 12,
+                fontSize: "var(--text-xs)",
                 cursor: "pointer",
                 background: viewMode === "active" ? "var(--bg-card)" : "transparent",
                 color: viewMode === "active" ? "var(--text)" : "var(--text-muted)",
@@ -985,10 +1025,10 @@ export function Dashboard() {
                 setPage(1);
               }}
               style={{
-                padding: "4px 14px",
-                borderRadius: 20,
+                padding: "var(--space-1) var(--space-4)",
+                borderRadius: "var(--radius-pill)",
                 border: "none",
-                fontSize: 12,
+                fontSize: "var(--text-xs)",
                 cursor: "pointer",
                 background: viewMode === "all" ? "var(--bg-card)" : "transparent",
                 color: viewMode === "all" ? "var(--text)" : "var(--text-muted)",
@@ -1008,11 +1048,11 @@ export function Dashboard() {
         <div
           className="card"
           style={{
-            padding: 16,
-            marginBottom: 18,
+            padding: "var(--space-4)",
+            marginBottom: "var(--space-5)",
             display: "flex",
             flexDirection: "column",
-            gap: 16,
+            gap: "var(--space-4)",
           }}
         >
           <div
@@ -1020,30 +1060,30 @@ export function Dashboard() {
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              gap: 12,
+              gap: "var(--space-3)",
               flexWrap: "wrap",
             }}
           >
-            <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>
-              Advanced filters — applied on top of score and view mode above.
+            <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+              Advanced filters, applied on top of score and view mode above.
             </p>
             {hasActiveFilters && (
               <button
                 onClick={clearAllFilters}
                 className="btn btn-ghost"
-                style={{ fontSize: 12, padding: "6px 10px" }}
+                style={{ fontSize: "var(--text-xs)", padding: "var(--space-2) var(--space-3)" }}
               >
                 Clear all
               </button>
             )}
           </div>
 
-          <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--space-5)", flexWrap: "wrap" }}>
             <div>
-              <p className="label" style={{ marginBottom: 8 }}>
+              <p className="label" style={{ marginBottom: "var(--space-2)" }}>
                 Status
               </p>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
                 {STATUS_OPTS.map((o) => (
                   <FilterChip
                     key={o.label}
@@ -1056,10 +1096,10 @@ export function Dashboard() {
             </div>
 
             <div>
-              <p className="label" style={{ marginBottom: 8 }}>
+              <p className="label" style={{ marginBottom: "var(--space-2)" }}>
                 Source
               </p>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
                 {SOURCE_OPTS.map((o) => (
                   <FilterChip
                     key={o.label}
@@ -1108,7 +1148,7 @@ export function Dashboard() {
             <div
               style={{
                 display: "flex",
-                gap: 8,
+                gap: "var(--space-2)",
                 justifyContent: "center",
                 flexWrap: "wrap",
               }}

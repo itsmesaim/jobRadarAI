@@ -65,7 +65,7 @@ export function TermsPage() {
           <p>
             JobRadar crawls third-party job boards on your behalf, rates listings against your CV
             using an AI model, and helps you track applications on a Kanban board. It's a tool to
-            help your job search — it doesn't apply to jobs for you, and it doesn't guarantee
+            help your job search. It doesn't apply to jobs for you, and it doesn't guarantee
             interviews or offers.
           </p>
         </Section>
@@ -81,7 +81,7 @@ export function TermsPage() {
         <Section title="4. Job listings and AI ratings are not guarantees">
           <p>
             Job listings are sourced from third-party APIs (Jooble, Indeed/JobsAPI) and may be
-            incomplete, outdated, expired, or inaccurate — we don't control or verify them. AI-
+            incomplete, outdated, expired, or inaccurate. We don't control or verify them. AI-
             generated fit scores, strengths, gaps, and tailoring tips are automated suggestions, not
             professional or legal advice. Always read the original listing and verify requirements
             yourself before applying.
