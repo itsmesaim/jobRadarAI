@@ -12,11 +12,12 @@ import {
   Layers,
   Ban,
   AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 import { ProgressBar } from "../components/ProgressBar";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useAuthStore } from "../hooks/useStores";
-import { adminApi } from "../api";
+import { adminApi, jobsApi } from "../api";
 import { toast } from "react-hot-toast";
 
 interface AiUsageSnapshot {
@@ -1090,6 +1091,90 @@ const FILTER_OPTIONS: {
   },
 ];
 
+function ForceRerateAllPanel() {
+  const [confirmed, setConfirmed] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleForceRerate = async () => {
+    if (!confirmed) return;
+    setLoading(true);
+    try {
+      const res = await jobsApi.rateAllForce();
+      toast.success(res.message || `Re-rating ${res.queued} jobs in background`);
+      setConfirmed(false);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Failed to start force re-rate");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      className="card"
+      style={{
+        padding: "16px 20px",
+        marginTop: "var(--space-6)",
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-3)",
+        flexWrap: "wrap",
+      }}
+    >
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: "var(--radius-sm)",
+          background: "var(--danger-bg)",
+          border: "1px solid var(--danger-border)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        <RefreshCw size={15} style={{ color: "var(--danger)" }} />
+      </div>
+      <div style={{ flex: 1, minWidth: 220 }}>
+        <div style={{ fontSize: "var(--text-base)", fontWeight: 600, color: "var(--text)" }}>
+          Force re-rate all my saved jobs
+        </div>
+        <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+          Re-runs the AI rating on every job you've already scored (admin-only — use after a
+          rating-logic fix). Overwrites existing scores.
+        </div>
+      </div>
+      <label
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--space-2)",
+          fontSize: "var(--text-xs)",
+          color: "var(--text-secondary)",
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={confirmed}
+          onChange={(e) => setConfirmed(e.target.checked)}
+        />
+        I understand this overwrites existing ratings
+      </label>
+      <button
+        type="button"
+        className="btn btn-danger"
+        disabled={!confirmed || loading}
+        onClick={handleForceRerate}
+        style={{ gap: "var(--space-2)" }}
+      >
+        <RefreshCw size={14} />
+        {loading ? "Starting…" : "Re-rate all"}
+      </button>
+    </div>
+  );
+}
+
 function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: string }) {
   const [open, setOpen] = useState(false);
   const [userId, setUserId] = useState("");
@@ -2075,6 +2160,8 @@ export function AdminPage() {
           onChanged={handleChanged}
         />
       )}
+
+      <ForceRerateAllPanel />
 
       <JobCleanupPanel users={users} basePath={basePath} />
 

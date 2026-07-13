@@ -51,7 +51,10 @@ class JobRating(BaseModel):
         description="Specific ways the candidate's profile matches the JD requirements"
     )
     gaps: list[str] = Field(
-        description="Specific JD requirements the candidate is missing or weak on"
+        description="Specific JD requirements the candidate is missing or weak on. "
+        "Each entry MUST start with '[Essential]' or '[Preferred]' per the JD's own "
+        "section heading (see STEP 2.5). One entry per distinct underlying "
+        "requirement — do not list the same missing skill more than once."
     )
     structural_mismatch: bool = Field(
         default=False,
@@ -184,6 +187,39 @@ Apply different penalty weights:
   - Missing a REQUIRED skill: costs 1.5-2 points depending on centrality
   - Missing a PREFERRED skill: costs 0.3-0.5 points at most
   - Never dock full points for a missing "nice to have"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 2.5 — GAP LIST RULES (source, dedup, tier)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before writing the `gaps` list, apply all three rules below:
+
+1. SOURCE RESTRICTION — only pull gaps from the JD's actual requirements /
+   qualifications section (whatever it's labeled: "Required", "Minimum
+   Qualifications", "What we like you to have", "Core Engineering
+   Foundations", etc.). NEVER extract a gap from a responsibilities /
+   "What you'll do" / "day to day" section — those describe the job, not
+   the hiring bar. If a skill only appears in a responsibilities bullet and
+   nowhere in the requirements section, it is not a gap.
+
+2. ONE GAP PER UNDERLYING REQUIREMENT — if a single JD bullet lists several
+   interchangeable examples (e.g. "Selenium, Playwright, TestCafe, Cypress,
+   Karate, RestAssured or similar"), that is ONE requirement, not one per
+   tool. If the candidate has none of them, write ONE gap entry for that
+   whole bullet (name the category, e.g. "UI/API test automation framework
+   experience"). Do not also write separate gap entries for individual tool
+   names mentioned in that same bullet — that double- or triple-counts a
+   single deficiency.
+
+3. TIER TAG FROM THE JD'S OWN HEADING — look at which heading the bullet
+   actually sits under in the JD, and prefix the gap string with exactly
+   that tier, derived directly from the heading text, not inferred loosely:
+     - Heading contains "Required", "Essential", "Must-have", "Minimum
+       Qualifications", "Core ... (Required)" → prefix "[Essential]"
+     - Heading contains "Preferred", "Desirable", "Nice-to-have", "Bonus"
+       → prefix "[Preferred]"
+   Example: "[Essential] UI/API test automation framework experience
+   (Selenium/Playwright/Cypress/TestCafe/Karate/RestAssured) not evidenced".
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 3 — EXPLICIT TOOL-NAME MATCHING
@@ -955,9 +991,16 @@ async def _fast_low_score_rating(sim: float = 0.0) -> dict:
 
 
 @traceable(name="rate_all_jobs", run_type="chain")
-async def rate_all_jobs_for_user(user: dict) -> dict:
+async def rate_all_jobs_for_user(user: dict, queue_filter: dict | None = None) -> dict:
+    """queue_filter overrides which jobs are eligible (defaults to the normal
+    "unrated only" queue). Callers passing a wider filter — e.g. re-rating
+    jobs the user already tracked in their Kanban pipeline, or (admin-only)
+    every job regardless of score — must include the same
+    `verdict != RATING_IN_PROGRESS` guard so overlapping runs can't
+    double-claim a job; see routes/jobs.py for the scope→filter mapping."""
     db = get_database()
     user_id = str(user["_id"])
+    queue_filter = queue_filter or unrated_jobs_filter(user_id)
     user = await _get_fresh_user(user_id)
     if not user:
         return {"rated": 0, "error": "User not found"}
@@ -982,12 +1025,10 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
         print(f"[rating] Skipped for {user_email}: {msg}")
         return {"rated": 0, "error": msg}
 
-    # Unrated queue — skip jobs already scored > 0; per-job quota inside rate_and_store
-    jobs = await db.jobs.find(unrated_jobs_filter(user_id)).to_list(
-        length=RATE_ALL_MAX_JOBS
-    )
+    # Jobs matching queue_filter; per-job quota still enforced inside rate_and_store.
+    jobs = await db.jobs.find(queue_filter).to_list(length=RATE_ALL_MAX_JOBS)
     print(
-        f"[rating] [queue] Unrated jobs found in queue for user: {len(jobs)} (skips score>0; capped by remaining quota)"
+        f"[rating] [queue] jobs found in queue for user: {len(jobs)} (capped by remaining quota)"
     )
 
     if not jobs:
@@ -1036,7 +1077,7 @@ async def rate_all_jobs_for_user(user: dict) -> dict:
                 {
                     "_id": ObjectId(job["_id"]),
                     "crawled_by": user_id,
-                    **unrated_jobs_filter(user_id),
+                    **queue_filter,
                 },
                 {
                     "$set": {

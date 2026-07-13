@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from database import get_database
 from deps import get_current_user
+from routes.admin import _require_admin
 from services.job_dedup import content_fingerprint, hash_url, job_exists_for_user
 from services.rating import (
     RATING_IN_PROGRESS,
@@ -409,17 +410,69 @@ async def list_jobs(
 
 
 # ── RATE ALL ─────────────────────────────────────────────
+RerateScope = Literal["unrated", "saved", "all"]
+
+# Re-rating already-scored jobs (scope != "unrated") re-runs the LLM on jobs
+# that normally would never be re-billed. Free-tier cost is still bounded by
+# the daily rating/token quota, but admin + full_access accounts bypass that
+# quota entirely (see limits._has_unlimited_access) — without a cooldown,
+# repeatedly clicking the button would re-rate the same jobs over and over
+# with zero cost gate. This applies to every account, bypass or not.
+RERATE_COOLDOWN_MINUTES = 48 * 60  # once in a 2 days;
+
+
+def _rerate_queue_filter(user_id: str, scope: RerateScope) -> dict:
+    """scope="unrated" (default) is the normal rate-all queue. "saved"
+    re-rates jobs the user has tracked in their Kanban pipeline (status !=
+    NEW) even if already scored — self-serve, still costs normal rating
+    quota. "all" re-rates every job regardless of status/score — admin-only,
+    for rolling out a rating-logic fix across a user's full history."""
+    if scope == "unrated":
+        return unrated_jobs_filter(user_id)
+    base = {
+        "crawled_by": user_id,
+        f"ratings.{user_id}.verdict": {"$ne": RATING_IN_PROGRESS},
+    }
+    if scope == "saved":
+        return {**base, f"status_{user_id}": {"$in": PIPELINE_STATUSES}}
+    return base  # scope == "all"
+
+
 @router.post("/rate-all")
-async def rate_all(background_tasks: BackgroundTasks, user=Depends(get_current_user)):
+async def rate_all(
+    background_tasks: BackgroundTasks,
+    scope: RerateScope = "unrated",
+    user=Depends(get_current_user),
+):
+    if scope == "all":
+        # Re-rates the user's ENTIRE job history regardless of status/score —
+        # expensive and rewrites existing ratings, so admin-only for now.
+        _require_admin(user)
+
     db = get_database()
     user_id = str(user["_id"])
+
+    if scope != "unrated":
+        last_rerate = user.get("last_rerate_at")
+        if last_rerate:
+            if last_rerate.tzinfo is None:
+                last_rerate = last_rerate.replace(tzinfo=timezone.utc)
+            elapsed = datetime.now(timezone.utc) - last_rerate
+            wait_left = timedelta(minutes=RERATE_COOLDOWN_MINUTES) - elapsed
+            if wait_left > timedelta(0):
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Re-rate already run recently — try again in {int(wait_left.total_seconds() // 60) + 1} min.",
+                )
+
+    queue_filter = _rerate_queue_filter(user_id, scope)
 
     # Quick visibility into the current "rating queue" size before accepting
     pending_count = 0
     try:
-        pending_count = await db.jobs.count_documents(unrated_jobs_filter(user_id))
+        pending_count = await db.jobs.count_documents(queue_filter)
         print(
-            f"[rating] [route] /rate-all: current pending unrated jobs in queue for user: {pending_count}"
+            f"[rating] [route] /rate-all(scope={scope}): current pending jobs in queue for user: {pending_count}"
         )
     except Exception:
         pass
@@ -441,21 +494,30 @@ async def rate_all(background_tasks: BackgroundTasks, user=Depends(get_current_u
 
     if pending_count == 0:
         return {
-            "message": "No unrated jobs to rate.",
+            "message": (
+                "No jobs to re-rate."
+                if scope != "unrated"
+                else "No unrated jobs to rate."
+            ),
             "queued": 0,
             "ratings_remaining": remaining,
         }
 
     print(
-        f"[rating] [route] /rate-all accepted for user={user_id}, spawning background task rate_all_jobs_for_user (real work happens async)"
+        f"[rating] [route] /rate-all(scope={scope}) accepted for user={user_id}, spawning background task rate_all_jobs_for_user (real work happens async)"
     )
-    await db.users.update_one(
-        {"_id": user["_id"]},
-        {"$set": {"last_manual_rate_at": datetime.now(timezone.utc)}},
-    )
-    background_tasks.add_task(rate_all_jobs_for_user, user)
+    now = datetime.now(timezone.utc)
+    update_fields = {"last_manual_rate_at": now}
+    if scope != "unrated":
+        update_fields["last_rerate_at"] = now
+    await db.users.update_one({"_id": user["_id"]}, {"$set": update_fields})
+    background_tasks.add_task(rate_all_jobs_for_user, user, queue_filter=queue_filter)
     return {
-        "message": "Rating started in background.",
+        "message": (
+            "Re-rating started in background."
+            if scope != "unrated"
+            else "Rating started in background."
+        ),
         "queued": pending_count,
         "ratings_remaining": remaining,
         "will_rate_up_to": min(pending_count, remaining),

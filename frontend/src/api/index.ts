@@ -65,6 +65,21 @@ export const jobsApi = {
     return res.data;
   },
 
+  // Self-serve: re-rates jobs the user has tracked in their Kanban pipeline
+  // (status != NEW), even if already scored. Costs normal rating quota.
+  rateAllSaved: async () => {
+    const res = await api.post("/jobs/rate-all?scope=saved");
+    return res.data;
+  },
+
+  // Admin-only: re-rates EVERY job for the account regardless of status or
+  // existing score — use after a rating-prompt fix. Backend rejects this
+  // for non-admins.
+  rateAllForce: async () => {
+    const res = await api.post("/jobs/rate-all?scope=all");
+    return res.data;
+  },
+
   rateOne: async (id: string) => {
     const res = await api.post(`/jobs/${id}/rate`);
     return res.data as {

@@ -442,6 +442,19 @@ export function KanbanPage() {
 
   const jobs = data?.jobs ?? [];
 
+  const [rerating, setRerating] = useState(false);
+  const handleRerateSaved = async () => {
+    setRerating(true);
+    try {
+      const res = await jobsApi.rateAllSaved();
+      toast.success(res.message || `Re-rating ${res.queued} jobs`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Failed to start re-rate");
+    } finally {
+      setRerating(false);
+    }
+  };
+
   const applyStatusChange = async (jobId: string, targetStatus: JobStatus) => {
     const current = jobs.find((j) => j.id === jobId);
     if (!current || current.status === targetStatus) return;
@@ -472,22 +485,44 @@ export function KanbanPage() {
 
   return (
     <div className="kanban-page">
-      <div style={{ marginBottom: "var(--space-4)" }}>
-        <h1
-          style={{
-            fontSize: isMobile ? "var(--text-xl)" : "var(--text-2xl)",
-            fontWeight: 700,
-            margin: "0 0 var(--space-1)",
-            color: "var(--text)",
-          }}
-        >
-          Pipeline
-        </h1>
-        <p style={{ margin: 0, fontSize: "var(--text-base)", color: "var(--text-muted)" }}>
-          {isLoading
-            ? "Loading your board..."
-            : `${jobs.length} job${jobs.length === 1 ? "" : "s"} on your board`}
-        </p>
+      <div
+        style={{
+          marginBottom: "var(--space-4)",
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: "var(--space-3)",
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <h1
+            style={{
+              fontSize: isMobile ? "var(--text-xl)" : "var(--text-2xl)",
+              fontWeight: 700,
+              margin: "0 0 var(--space-1)",
+              color: "var(--text)",
+            }}
+          >
+            Pipeline
+          </h1>
+          <p style={{ margin: 0, fontSize: "var(--text-base)", color: "var(--text-muted)" }}>
+            {isLoading
+              ? "Loading your board..."
+              : `${jobs.length} job${jobs.length === 1 ? "" : "s"} on your board`}
+          </p>
+        </div>
+        {!isLoading && jobs.length > 0 && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={rerating}
+            onClick={handleRerateSaved}
+            title="Re-run AI rating on every job on this board, even ones already scored"
+          >
+            {rerating ? "Starting…" : "Re-rate these jobs"}
+          </button>
+        )}
       </div>
 
       {isLoading ? (
