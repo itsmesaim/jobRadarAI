@@ -91,6 +91,7 @@ export const jobsApi = {
       structural_mismatch?: boolean;
       tailoring_tips?: string[];
       rated_at: string;
+      rated_by_model?: string | null;
     };
   },
 

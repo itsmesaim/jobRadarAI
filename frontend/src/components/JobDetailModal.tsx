@@ -10,6 +10,7 @@ import {
   ClipboardCopy,
   RefreshCw,
   CalendarClock,
+  Cpu,
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -32,7 +33,8 @@ function timeAgo(dateStr?: string): string {
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  const remMins = mins % 60;
+  if (hrs < 24) return remMins > 0 ? `${hrs}h ${remMins}m ago` : `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
   return `${Math.floor(days / 7)}w ago`;
@@ -86,6 +88,7 @@ export function JobDetailModal({ job, onClose }: Props) {
     gaps: job.gaps,
     auto_reject: job.auto_reject,
     rated_at: job.rated_at,
+    rated_by_model: job.rated_by_model,
   });
 
   const company = extractCompany(job);
@@ -147,6 +150,7 @@ export function JobDetailModal({ job, onClose }: Props) {
         gaps: res.gaps,
         auto_reject: res.auto_reject,
         rated_at: res.rated_at,
+        rated_by_model: res.rated_by_model,
       });
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["kanban"] });
@@ -291,6 +295,14 @@ export function JobDetailModal({ job, onClose }: Props) {
                   style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}
                 >
                   <Sparkles size={11} /> Rated {timeAgo(rating.rated_at)}
+                </span>
+              )}
+              {rating.rated_by_model && (
+                <span
+                  title={`Rated by: ${rating.rated_by_model}`}
+                  style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}
+                >
+                  <Cpu size={11} /> {rating.rated_by_model}
                 </span>
               )}
             </div>

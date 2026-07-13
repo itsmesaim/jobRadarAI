@@ -25,6 +25,7 @@ export interface Job {
   posted_at_actual?: string; // true posting date from source, if it gave one
   rated_at?: string; // when this job was last rated for the current user
   rating_in_progress?: boolean; // a background worker is rating this job right now
+  rated_by_model?: string | null; // "<provider>:<model>", or an "auto" label for the no-LLM cheap path
   source: "tavily" | "manual" | "jooble" | "adzuna" | "jobsapi-indeed" | "jobsapi-linkedin";
   score: number | null;
   matched_strengths: string[];
@@ -108,6 +109,7 @@ export interface CVData {
       end: string;
       grade: string | null;
     }>;
+    parsed_by_model?: string | null;
   };
 }
 

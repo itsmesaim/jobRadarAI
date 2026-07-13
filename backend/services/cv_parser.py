@@ -118,14 +118,15 @@ async def parse_cv_with_llm(raw_text: str, user_id: str | None = None) -> dict:
     ]
 
     response = await llm.ainvoke(messages)
+    model = getattr(llm, "model", getattr(llm, "model_name", settings.openai_model))
+    model = str(model or "unknown")
     if user_id:
-        model = getattr(llm, "model", getattr(llm, "model_name", settings.openai_model))
         await record_from_llm_response(
             user_id,
             response,
             operation="cv_parse",
             provider=settings.llm_provider,
-            model=str(model or "unknown"),
+            model=model,
         )
     content = response.content.strip()
 
@@ -142,6 +143,7 @@ async def parse_cv_with_llm(raw_text: str, user_id: str | None = None) -> dict:
     phone, email = _extract_contact_details(raw_text)
     parsed["phone"] = phone
     parsed["email"] = email
+    parsed["parsed_by_model"] = f"{settings.llm_provider}:{model}"
     return parsed
 
 

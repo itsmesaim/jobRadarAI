@@ -111,8 +111,9 @@ export function TermsPage() {
         <Section title="7. Termination">
           <p>
             You may delete your account at any time from Settings, which permanently and immediately
-            removes your data. We may suspend or terminate accounts that violate these terms or
-            abuse the service.
+            removes your account, CV, and job data from our database. Operational server logs are
+            handled separately — see the Privacy Policy for retention details. We may suspend or
+            terminate accounts that violate these terms or abuse the service.
           </p>
         </Section>
 

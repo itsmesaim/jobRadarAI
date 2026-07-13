@@ -12,18 +12,18 @@ There are TWO different LLMs in this app:
 These two can be completely different providers/models.
 
 You can mix providers freely (see RATING_PROVIDER + RATING_MODEL), e.g. parse
-CVs with OpenAI but rate jobs for free on a local Ollama model, or on cheap
-DeepSeek.
+CVs with OpenAI but rate jobs for free on a local Ollama model, or on
+EU-based Mistral.
 
 The code respects these common env var names from your .env:
   - GROK_API_KEY / XAI_API_KEY
   - GROK_MODEL / XAI_MODEL
-  - DEEPSEEK_API_KEY / DEEPSEEK_MODEL
+  - MISTRAL_API_KEY / MISTRAL_MODEL
   - RATING_PROVIDER / RATING_MODEL
 
-Embeddings (for fast pre-filter) follow LLM_PROVIDER, not RATING_PROVIDER —
-if LLM_PROVIDER=openai, embeddings stay on OpenAI even when RATING_PROVIDER
-is ollama/deepseek (embedding calls are cheap; not worth a separate switch).
+Embeddings (for fast pre-filter) always use OpenAI, regardless of LLM_PROVIDER
+or RATING_PROVIDER — they're a cheap, working cosine-prefilter step, not
+worth switching when the main/rating providers change.
 """
 
 from functools import lru_cache
@@ -112,30 +112,24 @@ def _make_llm(provider: str, model: str, **extra) -> BaseChatModel:
             openai_params["base_url"] = "https://api.x.ai/v1"
             return ChatOpenAI(**openai_params)
 
-    if p == "deepseek":
+    if p == "mistral":
         from langchain_openai import ChatOpenAI
 
-        resolved_model = model or settings.deepseek_model
+        resolved_model = model or settings.mistral_model
         if not resolved_model:
-            raise ValueError("No DEEPSEEK_MODEL set in .env for deepseek provider.")
+            raise ValueError("No MISTRAL_MODEL set in .env for mistral provider.")
 
         params = {
-            "api_key": settings.deepseek_api_key,
+            "api_key": settings.mistral_api_key,
             "model": resolved_model,
-            "base_url": "https://api.deepseek.com/v1",
+            "base_url": "https://api.mistral.ai/v1",
             "temperature": 0.1,
-            # DeepSeek V4 models default to "thinking" (reasoning) mode, which
-            # rejects the forced tool_choice that with_structured_output(...,
-            # method="function_calling") sends — disable it so structured
-            # rating/apply-pack output works. Also faster + cheaper (no
-            # reasoning tokens) for this app's non-reasoning use case.
-            "extra_body": {"thinking": {"type": "disabled"}},
             **extra,
         }
         return ChatOpenAI(**params)
 
     raise ValueError(
-        f"Unknown LLM provider: {p!r}. Use 'ollama', 'openai', 'xai', or 'deepseek'."
+        f"Unknown LLM provider: {p!r}. Use 'ollama', 'openai', 'xai', or 'mistral'."
     )
 
 
@@ -174,45 +168,17 @@ def get_rating_llm() -> BaseChatModel:
 
 @lru_cache(maxsize=1)
 def get_embeddings() -> Embeddings:
-    provider = settings.llm_provider.lower()
-
-    if provider == "ollama":
-        from langchain_ollama import OllamaEmbeddings
-
-        return OllamaEmbeddings(
-            base_url=settings.ollama_base_url,
-            model="nomic-embed-text",
+    """Always OpenAI — see module docstring. Independent of LLM_PROVIDER/RATING_PROVIDER."""
+    embed_key = (settings.openai_api_key or "").strip()
+    if not embed_key:
+        raise ValueError(
+            "OPENAI_API_KEY is required for embeddings (cosine pre-filter), "
+            "regardless of LLM_PROVIDER/RATING_PROVIDER."
         )
 
-    # For xai we don't have good native embeddings yet.
-    # Prefer OpenAI embeddings (very cheap + fast for pre-filter) if key is present.
-    if provider in ("openai", "xai"):
-        embed_key = (
-            settings.openai_api_key
-            or settings.grok_api_key
-            or settings.xai_api_key
-            or ""
-        ).strip()
-        if embed_key:
-            from langchain_openai import OpenAIEmbeddings
+    from langchain_openai import OpenAIEmbeddings
 
-            return OpenAIEmbeddings(
-                api_key=embed_key,
-                model="text-embedding-3-small",
-            )
-        # fallback if no key but using xai provider
-        if provider == "xai":
-            raise ValueError(
-                "xAI provider selected but no key found for embeddings. "
-                "Set OPENAI_API_KEY (recommended for text-embedding-3-small) or GROK_API_KEY / XAI_API_KEY."
-            )
-
-    if provider == "openai":
-        from langchain_openai import OpenAIEmbeddings
-
-        return OpenAIEmbeddings(
-            api_key=settings.openai_api_key,
-            model="text-embedding-3-small",
-        )
-
-    raise ValueError(f"Unknown LLM_PROVIDER for embeddings: {provider!r}.")
+    return OpenAIEmbeddings(
+        api_key=embed_key,
+        model="text-embedding-3-small",
+    )

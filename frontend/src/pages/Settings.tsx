@@ -35,6 +35,13 @@ import {
 } from "../components/LimitContactModal";
 import type { DataSummary, UserPreferences } from "../types";
 
+const CV_UPLOAD_MESSAGES = [
+  "Uploading your CV...",
+  "Parsing with AI...",
+  "Extracting skills, projects, and experience...",
+  "Almost done...",
+];
+
 const DEFAULT_PREFS: UserPreferences = {
   preferred_locations: [],
   primary_role: "Full Stack Developer",
@@ -110,6 +117,7 @@ export function SettingsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deletePassword, setDeletePassword] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [uploadMsgIdx, setUploadMsgIdx] = useState(0);
   const [limitModalKind, setLimitModalKind] = useState<LimitKind | null>(null);
   const [pwForm, setPwForm] = useState({
     current: "",
@@ -152,6 +160,19 @@ export function SettingsPage() {
     queryKey: ["data-summary"],
     queryFn: userApi.getDataSummary,
   });
+
+  // Cycle the fun status line while a CV upload/parse is in flight, so the
+  // page doesn't sit silently for the several seconds the LLM call takes.
+  useEffect(() => {
+    if (!uploading) {
+      setUploadMsgIdx(0);
+      return;
+    }
+    const id = setInterval(() => {
+      setUploadMsgIdx((i) => Math.min(i + 1, CV_UPLOAD_MESSAGES.length - 1));
+    }, 1600);
+    return () => clearInterval(id);
+  }, [uploading]);
 
   // sync server prefs into local state once loaded
   useEffect(() => {
@@ -331,7 +352,26 @@ export function SettingsPage() {
       <SectionGroup id="profile" icon={UserCircle} label="Profile & CV">
         {/* CV Section */}
         <Section title="CV" subtitle="Upload your master CV. Used for job rating and tailoring.">
-          {cv ? (
+          {uploading ? (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                width: "100%",
+                padding: "16px 20px",
+                border: "2px dashed var(--accent)",
+                borderRadius: "var(--radius)",
+                background: "var(--bg-secondary)",
+              }}
+            >
+              <Loader size={20} className="animate-spin" style={{ color: "var(--accent)" }} />
+              <span style={{ fontSize: "var(--text-sm)", color: "var(--text)" }}>
+                {cv ? "Replacing your CV — " : ""}
+                {CV_UPLOAD_MESSAGES[uploadMsgIdx]}
+              </span>
+            </div>
+          ) : cv ? (
             <div
               style={{
                 display: "flex",
@@ -384,12 +424,14 @@ export function SettingsPage() {
               <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
                 {cv.structured?.skills?.length} skills · {cv.structured?.projects?.length} projects
                 · {cv.structured?.experience?.length} roles
+                {cv.structured?.parsed_by_model && (
+                  <> · parsed by {cv.structured.parsed_by_model}</>
+                )}
               </span>
             </div>
           ) : (
             <button
               onClick={() => fileRef.current?.click()}
-              disabled={uploading}
               style={{
                 display: "flex",
                 flexDirection: "column",
@@ -403,24 +445,13 @@ export function SettingsPage() {
                 gap: "var(--space-2)",
               }}
             >
-              {uploading ? (
-                <>
-                  <Loader size={20} className="animate-spin" style={{ color: "var(--accent)" }} />
-                  <span style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
-                    Uploading...
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Upload size={20} style={{ color: "var(--text-muted)" }} />
-                  <span style={{ fontSize: "var(--text-sm)", color: "var(--text)" }}>
-                    Click to upload your CV
-                  </span>
-                  <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
-                    PDF · Max 5MB
-                  </span>
-                </>
-              )}
+              <Upload size={20} style={{ color: "var(--text-muted)" }} />
+              <span style={{ fontSize: "var(--text-sm)", color: "var(--text)" }}>
+                Click to upload your CV
+              </span>
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                PDF · Max 5MB
+              </span>
             </button>
           )}
           <input

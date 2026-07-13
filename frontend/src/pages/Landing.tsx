@@ -56,6 +56,11 @@ const FEATURES = [
     desc: "Get a tailored summary and talking points per role so you're not blasting the same generic application everywhere.",
     Icon: Briefcase,
   },
+  {
+    title: "EU-hosted & transparent",
+    desc: "CV parsing and job rating both run on Mistral AI, hosted in the EU — no CV or job data leaves the EU for processing. Every rating shows exactly which model scored it.",
+    Icon: Shield,
+  },
 ];
 
 const WITHOUT = [
@@ -76,6 +81,7 @@ const STACK = [
   "React 18 + TypeScript + Vite",
   "FastAPI + Motor (MongoDB)",
   "LangChain (split main + rating LLM)",
+  "Mistral AI — EU-hosted, both CV parsing and rating",
   "FAISS RAG for JD context + rating calibration",
   "TanStack Query + Zustand",
   "Jooble · JobsAPI (Indeed)",
@@ -506,8 +512,9 @@ export function LandingPage() {
               <p>
                 React frontend on TanStack Query, FastAPI backend, MongoDB for storage, and
                 LangChain with two LLMs: one for CV parsing, a faster one for bulk job ratings
-                against your CV and saved preferences. FAISS retrieval picks the most relevant JD
-                context and pulls in your past feedback on similar jobs.
+                against your CV and saved preferences — both running on Mistral AI, so your CV and
+                job data are processed inside the EU end to end. FAISS retrieval picks the most
+                relevant JD context and pulls in your past feedback on similar jobs.
               </p>
               <ul className="landing-stack-list">
                 {STACK.map((item) => (

@@ -620,6 +620,7 @@ Education: {json.dumps(structured.get('education', []))}
         )
         print(f"[rating] [job] LLM invoke provider={provider} model={model}")
         result = await _try_structured(llm, provider, str(model), max_attempts=3)
+        used_by = f"{provider}:{model}"
 
         # If the (usually cheaper) rating provider keeps failing to return a
         # valid structured response, fall back to the main LLM once before
@@ -639,6 +640,7 @@ Education: {json.dumps(structured.get('education', []))}
             result = await _try_structured(
                 fallback_llm, settings.llm_provider, str(fallback_model), max_attempts=2
             )
+            used_by = f"{settings.llm_provider}:{fallback_model}"
 
         if result is None:
             raise ValueError(
@@ -647,7 +649,9 @@ Education: {json.dumps(structured.get('education', []))}
                 "including after falling back to the main LLM provider"
             )
         print("[rating] [job] LLM response received successfully")
-        return result.model_dump()
+        rating_dict = result.model_dump()
+        rating_dict["rated_by_model"] = used_by
+        return rating_dict
     except Exception as e:
         import traceback
 
@@ -662,6 +666,7 @@ Education: {json.dumps(structured.get('education', []))}
             "gaps": [],
             "verdict": f"Rating failed: {str(e)[:150]}",
             "auto_reject": False,
+            "rated_by_model": None,
         }
 
 
@@ -984,6 +989,7 @@ async def _fast_low_score_rating(sim: float = 0.0) -> dict:
         "structural_mismatch": False,
         "verdict": "Low semantic similarity to your profile — not a good fit (pre-filtered to save tokens).",
         "auto_reject": False,
+        "rated_by_model": "auto (no LLM — low semantic match)",
     }
 
 

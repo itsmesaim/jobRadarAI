@@ -53,7 +53,7 @@ flowchart TB
         Jooble["Jooble API"]
         JobsAPI["JobsAPI (Indeed)"]
         Ollama["Ollama (local, free)"]
-        OpenAI["OpenAI / xAI / DeepSeek"]
+        OpenAI["OpenAI (embeddings) / Mistral (EU, parsing + rating) / xAI"]
     end
 
     Pages --> State --> Fetch
@@ -185,7 +185,7 @@ Three-layer quota, enforced server-side with atomic Mongo increments: searches (
 Each job carries a per-user pipeline status. Dashboard shows relative post/crawl time ("2d ago"); Kanban gives desktop drag-and-drop and a mobile tabbed view.
 
 ### 9. Privacy & Data Rights
-Settings → Data & privacy: a live inventory of what's stored, a full JSON export (`GET /users/data-export`), CV-only deletion, and full account deletion (hard delete of the user doc + every job they crawled, password re-entry required). The Privacy Policy names every third party data actually goes to (Jooble, JobsAPI, your configured LLM provider, MongoDB) and states retention/rights. **Not legal advice** — known gaps: no formal DPA on file with the LLM provider, no automatic data-retention expiry (data persists until the user deletes their account).
+Settings → Data & privacy: a live inventory of what's stored, a full JSON export (`GET /users/data-export`), CV-only deletion, and full account deletion (hard delete of the user doc + every job they crawled, password re-entry required). The Privacy Policy names every third party data actually goes to (Jooble, JobsAPI, your configured LLM provider, MongoDB) and states retention/rights. CV parsing and job rating run on Mistral, an EU-hosted provider, and the app itself is hosted on EU infrastructure — CV/JD content doesn't leave the EU for processing. Server logs auto-rotate within 30 days (`pm2-logrotate`). **Not legal advice** — known gap: no formal DPA on file with the LLM provider.
 
 ---
 
@@ -208,7 +208,7 @@ JobRadar/
 │   │   ├── users.py                   # Preferences, skill overrides, data export/deletion
 │   │   └── admin.py                   # Secret-path admin panel
 │   └── services/
-│       ├── llm.py                     # Main + rating LLM split (ollama/openai/xai/deepseek)
+│       ├── llm.py                     # Main + rating LLM split (ollama/openai/xai/mistral)
 │       ├── cv_parser.py                # PDF → text → structured JSON, PII redaction
 │       ├── rating.py                  # Prefilter + RAG + calibration + brief/roast
 │       ├── vectorstore.py             # FAISS chunking/embedding/retrieval helpers
@@ -281,7 +281,7 @@ JobRadar/
 ### Prerequisites
 - Python 3.11+, Node.js 18+
 - MongoDB (local, VPS with auth, or Atlas)
-- Ollama running locally, or an API key for OpenAI / xAI / DeepSeek
+- Ollama running locally, or an API key for OpenAI / xAI / Mistral
 - Jooble + JobsAPI API keys (for job search)
 
 ### Backend
@@ -309,9 +309,9 @@ Everything is `.env`-driven — no model names are hardcoded. See `backend/.env.
 | Variable | Purpose |
 |----------|---------|
 | `MONGO_URI` / `MONGO_HOST`+`MONGO_USER`+`MONGO_PASSWORD` | Connection (local, VPS-auth, or Atlas) |
-| `LLM_PROVIDER` | `ollama`, `openai`, `xai`, or `deepseek` — main LLM (CV parsing, apply packs) |
+| `LLM_PROVIDER` | `ollama`, `openai`, `xai`, or `mistral` — main LLM (CV parsing, apply packs) |
 | `RATING_PROVIDER` / `RATING_MODEL` | Separate provider/model for bulk rating — e.g. run rating for free on local Ollama (`qwen3:8b`) while CV parsing stays on a hosted model |
-| `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` | Cheap OpenAI-compatible provider option |
+| `MISTRAL_API_KEY` / `MISTRAL_MODEL` | EU-hosted, OpenAI-compatible provider — used by default for both CV parsing and rating |
 | `XAI_API_KEY` / `GROK_API_KEY` | For xAI/Grok |
 | `JWT_SECRET` | **Required in production** — refuses to start with `DEBUG=false` if weak/default |
 | `ADMIN_EMAIL` / `ADMIN_SECRET_PATH` | Required to access the admin panel |
@@ -326,7 +326,7 @@ Everything is `.env`-driven — no model names are hardcoded. See `backend/.env.
 
 Intentional protections already in place: bcrypt password hashing, JWT with `token_version` invalidation, in-memory brute-force rate limiting on auth routes, all job routes scoped to `crawled_by == current user` (no IDOR), server-side admin email check, no email-enumeration on forgot-password, account deletion requires password re-entry, SSRF-guarded server-side URL fetch, atomic Mongo quota increments, `/docs` disabled when `DEBUG=false`, `.env` gitignored.
 
-**Known risks to be aware of**: CV text and job descriptions are sent to whichever external LLM provider you configure (OpenAI/xAI/DeepSeek) — contact details are redacted first, but the rest of the CV isn't; use local Ollama if that matters for your users. JWT lives in `localStorage` (XSS risk, standard SPA tradeoff). Rate limits are in-memory and don't span restarts or multiple workers — add nginx/Cloudflare rate limiting for a public deployment. See the Privacy Policy (`frontend/src/pages/Privacy.tsx`) for the current data-flow disclosure, and `handoff.md` for the full GDPR-posture audit and its open items (no formal DPA with the LLM provider, no data-retention TTL).
+**Known risks to be aware of**: CV text and job descriptions are sent to whichever external LLM provider you configure (default: Mistral, EU-hosted, for both parsing and rating; OpenAI is used only for embeddings) — contact details are redacted first, but the rest of the CV isn't; use local Ollama if that matters for your users. JWT lives in `localStorage` (XSS risk, standard SPA tradeoff). Rate limits are in-memory and don't span restarts or multiple workers — add nginx/Cloudflare rate limiting for a public deployment. See the Privacy Policy (`frontend/src/pages/Privacy.tsx`) for the current data-flow disclosure, and `handoff.md` for the full GDPR-posture audit and its open items (no formal DPA with the LLM provider).
 
 ---
 
@@ -339,7 +339,7 @@ Intentional protections already in place: bcrypt password hashing, JWT with `tok
 | **Auth & security** | bcrypt, PyJWT, email-validator |
 | **Database** | MongoDB, Motor (async driver) |
 | **AI / LLM** | LangChain, langchain-ollama, langchain-openai, langchain-xai, langchain-community, FAISS (RAG chunk retrieval), LangSmith (call tracing), structured Pydantic output |
-| **LLM providers** | Ollama, OpenAI, xAI (Grok), or DeepSeek — main LLM and rating LLM configured independently |
+| **LLM providers** | Ollama, OpenAI, xAI (Grok), or Mistral (EU-hosted, default) — main LLM and rating LLM configured independently |
 | **PDF processing** | PyMuPDF (`fitz`) |
 | **Job discovery** | Jooble API, JobsAPI (Indeed) |
 | **Scheduling** | APScheduler |

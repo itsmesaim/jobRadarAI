@@ -80,17 +80,17 @@ class Settings(BaseSettings):
     xai_model: str = Field(default="", validation_alias="XAI_MODEL")
     grok_model: str = Field(default="", validation_alias="GROK_MODEL")
 
-    # DeepSeek — OpenAI-API-compatible endpoint, no extra dependency needed
-    # (see services/llm.py). Cheap option for RATING_PROVIDER=deepseek.
-    deepseek_api_key: str = ""
-    deepseek_model: str = ""
+    # Mistral — OpenAI-API-compatible endpoint, no extra dependency needed
+    # (see services/llm.py). EU-based (GDPR-friendly), free tier available.
+    mistral_api_key: str = ""
+    mistral_model: str = ""
 
     # Optional separate model just for job rating (bulk / rate-all).
     # Lets you mix providers, e.g. parse CV with OpenAI, rate jobs with fast Grok.
     # Control everything via .env (RATING_MODEL, RATING_PROVIDER, etc.)
     rating_model: str = ""
     rating_provider: str = (
-        ""  # "xai" | "openai" | "ollama" | "deepseek" (empty = use main llm_provider)
+        ""  # "xai" | "openai" | "ollama" | "mistral" (empty = use main llm_provider)
     )
     # Max concurrent LLM calls during bulk rating. Every call now uses the
     # full-length prompt (see rating.py), so this directly controls tokens/min

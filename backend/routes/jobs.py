@@ -111,6 +111,7 @@ def _format_job(job: dict, user_id: str) -> dict:
         "auto_reject": rating.get("auto_reject", False),
         "status": job.get(f"status_{user_id}", "NEW"),
         "rating_in_progress": in_progress,
+        "rated_by_model": None if in_progress else rating.get("rated_by_model"),
     }
 
 
@@ -598,6 +599,7 @@ async def add_manual_jd(payload: ManualJD, user=Depends(get_current_user)):
         "verdict": rating.get("verdict"),
         "matched_strengths": rating.get("matched_strengths"),
         "gaps": rating.get("gaps"),
+        "rated_by_model": rating.get("rated_by_model"),
     }
 
 
@@ -655,6 +657,7 @@ async def rate_single_job(job_id: str, user=Depends(get_current_user)):
         "structural_mismatch": rating.get("structural_mismatch"),
         "tailoring_tips": rating.get("tailoring_tips"),
         "rated_at": rating.get("rated_at"),
+        "rated_by_model": rating.get("rated_by_model"),
     }
 
 

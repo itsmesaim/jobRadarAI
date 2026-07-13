@@ -109,10 +109,15 @@ export function PrivacyPage() {
               your CV or identity.
             </li>
             <li>
-              <strong style={{ color: "var(--text)" }}>Our AI/LLM provider</strong> (OpenAI, xAI, or
-              a locally-run model, depending on deployment): receives your CV text (with phone/
-              email redacted, see above) and job descriptions, to parse your CV and generate fit
-              ratings.
+              <strong style={{ color: "var(--text)" }}>Mistral (EU-based):</strong> receives your CV
+              text (with phone/email redacted, see above) and job descriptions to parse your CV into
+              structured data, generate fit ratings, gaps, tailoring tips, briefs, and roasts.
+            </li>
+            <li>
+              <strong style={{ color: "var(--text)" }}>OpenAI:</strong> receives your CV text and
+              job description text solely to generate similarity embeddings (a numeric vector) used
+              for a fast pre-filter step before rating — this text is not used for parsing or
+              rating.
             </li>
             <li>
               <strong style={{ color: "var(--text)" }}>MongoDB:</strong> our database provider,
@@ -121,11 +126,25 @@ export function PrivacyPage() {
           </ul>
         </Section>
 
+        <Section title="Where your data is stored and processed">
+          <p>
+            Our servers and database run on infrastructure located in Lauterbourg, France (EU).
+            Combined with Mistral (EU-based) handling CV parsing and job rating, the core processing
+            of your CV and job data stays within the EU end to end.
+          </p>
+        </Section>
+
         <Section title="Data retention">
           <p>
             We keep your data for as long as your account exists. Deleting your account permanently
-            and immediately removes your user record and every job listing tied to it. This action
-            cannot be undone.
+            and immediately removes your user record and every job listing tied to it from our
+            database. This action cannot be undone.
+          </p>
+          <p>
+            Separately, our server keeps short-lived operational logs (e.g. your email address, to
+            trace a failed search or rating for debugging) for up to 30 days, after which they are
+            automatically rotated out. These logs are not part of the database and are not covered
+            by the account-deletion action above, but they age out on their own within that window.
           </p>
         </Section>
 
