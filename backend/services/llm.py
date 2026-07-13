@@ -124,6 +124,12 @@ def _make_llm(provider: str, model: str, **extra) -> BaseChatModel:
             "model": resolved_model,
             "base_url": "https://api.deepseek.com/v1",
             "temperature": 0.1,
+            # DeepSeek V4 models default to "thinking" (reasoning) mode, which
+            # rejects the forced tool_choice that with_structured_output(...,
+            # method="function_calling") sends — disable it so structured
+            # rating/apply-pack output works. Also faster + cheaper (no
+            # reasoning tokens) for this app's non-reasoning use case.
+            "extra_body": {"thinking": {"type": "disabled"}},
             **extra,
         }
         return ChatOpenAI(**params)

@@ -520,40 +520,96 @@ Education: {json.dumps(structured.get('education', []))}
         HumanMessage(content=human_message_content),
     ]
 
+    async def _try_structured(
+        llm, provider_label: str, model_label: str, max_attempts: int
+    ):
+        """Retry a structured rating call against one LLM. Some providers
+        (observed with DeepSeek) intermittently report finish_reason=
+        "tool_calls" but return an empty tool_calls array — a nondeterministic
+        client/provider parsing glitch, not a prompt or schema problem
+        (reproduced ~15-30% of the time, independent of concurrency and of
+        the specific job/CV content). Returns the parsed result, or None if
+        every attempt fails."""
+        structured_llm = llm.with_structured_output(
+            JobRating, include_raw=True, method="function_calling"
+        )
+        for attempt in range(1, max_attempts + 1):
+            raw_result = await structured_llm.ainvoke(messages)
+            parsed = None
+            raw_msg = None
+            if isinstance(raw_result, dict):
+                parsed = raw_result.get("parsed")
+                raw_msg = raw_result.get("raw")
+                completion_chars = len(parsed.model_dump_json()) if parsed else 0
+                if user_id and raw_msg:
+                    await record_from_llm_response(
+                        user_id,
+                        raw_msg,
+                        operation="job_rating",
+                        provider=provider_label,
+                        model=model_label,
+                        prompt_chars=prompt_chars,
+                        completion_chars=completion_chars,
+                    )
+            else:
+                parsed = raw_result
+                if user_id:
+                    await record_ai_usage(
+                        user_id,
+                        operation="job_rating",
+                        provider=provider_label,
+                        model=model_label,
+                        llm_calls=1,
+                        prompt_tokens=max(prompt_chars // 4, 1),
+                    )
+
+            if parsed is not None:
+                return parsed
+
+            raw_tool_calls = getattr(raw_msg, "tool_calls", None) if raw_msg else None
+            raw_content = getattr(raw_msg, "content", None) if raw_msg else None
+            print(
+                f"[rating] !!! Structured output parsed as None (attempt "
+                f"{attempt}/{max_attempts}, provider={provider_label} "
+                f"model={model_label}) — model returned no valid tool call. "
+                f"tool_calls={raw_tool_calls!r} content={raw_content!r}"
+            )
+        return None
+
     try:
         llm = get_rating_llm()
         provider = settings.rating_provider or settings.llm_provider
         model = getattr(
             llm, "model", getattr(llm, "model_name", settings.rating_model or "unknown")
         )
-        structured_llm = llm.with_structured_output(JobRating, include_raw=True)
         print(f"[rating] [job] LLM invoke provider={provider} model={model}")
-        raw_result = await structured_llm.ainvoke(messages)
-        if isinstance(raw_result, dict):
-            result: JobRating = raw_result.get("parsed")
-            raw_msg = raw_result.get("raw")
-            completion_chars = len(result.model_dump_json()) if result else 0
-            if user_id and raw_msg:
-                await record_from_llm_response(
-                    user_id,
-                    raw_msg,
-                    operation="job_rating",
-                    provider=provider,
-                    model=str(model),
-                    prompt_chars=prompt_chars,
-                    completion_chars=completion_chars,
-                )
-        else:
-            result = raw_result
-            if user_id:
-                await record_ai_usage(
-                    user_id,
-                    operation="job_rating",
-                    provider=provider,
-                    model=str(model),
-                    llm_calls=1,
-                    prompt_tokens=max(prompt_chars // 4, 1),
-                )
+        result = await _try_structured(llm, provider, str(model), max_attempts=3)
+
+        # If the (usually cheaper) rating provider keeps failing to return a
+        # valid structured response, fall back to the main LLM once before
+        # giving up — trades a bit of cost for not losing the rating outright
+        # to one provider's flakiness.
+        if result is None and settings.llm_provider != provider:
+            print(
+                f"[rating] [job] Falling back to main LLM_PROVIDER="
+                f"{settings.llm_provider} after {provider} failed all attempts"
+            )
+            fallback_llm = get_llm()
+            fallback_model = getattr(
+                fallback_llm,
+                "model",
+                getattr(fallback_llm, "model_name", settings.openai_model or "unknown"),
+            )
+            result = await _try_structured(
+                fallback_llm, settings.llm_provider, str(fallback_model), max_attempts=2
+            )
+
+        if result is None:
+            raise ValueError(
+                "Rating LLM did not return a valid structured response "
+                "(no tool call, or arguments failed schema validation), "
+                "including after falling back to the main LLM provider"
+            )
         print("[rating] [job] LLM response received successfully")
         return result.model_dump()
     except Exception as e:
@@ -1136,7 +1192,9 @@ Experience: {json.dumps(structured.get('experience', []))}
     llm = get_llm()
     provider = settings.llm_provider
     model = getattr(llm, "model", getattr(llm, "model_name", settings.openai_model))
-    structured_llm = llm.with_structured_output(RoastResult, include_raw=True)
+    structured_llm = llm.with_structured_output(
+        RoastResult, include_raw=True, method="function_calling"
+    )
 
     messages = [
         SystemMessage(content=ROAST_SYSTEM_PROMPT),

@@ -323,7 +323,9 @@ async def generate_apply_pack(job: dict, user: dict, rating: dict) -> str:
     user_id = str(user.get("_id", ""))
 
     llm = get_rating_llm()
-    structured_llm = llm.with_structured_output(ApplyPackContent, include_raw=True)
+    structured_llm = llm.with_structured_output(
+        ApplyPackContent, include_raw=True, method="function_calling"
+    )
     provider = settings.rating_provider or settings.llm_provider
     model = getattr(
         llm, "model", getattr(llm, "model_name", settings.rating_model or "unknown")
