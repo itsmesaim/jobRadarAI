@@ -461,9 +461,10 @@ async def rate_all(
             elapsed = datetime.now(timezone.utc) - last_rerate
             wait_left = timedelta(minutes=RERATE_COOLDOWN_MINUTES) - elapsed
             if wait_left > timedelta(0):
+                wait_hours = int(wait_left.total_seconds() // 3600) + 1
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Re-rate already run recently — try again in {int(wait_left.total_seconds() // 60) + 1} min.",
+                    detail=f"Re-rate already run recently — try again in {wait_hours}h.",
                 )
 
     queue_filter = _rerate_queue_filter(user_id, scope)

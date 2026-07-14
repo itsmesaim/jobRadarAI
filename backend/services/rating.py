@@ -85,6 +85,90 @@ _HARD_FILTER_SALARY_CEILING = 70000
 _SALARY_NUMBER_PATTERN = re.compile(r"[\d,]{3,}")
 
 
+_GAP_TAG_RE = re.compile(r"^\[(essential|preferred)\]\s*", re.IGNORECASE)
+_TOKEN_RE = re.compile(r"[a-z0-9+#]{3,}")
+_GENERIC_TOKENS = {
+    "experience",
+    "with",
+    "and",
+    "the",
+    "for",
+    "development",
+    "building",
+    "deploying",
+    "using",
+    "knowledge",
+    "familiarity",
+    "understanding",
+    "strong",
+    "solid",
+    "working",
+    "hands",
+    "years",
+    "based",
+    "systems",
+    "production",
+    "tools",
+    "tooling",
+    "applications",
+    "services",
+    "required",
+    "requirement",
+    "essential",
+    "preferred",
+    "not",
+    "evidenced",
+    "missing",
+}
+
+
+def _clean_rating_lists(
+    strengths: list[str], gaps: list[str]
+) -> tuple[list[str], list[str]]:
+    """Deterministic backstop for STEP 2.5/2.6: dedup both lists and drop any
+    gap that overlaps a confirmed strength. The prompt already tells the
+    model to do this, but the same dedup rule already existed for gaps alone
+    and the model still violated it — so this doesn't rely on the model
+    getting it right every time.
+    ponytail: gap/strength overlap is a token-overlap heuristic (at least
+    half the gap's meaningful words also present in one strength), not
+    semantic matching — upgrade to embedding similarity if paraphrased
+    dupes start slipping through.
+    """
+
+    def norm(s: str) -> str:
+        return _GAP_TAG_RE.sub("", s.strip()).lower()
+
+    seen_strengths: set[str] = set()
+    deduped_strengths: list[str] = []
+    for s in strengths:
+        key = norm(s)
+        if key and key not in seen_strengths:
+            seen_strengths.add(key)
+            deduped_strengths.append(s)
+
+    strength_token_sets = [
+        set(_TOKEN_RE.findall(norm(s))) - _GENERIC_TOKENS for s in deduped_strengths
+    ]
+
+    seen_gaps: set[str] = set()
+    cleaned_gaps: list[str] = []
+    for g in gaps:
+        key = norm(g)
+        if not key or key in seen_gaps:
+            continue
+        gap_tokens = set(_TOKEN_RE.findall(key)) - _GENERIC_TOKENS
+        overlap_needed = max(1, -(-len(gap_tokens) // 2))  # ceil(len/2), min 1
+        if gap_tokens and any(
+            len(gap_tokens & st) >= overlap_needed for st in strength_token_sets
+        ):
+            continue
+        seen_gaps.add(key)
+        cleaned_gaps.append(g)
+
+    return deduped_strengths, cleaned_gaps
+
+
 def parse_comp_max(salary_text: str) -> int | None:
     if not salary_text:
         return None
@@ -192,7 +276,7 @@ Apply different penalty weights:
 STEP 2.5 — GAP LIST RULES (source, dedup, tier)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Before writing the `gaps` list, apply all three rules below:
+Before writing the `gaps` list, apply all four rules below:
 
 1. SOURCE RESTRICTION — only pull gaps from the JD's actual requirements /
    qualifications section (whatever it's labeled: "Required", "Minimum
@@ -220,6 +304,19 @@ Before writing the `gaps` list, apply all three rules below:
        → prefix "[Preferred]"
    Example: "[Essential] UI/API test automation framework experience
    (Selenium/Playwright/Cypress/TestCafe/Karate/RestAssured) not evidenced".
+
+4. CROSS-CHECK AGAINST STRENGTHS — before a skill/technology goes into
+   `gaps`, check whether it is already present in `matched_strengths` (or is
+   otherwise confirmed in the candidate's Skills/Projects/experience). If it
+   is, it must NEVER also appear in `gaps`, no matter how the JD phrases the
+   requirement. This matters most for soft/optional phrasing like "you may
+   also touch X", "exposure to X", "occasionally work with X", "nice to have
+   X" — this kind of language means the JD is naming an OPTIONAL AREA, not
+   claiming the candidate lacks it. Read it as "this role sometimes touches
+   X" and then check the candidate's actual profile for X. If the candidate
+   already has X, it is a strength (or simply irrelevant), never a gap. Do
+   not default to "mentioned in JD but not the primary skill = gap" — always
+   verify against the candidate's confirmed skills first.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 3 — EXPLICIT TOOL-NAME MATCHING
@@ -280,6 +377,15 @@ Adjust down for:
 
 Caps:
   - Structural mismatch (Step 1): ≤ 3
+  - TITLE-NAMED LANGUAGE/FRAMEWORK COMPLETELY ABSENT: if the job title
+    itself names a specific programming language or framework as the core
+    of the role (e.g. "Backend Rust Developer", "Senior Golang Engineer",
+    "React Native Developer") and the candidate has ZERO evidence of that
+    language/framework anywhere in Skills, Projects, or experience — this is
+    not one requirement among many, it is the primary axis the entire role
+    is built on. Do not apply the standard per-item Essential deduction for
+    this case. Instead cap the score at ≤ 4, regardless of how strong the
+    rest of the stack match is.
   - Missing core required skills but otherwise good fit: 5-6
   - Strong match with minor preferred gaps: 7-8
   - Excellent match across required + named tools: 9-10
@@ -650,6 +756,9 @@ Education: {json.dumps(structured.get('education', []))}
             )
         print("[rating] [job] LLM response received successfully")
         rating_dict = result.model_dump()
+        rating_dict["matched_strengths"], rating_dict["gaps"] = _clean_rating_lists(
+            rating_dict.get("matched_strengths", []), rating_dict.get("gaps", [])
+        )
         rating_dict["rated_by_model"] = used_by
         return rating_dict
     except Exception as e:

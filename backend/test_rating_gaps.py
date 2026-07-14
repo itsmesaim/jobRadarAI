@@ -109,5 +109,121 @@ def demo():
     print("OK — one automation-framework gap, no responsibilities-sourced gap")
 
 
+# ── Braiins-style fixture: gap/strength inversion + title-named language ──
+#
+# Reproduces a real bug report: a Rust-first JD that names TypeScript/React
+# and Python as OPTIONAL exposure areas ("you may also touch ...") got those
+# same skills — which the candidate already has and which the model itself
+# listed as matched strengths — also listed as [Preferred] gaps. Separately,
+# duplicate entries showed up verbatim in matched_strengths, and the score
+# (6/10) didn't reflect that Rust, the language the job title is built
+# around, is completely absent from the candidate's profile.
+
+BRAIINS_JD = """
+Job title: Backend Rust Developer
+
+About the role:
+We're looking for a backend engineer to build and maintain core services in
+Rust that power our infrastructure.
+
+Required:
+- 3+ years professional experience writing production Rust.
+- Strong understanding of systems programming, concurrency, and performance.
+- Experience designing and maintaining backend services and APIs.
+
+You may also touch TypeScript/React frontend code, Python-based tools or
+legacy services, internal tooling, and CI/CD pipelines as needed — these are
+not the focus of the role but come up occasionally.
+
+Preferred:
+- Experience with embedded systems or low-level networking.
+- Familiarity with distributed systems.
+""".strip()
+
+RUST_MASTER_CV = {
+    "name": "Test Candidate",
+    "summary": "Full-stack engineer with a TypeScript/React and Python/FastAPI background.",
+    "skills": ["TypeScript", "React", "Python", "FastAPI", "PostgreSQL", "Docker"],
+    "experience": [
+        {
+            "title": "Full-Stack Developer",
+            "company": "Acme Corp",
+            "description": "Built full-stack applications with React/TypeScript frontends and Python/FastAPI backends. No Rust.",
+        }
+    ],
+    "projects": [
+        {
+            "name": "JobRadar AI",
+            "description": "Production agentic job-rating platform built with Python/FastAPI and a React/TypeScript frontend.",
+        }
+    ],
+    "education": [],
+}
+
+RUST_USER = {
+    "_id": ObjectId(),
+    "cv": {"structured": RUST_MASTER_CV},
+    "experience_level": "mid",
+    "work_authorization": "",
+    "work_mode": {"remote": True, "hybrid": True, "onsite": False},
+}
+
+RUST_JOB = {"_id": ObjectId(), "full_text": BRAIINS_JD, "salary_text": ""}
+
+
+async def _run_rust():
+    await connect_to_mongo()
+    return await rate_job_for_user(RUST_JOB, RUST_USER)
+
+
+def _normalize(entry: str) -> str:
+    return re.sub(
+        r"^\[(essential|preferred)\]\s*", "", entry.strip(), flags=re.IGNORECASE
+    ).lower()
+
+
+def demo_gap_strength_inversion():
+    rating = asyncio.run(_run_rust())
+    strengths = rating.get("matched_strengths", [])
+    gaps = rating.get("gaps", [])
+    score = rating.get("score")
+
+    print("Score:", score)
+    print("Matched strengths:")
+    for s in strengths:
+        print(f"  - {s}")
+    print("Gaps:")
+    for g in gaps:
+        print(f"  - {g}")
+
+    # Bug 2: no duplicate entries in matched_strengths.
+    normalized = [_normalize(s) for s in strengths]
+    assert len(normalized) == len(
+        set(normalized)
+    ), f"matched_strengths contains duplicate entries: {strengths}"
+
+    # Bug 1: a skill already confirmed as a strength (TypeScript/React/Python)
+    # must never also appear in gaps, regardless of "may also touch" phrasing.
+    already_have = {"typescript", "react", "python"}
+    inverted_gaps = [g for g in gaps if any(kw in g.lower() for kw in already_have)]
+    assert not inverted_gaps, (
+        f"gaps list contains skills the candidate already has (present in "
+        f"matched_strengths): {inverted_gaps}"
+    )
+
+    # Bug 3: job title names Rust as the core skill; candidate has zero Rust
+    # evidence anywhere in the profile — score must reflect that, not just a
+    # standard per-item Essential deduction.
+    assert score is not None and score <= 4, (
+        f"expected score <= 4 for a title-named language (Rust) with zero "
+        f"evidence in the candidate's profile, got {score}"
+    )
+
+    print(
+        "OK — no gap/strength inversion, no duplicate strengths, score reflects missing title-named language"
+    )
+
+
 if __name__ == "__main__":
     demo()
+    demo_gap_strength_inversion()
