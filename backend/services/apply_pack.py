@@ -45,6 +45,15 @@ Rules:
   format (Accomplished [X] as measured by [Y], by doing [Z]) ONLY where a real metric for that bullet
   already exists in MASTER CV. Where no real metric exists, use X/Z format (Accomplished [X] by doing
   [Z], no measured-by clause) — never invent a Y. Use 2-4 bullets. No new roles or achievements.
+- ONE bullet = ONE accomplishment. Each XYZ/X-Z bullet must be a rephrasing of a SINGLE existing
+  MASTER CV bullet (one experience entry or one project). Never combine two unrelated MASTER CV
+  bullets into one sentence with an invented "by doing"/"through"/"which enabled" link between them
+  — e.g. do not merge "built LLM features" with "maintained WordPress sites" into one bullet just
+  because both appear in MASTER CV. If two bullets are both worth including, output them as two
+  separate bullets, never stitched into a false causal chain.
+- Apply the SAME rephrasing rule to every bullet in the list. Do not rephrase some bullets into XYZ/
+  X-Z format and leave others as a verbatim copy-paste of the MASTER CV line — pick XYZ or X/Z per
+  bullet based on whether it has a metric, but every bullet must be rephrased, none skipped.
 - Cover opener: 3-4 sentences for email or LinkedIn note — specific, grounded in MASTER CV facts.
 - LaTeX snippet: short \\item bullets for experience (plain LaTeX, no preamble) — hints for the full .tex file.
 - honest_notes: 1-3 caveats (e.g. structural mismatch, thin JD). No invented positives.
@@ -67,7 +76,10 @@ class ApplyPackContent(BaseModel):
         description=(
             "2-4 accomplishment bullets tailored to this role. Use Google XYZ format "
             "(Accomplished X as measured by Y, by doing Z) only where MASTER CV has a real "
-            "metric for that bullet; otherwise use X/Z format with no invented Y."
+            "metric for that bullet; otherwise use X/Z format with no invented Y. Each bullet "
+            "must rephrase exactly ONE MASTER CV bullet — never merge two unrelated MASTER CV "
+            "bullets into one sentence with a fabricated causal link. Every bullet in this list "
+            "must be rephrased the same way; never leave one as a verbatim copy of MASTER CV."
         )
     )
     cover_opener: str = Field(description="3-4 sentence tailored cover note opener")
@@ -265,6 +277,12 @@ STRICT RULES:
   a real metric for that specific accomplishment exists in MASTER CV. Where no real metric exists,
   write X/Z instead (Accomplished [X] by doing [Z], no measured-by clause) — never invent a Y just to
   fill the format.
+- ONE bullet = ONE accomplishment. Each bullet must rephrase a SINGLE existing MASTER CV bullet. Never
+  merge two unrelated MASTER CV bullets into one sentence with an invented "by doing" / "through" link
+  between them (e.g. do not connect an LLM-integration bullet to an unrelated WordPress-maintenance
+  bullet as if one caused the other). If both are worth including, write two separate bullets.
+- Apply the same rephrasing treatment to every bullet — do not rephrase some into XYZ/X-Z format and
+  leave others as an unrephrased, verbatim copy of the MASTER CV line.
 - Use LATEX BOILERPLATE (below) as the structural template — keep preamble and packages unchanged.
 
 Use JOB BRIEF / JD only for emphasis and keyword ordering — not to invent experience.
