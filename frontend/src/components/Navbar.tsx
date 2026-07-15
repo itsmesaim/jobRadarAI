@@ -102,7 +102,7 @@ export function Navbar({ onHelpClick }: Props = {}) {
           )}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
           {onHelpClick && (
             <button
               onClick={onHelpClick}
