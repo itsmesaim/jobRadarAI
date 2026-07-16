@@ -6,6 +6,7 @@ NEW jobs scoring at or above the configured threshold (default 8/10).
 """
 
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from bson import ObjectId
 
@@ -17,6 +18,35 @@ from services.email import (
     smtp_missing_reason,
 )
 from services.limits import _reset_if_new_day
+
+DEFAULT_TIMEZONE = "Europe/Dublin"
+SWEEP_WINDOW_MINUTES = 15
+
+
+def _parse_reminder_hours() -> list[int]:
+    raw = (settings.job_reminder_hours_utc or "9,14,19").strip()
+    hours: list[int] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            hour = int(part)
+        except ValueError:
+            continue
+        if 0 <= hour <= 23:
+            hours.append(hour)
+    return hours or [9, 14, 19]
+
+
+def _is_users_reminder_slot(user: dict, now_utc: datetime) -> bool:
+    """True if it's currently one of the reminder hours in the user's own timezone."""
+    tz_name = user.get("timezone") or DEFAULT_TIMEZONE
+    try:
+        local = now_utc.astimezone(ZoneInfo(tz_name))
+    except Exception:
+        local = now_utc.astimezone(ZoneInfo(DEFAULT_TIMEZONE))
+    return local.hour in _parse_reminder_hours() and local.minute < SWEEP_WINDOW_MINUTES
 
 
 def _high_score_unapplied_filter(user_id: str, *, min_score: int) -> dict:
@@ -152,22 +182,23 @@ async def _try_send_reminder_for_user(user: dict) -> dict:
 
 
 async def send_job_apply_reminders() -> None:
-    """Scheduler entry: remind every user with a CV about high-score NEW jobs."""
+    """Sweep tick: remind every user whose local time is in a reminder-hour window."""
     if not settings.job_reminder_enabled:
-        print("[reminders] Disabled via JOB_REMINDER_ENABLED=false")
         return
 
     db = get_database()
     users = await db.users.find({"cv": {"$exists": True}}).to_list(length=None)
 
-    print(
-        f"[reminders] === REMINDER RUN ({len(users)} users with CV) "
-        f"{datetime.now(timezone.utc).isoformat()} ==="
-    )
+    now_utc = datetime.now(timezone.utc)
+    due = [u for u in users if _is_users_reminder_slot(u, now_utc)]
+    if not due:
+        return
+
+    print(f"[reminders] === REMINDER RUN ({len(due)}/{len(users)} users due) {now_utc.isoformat()} ===")
 
     sent = 0
     skipped = 0
-    for user in users:
+    for user in due:
         result = await _try_send_reminder_for_user(user)
         if result.get("sent"):
             sent += 1

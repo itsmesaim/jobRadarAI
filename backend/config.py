@@ -115,10 +115,11 @@ class Settings(BaseSettings):
     job_reminder_enabled: bool = True
     job_reminder_min_score: int = 8
     job_reminder_min_jobs: int = 2  # same threshold as dashboard banner
-    job_reminder_max_per_day: int = 2
+    job_reminder_max_per_day: int = 3
     job_reminder_email_job_limit: int = 8  # max jobs listed in one email
-    # Comma-separated UTC hours, e.g. "8,18" → 08:00 and 18:00 UTC daily
-    job_reminder_hours_utc: str = "8,18"
+    # Comma-separated hours, evaluated in each user's own timezone (see
+    # User.timezone), e.g. "9,14,19" → 09:00, 14:00, 19:00 local daily
+    job_reminder_hours_utc: str = "9,14,19"
 
     # A job sitting in Applied/Half-applied/Saved for this many days with no
     # status change gets flagged as needing a follow-up nudge.

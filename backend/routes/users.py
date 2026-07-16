@@ -57,6 +57,7 @@ class UserPreferences(BaseModel):
     work_mode: WorkMode = WorkMode()
     about_me: str = ""  # free-text career context, surfaced early in rating prompt
     email_reminders_enabled: bool = True  # daily high-score apply nudges via SMTP
+    timezone: str = "Europe/Dublin"  # IANA tz, drives when auto-crawl/reminders fire
 
 
 class SkillOverride(BaseModel):
@@ -93,6 +94,7 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
                 "work_mode": prefs["work_mode"],
                 "about_me": prefs["about_me"],
                 "email_reminders_enabled": prefs["email_reminders_enabled"],
+                "timezone": prefs["timezone"],
             }
         },
     )
@@ -116,6 +118,7 @@ async def get_preferences(user=Depends(get_current_user)):
         ),
         "about_me": user.get("about_me", ""),
         "email_reminders_enabled": user.get("email_reminders_enabled", True),
+        "timezone": user.get("timezone", "Europe/Dublin"),
     }
 
 

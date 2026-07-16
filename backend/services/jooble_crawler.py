@@ -119,7 +119,14 @@ async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) 
                     print(f"[jooble] Error for '{term}' @ '{raw_location}': {e}")
                     continue
 
-                for job in data.get("jobs", []):
+                # Jooble doesn't sort by date — newest first so the
+                # per-cycle stored cap doesn't fill up with stale postings.
+                jobs = sorted(
+                    data.get("jobs", []),
+                    key=lambda j: j.get("updated") or j.get("created") or "",
+                    reverse=True,
+                )
+                for job in jobs:
                     if _at_cap():
                         break
                     found += 1

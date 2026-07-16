@@ -79,6 +79,7 @@ export interface UserPreferences {
   work_mode: WorkMode;
   about_me: string;
   email_reminders_enabled: boolean;
+  timezone: string;
 }
 
 export interface CVData {

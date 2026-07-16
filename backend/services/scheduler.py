@@ -1,16 +1,17 @@
 """
 Background scheduler for automatic job discovery + rating.
 
-Runs crawl (Jooble + JobsAPI) + rate-all every N hours (default 12) for users
-who have uploaded a CV. Auto-crawl does not consume manual search quota but
-caps new jobs stored per cycle (see AUTO_CRAWL_MAX_STORED_PER_CYCLE).
+Runs crawl (Jooble + JobsAPI) + rate-all at 5am/5pm *in each user's own
+timezone* (see CRAWL_HOURS below) for users who have uploaded a CV.
+Auto-crawl does not consume manual search quota but caps new jobs stored
+per cycle (see AUTO_CRAWL_MAX_STORED_PER_CYCLE).
 """
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from config import settings
@@ -25,11 +26,33 @@ from services.rating import rate_all_jobs_for_user
 scheduler = AsyncIOScheduler()
 
 # Don't burn LLM tokens auto-crawling/rating for accounts nobody's using.
-DEAD_USER_INACTIVE_HOURS = 24
+# 24h was too aggressive: it required logging in daily just to keep the
+# automation alive, which defeats the point of "auto". A week of silence
+# is a better line for "actually abandoned".
+DEAD_USER_INACTIVE_HOURS = 24 * 7
+
+# Local hours (in the user's own timezone) to auto crawl+rate.
+CRAWL_HOURS = (5, 17)
+
+DEFAULT_TIMEZONE = "Europe/Dublin"
+
+# How often the sweep tick runs. Every user's target hour falls inside some
+# tick's [hour:00, hour:15) window, so a 15-min sweep hits it once a day
+# without needing one cron job per timezone in use.
+SWEEP_WINDOW_MINUTES = 15
+
+
+def _user_local_time(user: dict, now_utc: datetime) -> datetime:
+    tz_name = user.get("timezone") or DEFAULT_TIMEZONE
+    try:
+        return now_utc.astimezone(ZoneInfo(tz_name))
+    except Exception:
+        return now_utc.astimezone(ZoneInfo(DEFAULT_TIMEZONE))
 
 
 async def _auto_crawl_and_rate():
-    """Core job: for every user with a CV, crawl new jobs then rate them."""
+    """Sweep tick: for every user whose local time is in a CRAWL_HOURS window,
+    crawl new jobs then rate them."""
     db = get_database()
 
     # Only users who have uploaded a CV (otherwise nothing to match against),
@@ -38,18 +61,21 @@ async def _auto_crawl_and_rate():
         {"cv": {"$exists": True}, "suspended": {"$ne": True}}
     ).to_list(length=None)
 
-    print(f"[scheduler] === AUTO CYCLE START ({len(users)} users with CV) ===")
-    print(
-        "[scheduler] This will crawl new jobs then rate any unrated ones (respecting per-user limits)."
-    )
-
-    # Skip users crawled within the last (interval - 1) hours.
-    # This prevents a crash-restart loop from firing redundant LLM rating cycles
-    # 2 minutes after each boot for users already processed in the current window.
-    min_gap = timedelta(hours=max(1, settings.auto_crawl_interval_hours - 1))
     now_utc = datetime.now(timezone.utc)
+    min_gap = timedelta(hours=max(1, settings.auto_crawl_interval_hours - 1))
 
-    for user in users:
+    due = [
+        u
+        for u in users
+        if _user_local_time(u, now_utc).hour in CRAWL_HOURS
+        and _user_local_time(u, now_utc).minute < SWEEP_WINDOW_MINUTES
+    ]
+    if not due:
+        return
+
+    print(f"[scheduler] === AUTO CYCLE START ({len(due)}/{len(users)} users due) ===")
+
+    for user in due:
         user_id = str(user["_id"])
         email = user.get("email", user_id)
 
@@ -118,35 +144,28 @@ async def _auto_crawl_and_rate():
     print("[scheduler] === AUTO CYCLE FINISHED ===")
 
 
-def _parse_reminder_hours() -> list[int]:
-    raw = (settings.job_reminder_hours_utc or "8,18").strip()
-    hours: list[int] = []
-    for part in raw.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        try:
-            hour = int(part)
-        except ValueError:
-            continue
-        if 0 <= hour <= 23:
-            hours.append(hour)
-    return hours or [8, 18]
-
-
 def start_scheduler():
-    """Start APScheduler. First run ~2 minutes after startup, then every N hours (from config)."""
-    interval = settings.auto_crawl_interval_hours
-    # Regular recurring job
+    """Start APScheduler.
+
+    Auto crawl+rate and reminders run on a 15-min sweep tick rather than a
+    fixed-timezone cron trigger — each tick checks every user's *local* time
+    (via their `timezone` preference) against the target hours, so each user
+    gets their own 5am/5pm and 9am/2pm/7pm regardless of where they live,
+    without needing one cron job per timezone in use. This also survives
+    restarts cleanly: the decision is made from wall-clock time on each
+    tick, not from elapsed time since boot (unlike an IntervalTrigger used
+    to count down a full 12h window, which resets on every redeploy).
+    """
     scheduler.add_job(
         _auto_crawl_and_rate,
-        trigger=IntervalTrigger(hours=interval),
-        id="auto_crawl_rate",
+        trigger=IntervalTrigger(minutes=SWEEP_WINDOW_MINUTES),
+        id="auto_crawl_rate_sweep",
         replace_existing=True,
         max_instances=1,  # prevent overlapping runs
     )
 
-    # First execution soon after the app boots (so user doesn't have to wait 12h)
+    # Also run soon after boot so a redeploy near someone's window doesn't
+    # make them wait for the next sweep tick.
     scheduler.add_job(
         _auto_crawl_and_rate,
         trigger="date",
@@ -156,26 +175,21 @@ def start_scheduler():
     )
 
     if settings.job_reminder_enabled:
-        reminder_hours = _parse_reminder_hours()
-        for hour in reminder_hours:
-            scheduler.add_job(
-                send_job_apply_reminders,
-                trigger=CronTrigger(hour=hour, minute=0, timezone="UTC"),
-                id=f"job_reminder_{hour:02d}utc",
-                replace_existing=True,
-                max_instances=1,
-            )
-        hours_label = ", ".join(f"{h:02d}:00" for h in reminder_hours)
+        scheduler.add_job(
+            send_job_apply_reminders,
+            trigger=IntervalTrigger(minutes=SWEEP_WINDOW_MINUTES),
+            id="job_reminder_sweep",
+            replace_existing=True,
+            max_instances=1,
+        )
         print(
-            f"[scheduler] Job apply reminders scheduled at {hours_label} UTC "
+            "[scheduler] Job apply reminders: local 09:00/14:00/19:00 per user timezone "
             f"(max {settings.job_reminder_max_per_day}/user/day, score ≥ "
             f"{settings.job_reminder_min_score})"
         )
 
     scheduler.start()
-    print(
-        f"[scheduler] APScheduler started (auto crawl + rate every {settings.auto_crawl_interval_hours} hours)"
-    )
+    print("[scheduler] APScheduler started (auto crawl+rate: local 05:00/17:00 per user timezone)")
 
 
 def shutdown_scheduler():

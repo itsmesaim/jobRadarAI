@@ -61,7 +61,15 @@ const DEFAULT_PREFS: UserPreferences = {
   work_mode: { remote: true, hybrid: true, onsite: false },
   about_me: "",
   email_reminders_enabled: true,
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Dublin",
 };
+
+// tsconfig targets ES2020, which predates Intl.supportedValuesOf's types.
+const supportedValuesOf = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] })
+  .supportedValuesOf;
+const TIMEZONE_OPTIONS: string[] = supportedValuesOf
+  ? supportedValuesOf("timeZone")
+  : [DEFAULT_PREFS.timezone];
 
 const EXPERIENCE_LEVELS: {
   value: UserPreferences["experience_level"];
@@ -483,7 +491,7 @@ export function SettingsPage() {
         {/* Email reminders */}
         <Section
           title="Email reminders"
-          subtitle="Get up to 2 emails per day when you have unapplied jobs scoring 8+/10, same nudge as the dashboard banner."
+          subtitle="Get up to 3 emails per day when you have unapplied jobs scoring 8+/10, same nudge as the dashboard banner."
         >
           <label
             style={{
@@ -530,6 +538,28 @@ export function SettingsPage() {
               </span>
             </span>
           </label>
+        </Section>
+
+        {/* Timezone */}
+        <Section
+          title="Timezone"
+          subtitle="Auto job search (5am/5pm) and reminder emails (9am/2pm/7pm) run at these times in your local timezone, wherever you're based."
+        >
+          <label className="label">Where are you currently based?</label>
+          <select
+            className="input settings-field-narrow"
+            value={localPrefs.timezone}
+            onChange={(e) => update({ timezone: e.target.value })}
+          >
+            {!TIMEZONE_OPTIONS.includes(localPrefs.timezone) && (
+              <option value={localPrefs.timezone}>{localPrefs.timezone}</option>
+            )}
+            {TIMEZONE_OPTIONS.map((tz) => (
+              <option key={tz} value={tz}>
+                {tz.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
         </Section>
       </SectionGroup>
 
