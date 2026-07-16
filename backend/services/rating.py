@@ -1434,9 +1434,16 @@ async def generate_job_brief(job: dict, user: dict, rating: dict) -> str:
             "via 'Paste JD' or open the URL and re-rate.\n\n"
         )
 
+    when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    attribution = (
+        f"Built by JobRadarAI ({settings.frontend_url.rstrip('/')}) "
+        f"for {user.get('name') or 'you'} on {when}"
+    )
+
     brief = f"""
 JOB BRIEF
 ==============================
+{attribution}
 ROLE:       {job.get('title', 'Unknown')}
 COMPANY:    {job.get('company', 'Unknown')}
 URL:        {job.get('url', 'N/A')}

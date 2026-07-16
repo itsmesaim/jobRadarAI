@@ -5,6 +5,7 @@ Apply pack — premium CV tailoring output (ATS keywords, XYZ bullets, LaTeX sni
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
@@ -21,6 +22,12 @@ from services.cv_latex_boilerplate import (
 from services.rating import _build_constraints_block, generate_job_brief
 
 MIN_APPLY_PACK_SCORE = 6
+
+
+def _attribution_line(user: dict) -> str:
+    name = user.get("name") or "you"
+    when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return f"Built by JobRadarAI ({settings.frontend_url.rstrip('/')}) for {name} on {when}"
 
 APPLY_PACK_SYSTEM_PROMPT = """
 You help a candidate tailor their application for ONE specific job using ONLY their MASTER CV.
@@ -190,7 +197,7 @@ def _cv_context(user: dict) -> str:
     return json.dumps(payload, indent=2)[:12000]
 
 
-def format_apply_pack(job: dict, rating: dict, content: ApplyPackContent) -> str:
+def format_apply_pack(job: dict, rating: dict, content: ApplyPackContent, user: dict) -> str:
     matched = content.ats_keywords_matched or []
     missing = content.ats_keywords_missing or []
     xyz = content.xyz_bullets or []
@@ -198,6 +205,7 @@ def format_apply_pack(job: dict, rating: dict, content: ApplyPackContent) -> str
 
     lines = [
         "APPLY PACK — JobRadar Pro",
+        _attribution_line(user),
         "=" * 42,
         f"ROLE:     {job.get('title', 'Unknown')}",
         f"COMPANY:  {job.get('company', 'Unknown')}",
@@ -254,6 +262,7 @@ def build_one_shot_instructions(user: dict, job: dict) -> str:
 ══════════════════════════════════════════════════════════════
 ONE-SHOT PROMPT — paste this ENTIRE document into ChatGPT / Claude / Grok
 ══════════════════════════════════════════════════════════════
+{_attribution_line(user)}
 
 You are an expert CV writer and LaTeX author. Produce tailored application content,
 then a complete compilable CV .tex file.
@@ -390,7 +399,7 @@ CANDIDATE (JSON):
     if not parsed:
         raise ValueError("Could not generate apply pack. Try again.")
 
-    tailoring = format_apply_pack(job, rating, parsed)
+    tailoring = format_apply_pack(job, rating, parsed, user)
     master_cv = _format_master_cv(user)
     latex_boilerplate = format_boilerplate_section(user, job)
     brief = await generate_job_brief(job, user, rating)
