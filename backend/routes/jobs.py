@@ -139,6 +139,7 @@ def _build_list_query(
     rating_key = f"ratings.{user_id}.score"
 
     query: dict = {**_user_job_filter(user_id), hidden_key: {"$ne": True}}
+    searching = bool(q and q.strip())
 
     if status == "NEW":
         # Jobs never touched in Kanban have no status field at all yet — they're
@@ -147,7 +148,9 @@ def _build_list_query(
         query["$or"] = [{status_key: {"$exists": False}}, {status_key: "NEW"}]
     elif status:
         query[status_key] = status
-    elif exclude_terminal:
+    elif exclude_terminal and not searching:
+        # Don't apply this while searching — a query for a job the user
+        # already marked APPLIED/REJECTED should still find it.
         query[status_key] = {"$nin": TERMINAL_STATUSES}
 
     if source:
@@ -155,19 +158,22 @@ def _build_list_query(
 
     and_clauses: list[dict] = []
 
-    if q:
+    if searching:
         pattern = re.escape(q.strip())
-        if pattern:
-            and_clauses.append(
-                {
-                    "$or": [
-                        {"title": {"$regex": pattern, "$options": "i"}},
-                        {"company": {"$regex": pattern, "$options": "i"}},
-                    ]
-                }
-            )
-
-    if rating == "unrated":
+        and_clauses.append(
+            {
+                "$or": [
+                    {"title": {"$regex": pattern, "$options": "i"}},
+                    {"company": {"$regex": pattern, "$options": "i"}},
+                    {"location": {"$regex": pattern, "$options": "i"}},
+                    {"full_text": {"$regex": pattern, "$options": "i"}},
+                ]
+            }
+        )
+    elif rating == "unrated":
+        # Score/rating filters are a "narrow what I'm browsing" tool, not a
+        # search modifier — a search term should surface a matching job
+        # regardless of its score, so these only apply when not searching.
         query[f"ratings.{user_id}"] = {"$exists": False}
     elif rating == "rated":
         query[rating_key] = {"$gte": score_min, "$lte": score_max}
@@ -199,23 +205,35 @@ def _passes_job_filters(
     q: str | None,
 ) -> bool:
     score = formatted.get("score")
+    searching = bool(q and q.strip())
 
-    if rating == "unrated":
-        if score is not None:
+    # Score/rating filters narrow what you're browsing — they don't apply
+    # while searching, so a search term finds a matching job regardless of
+    # its score (see the matching comment in _build_list_query).
+    if not searching:
+        if rating == "unrated":
+            if score is not None:
+                return False
+        elif rating == "rated":
+            if score is None or score < score_min or score > score_max:
+                return False
+        elif score is not None and (score < score_min or score > score_max):
             return False
-    elif rating == "rated":
-        if score is None or score < score_min or score > score_max:
-            return False
-    elif score is not None and (score < score_min or score > score_max):
-        return False
 
     if status and formatted.get("status") != status:
         return False
     if source and job.get("source") != source:
         return False
-    if q:
-        searchable = f"{job.get('title','')} {job.get('company','')}".lower()
-        if q.lower() not in searchable:
+    if searching:
+        searchable = " ".join(
+            [
+                job.get("title", ""),
+                job.get("company", ""),
+                job.get("location", ""),
+                job.get("full_text", ""),
+            ]
+        ).lower()
+        if q.lower().strip() not in searchable:
             return False
     return True
 

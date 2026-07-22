@@ -228,4 +228,3 @@ def get_embeddings() -> Embeddings:
         api_key=embed_key,
         model="text-embedding-3-small",
     )
-

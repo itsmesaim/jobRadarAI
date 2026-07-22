@@ -886,7 +886,8 @@ export function Dashboard() {
 
         <input
           type="text"
-          placeholder="Search saved jobs..."
+          placeholder="Search title, company, location, or JD keyword..."
+          title="Search looks across all your jobs and ignores the score/status filters below"
           value={searchQuery}
           onChange={(e) => {
             setSearchQuery(e.target.value);
