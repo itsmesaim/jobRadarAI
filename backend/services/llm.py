@@ -154,6 +154,19 @@ def _make_llm(provider: str, model: str, **extra) -> BaseChatModel:
     )
 
 
+def structured_output_kwargs(provider: str | None) -> dict:
+    """Extra kwargs for `llm.with_structured_output(..., method="function_calling")`.
+
+    DeepSeek's thinking-mode models reject a forced tool_choice ("Thinking
+    mode does not support this tool_choice") — only tool_choice="auto" is
+    accepted. Every other provider keeps LangChain's default forced
+    tool_choice, which is more reliable at actually returning the tool call.
+    """
+    if (provider or settings.llm_provider).lower() == "deepseek":
+        return {"tool_choice": "auto"}
+    return {}
+
+
 @lru_cache(maxsize=32)
 def get_llm(provider: str | None = None, model: str | None = None) -> BaseChatModel:
     """
@@ -215,3 +228,4 @@ def get_embeddings() -> Embeddings:
         api_key=embed_key,
         model="text-embedding-3-small",
     )
+

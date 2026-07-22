@@ -17,6 +17,7 @@ from bson import ObjectId
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel
 
+from config import settings
 from database import get_database
 from deps import get_current_user
 from routes.admin import _require_admin
@@ -420,11 +421,9 @@ async def list_jobs(
 RerateScope = Literal["unrated", "saved", "all"]
 
 # Re-rating already-scored jobs (scope != "unrated") re-runs the LLM on jobs
-# that normally would never be re-billed. Free-tier cost is still bounded by
-# the daily rating/token quota, but admin + full_access accounts bypass that
-# quota entirely (see limits._has_unlimited_access) — without a cooldown,
-# repeatedly clicking the button would re-rate the same jobs over and over
-# with zero cost gate. This applies to every account, bypass or not.
+# that normally would never be re-billed. This cooldown gates every account
+# except the admin (settings.admin_email) — full_access users still wait,
+# only the admin can force a re-rate on demand.
 RERATE_COOLDOWN_MINUTES = 48 * 60  # once in a 2 days;
 
 
@@ -459,7 +458,10 @@ async def rate_all(
     db = get_database()
     user_id = str(user["_id"])
 
-    if scope != "unrated":
+    is_admin = (user.get("email") or "").strip().lower() == (
+        settings.admin_email or ""
+    ).strip().lower()
+    if scope != "unrated" and not is_admin:
         last_rerate = user.get("last_rerate_at")
         if last_rerate:
             if last_rerate.tzinfo is None:

@@ -30,7 +30,12 @@ from services.ai_usage import (
     record_embedding_usage,
     record_from_llm_response,
 )
-from services.llm import get_embeddings, get_llm, get_rating_llm
+from services.llm import (
+    get_embeddings,
+    get_llm,
+    get_rating_llm,
+    structured_output_kwargs,
+)
 from services.ai_models import get_cost_multiplier, get_default_model_for_provider
 from services.limits import (
     _get_fresh_user,
@@ -699,7 +704,10 @@ Education: {json.dumps(structured.get('education', []))}
         the specific job/CV content). Returns the parsed result, or None if
         every attempt fails."""
         structured_llm = llm.with_structured_output(
-            JobRating, include_raw=True, method="function_calling"
+            JobRating,
+            include_raw=True,
+            method="function_calling",
+            **structured_output_kwargs(provider_label),
         )
         for attempt in range(1, max_attempts + 1):
             raw_result = await structured_llm.ainvoke(messages)
@@ -1392,7 +1400,10 @@ Experience: {json.dumps(structured.get('experience', []))}
     provider = settings.llm_provider
     model = getattr(llm, "model", getattr(llm, "model_name", settings.openai_model))
     structured_llm = llm.with_structured_output(
-        RoastResult, include_raw=True, method="function_calling"
+        RoastResult,
+        include_raw=True,
+        method="function_calling",
+        **structured_output_kwargs(provider),
     )
 
     messages = [

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from config import settings
 from services.ai_usage import record_from_llm_response
 from services.jd_text import is_incomplete_jd
-from services.llm import get_rating_llm
+from services.llm import get_rating_llm, structured_output_kwargs
 from services.ai_models import get_cost_multiplier, get_default_model_for_provider
 from services.cv_latex_boilerplate import (
     format_boilerplate_section,
@@ -361,10 +361,13 @@ async def generate_apply_pack(job: dict, user: dict, rating: dict) -> str:
     )
     cost_multiplier = await get_cost_multiplier(user_provider, user_model, "rating")
     llm = get_rating_llm(provider=user_provider, model=user_model)
-    structured_llm = llm.with_structured_output(
-        ApplyPackContent, include_raw=True, method="function_calling"
-    )
     provider = user_provider or settings.rating_provider or settings.llm_provider
+    structured_llm = llm.with_structured_output(
+        ApplyPackContent,
+        include_raw=True,
+        method="function_calling",
+        **structured_output_kwargs(provider),
+    )
     model = getattr(
         llm,
         "model",
