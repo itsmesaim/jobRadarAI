@@ -15,6 +15,7 @@ from pymongo import ReturnDocument
 from config import settings
 from database import get_database
 from services.ai_usage import format_ai_usage
+from services.user_time import user_day_start_utc
 
 
 def _current_month_key() -> str:
@@ -141,11 +142,13 @@ async def get_ai_token_quota(user: dict) -> dict:
 
 
 async def _reset_if_new_day(user: dict) -> dict:
-    """Reset daily counters if it's a new day."""
+    """Reset daily counters if it's a new day, in the user's own timezone —
+    not a fixed UTC midnight. A global UTC cliff let a user near the boundary
+    (e.g. UTC-8) cross it mid-local-day and get a second day's quota inside
+    what they experienced as one calendar day (observed: 10/day limit, 14
+    ratings actually landed)."""
     db = get_database()
-    today = datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    today = user_day_start_utc(user)
     last_reset = user.get("usage", {}).get("last_reset")
 
     # Normalize last_reset: treat naive datetimes as UTC (common with old Mongo data)
@@ -238,12 +241,12 @@ def rating_limit_message(limit: int) -> str:
     return f"Free rating limit reached ({limit}/day). Contact us for more access."
 
 
-async def count_ratings_today(user_id: str) -> int:
-    """How many jobs this user actually received a rating for today (UTC)."""
+async def count_ratings_today(user: dict) -> int:
+    """How many jobs this user actually received a rating for today, in
+    their own timezone (must match the boundary _reset_if_new_day uses)."""
     db = get_database()
-    today = datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    user_id = str(user.get("_id", ""))
+    today = user_day_start_utc(user)
     return await db.jobs.count_documents(
         {f"ratings.{user_id}.rated_at": {"$gte": today}}
     )
@@ -257,10 +260,11 @@ async def _sync_ratings_counter(user_id: str, actual: int) -> None:
     )
 
 
-async def _effective_ratings_used(user_id: str, usage: dict) -> int:
+async def _effective_ratings_used(user: dict, usage: dict) -> int:
     """Max of stored counter and real rated-job count — fixes drift after failed increments."""
+    user_id = str(user.get("_id", ""))
     counter = int(usage.get("ratings", 0) or 0)
-    db_count = await count_ratings_today(user_id)
+    db_count = await count_ratings_today(user)
     effective = max(counter, db_count)
     if db_count > counter:
         await _sync_ratings_counter(user_id, db_count)
@@ -278,7 +282,7 @@ async def get_remaining_ratings(user: dict) -> int:
     user = await _reset_if_new_day(user)
     usage = user.get("usage", {})
     user_id = str(user.get("_id", ""))
-    current = await _effective_ratings_used(user_id, usage)
+    current = await _effective_ratings_used(user, usage)
     overrides = user.get("admin_overrides", {})
     limit = overrides.get("rating_limit", settings.free_rating_limit)
     return max(0, limit - current)
@@ -305,7 +309,7 @@ async def check_and_increment_rating(
     overrides = user.get("admin_overrides", {})
     limit = overrides.get("rating_limit", settings.free_rating_limit)
 
-    current = await _effective_ratings_used(user_id, usage)
+    current = await _effective_ratings_used(user, usage)
     if current + jobs_to_rate > limit:
         return (
             False,
@@ -328,7 +332,7 @@ async def check_and_increment_rating(
     )
     if not result:
         # Re-check against DB truth in case counter was behind
-        current = await _effective_ratings_used(user_id, usage)
+        current = await _effective_ratings_used(user, usage)
         return (
             False,
             rating_limit_message(limit),
@@ -436,7 +440,7 @@ async def get_user_usage(user_id: str) -> dict:
     overrides = user.get("admin_overrides", {})
     usage = user.get("usage", {})
     token_quota = await get_ai_token_quota(user)
-    ratings_used = await _effective_ratings_used(user_id, usage)
+    ratings_used = await _effective_ratings_used(user, usage)
 
     return {
         "email": user.get("email"),
@@ -461,6 +465,12 @@ async def get_user_usage(user_id: str) -> dict:
         "suspended": bool(user.get("suspended")),
         "suspended_reason": user.get("suspended_reason", ""),
         "suspended_at": user.get("suspended_at"),
+        "rating_provider": user.get("rating_provider", ""),
+        "rating_model": user.get("rating_model", ""),
+        "rating_model_request": user.get("rating_model_request"),
+        "cv_parsing_provider": user.get("cv_parsing_provider", ""),
+        "cv_parsing_model": user.get("cv_parsing_model", ""),
+        "cv_parsing_model_request": user.get("cv_parsing_model_request"),
         **token_quota,
     }
 

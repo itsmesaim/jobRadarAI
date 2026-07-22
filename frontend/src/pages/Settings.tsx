@@ -33,7 +33,9 @@ import {
   parseLimitKindFromDetail,
   type LimitKind,
 } from "../components/LimitContactModal";
-import type { DataSummary, UserPreferences } from "../types";
+import { RatingProviderConfirmModal } from "../components/RatingProviderConfirmModal";
+import { RequestModelModal } from "../components/RequestModelModal";
+import type { AiModelCatalogEntry, DataSummary, ModelPurpose, UserPreferences } from "../types";
 
 const CV_UPLOAD_MESSAGES = [
   "Uploading your CV...",
@@ -61,8 +63,18 @@ const DEFAULT_PREFS: UserPreferences = {
   work_mode: { remote: true, hybrid: true, onsite: false },
   about_me: "",
   email_reminders_enabled: true,
+  reminder_hours: [],
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Dublin",
+  rating_provider: "",
+  rating_model: "",
+  cv_parsing_provider: "",
+  cv_parsing_model: "",
+  calibration_notes: "",
+  calibration_notes_updated_at: null,
+  calibration_notes_source_count: 0,
 };
+
+const DEFAULT_MODEL_VALUE = "__default__";
 
 // tsconfig targets ES2020, which predates Intl.supportedValuesOf's types.
 const supportedValuesOf = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] })
@@ -83,6 +95,17 @@ const EXPERIENCE_LEVELS: {
 
 const CURRENCIES = ["EUR", "USD", "INR", "AED", "GBP", "SGD"];
 
+const REMINDER_HOUR_OPTIONS: { hour: number; label: string }[] = [
+  { hour: 6, label: "6am" },
+  { hour: 9, label: "9am" },
+  { hour: 12, label: "12pm" },
+  { hour: 14, label: "2pm" },
+  { hour: 17, label: "5pm" },
+  { hour: 19, label: "7pm" },
+  { hour: 21, label: "9pm" },
+];
+const DEFAULT_REMINDER_HOURS_LABEL = "9am, 2pm, 7pm";
+
 const LOCATION_EXAMPLES = [
   "Dublin Ireland",
   "Remote",
@@ -98,18 +121,19 @@ const SETTINGS_GROUPS: {
   label: string;
 }[] = [
   { id: "profile", icon: UserCircle, label: "Profile & CV" },
+  { id: "ai-models", icon: Brain, label: "AI models" },
   { id: "preferences", icon: SlidersHorizontal, label: "Job search" },
   { id: "notifications", icon: Bell, label: "Notifications" },
   { id: "account", icon: KeyRound, label: "Account" },
   { id: "data", icon: DatabaseZap, label: "Data & privacy" },
 ];
 
-function SettingsJumpNav() {
+function SettingsSidebar() {
   return (
-    <nav className="settings-jump-nav" aria-label="Settings sections">
+    <nav className="settings-sidebar" aria-label="Settings sections">
       {SETTINGS_GROUPS.map(({ id, icon: Icon, label }) => (
-        <a key={id} href={`#${id}`} className="settings-jump-pill">
-          <Icon size={13} />
+        <a key={id} href={`#${id}`} className="settings-sidebar-link">
+          <Icon size={14} />
           {label}
         </a>
       ))}
@@ -355,227 +379,293 @@ export function SettingsPage() {
         {dirty && <span className="settings-unsaved-pill">Unsaved changes</span>}
       </div>
 
-      <SettingsJumpNav />
+      <SettingsSidebar />
 
-      <SectionGroup id="profile" icon={UserCircle} label="Profile & CV">
-        {/* CV Section */}
-        <Section title="CV" subtitle="Upload your master CV. Used for job rating and tailoring.">
-          {uploading ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                width: "100%",
-                padding: "16px 20px",
-                border: "2px dashed var(--accent)",
-                borderRadius: "var(--radius)",
-                background: "var(--bg-secondary)",
-              }}
-            >
-              <Loader size={20} className="animate-spin" style={{ color: "var(--accent)" }} />
-              <span style={{ fontSize: "var(--text-sm)", color: "var(--text)" }}>
-                {cv ? "Replacing your CV — " : ""}
-                {CV_UPLOAD_MESSAGES[uploadMsgIdx]}
-              </span>
-            </div>
-          ) : cv ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-3)",
-                flexWrap: "wrap",
-              }}
-            >
+      <div className="settings-content">
+        <SectionGroup id="profile" icon={UserCircle} label="Profile & CV">
+          {/* CV Section */}
+          <Section title="CV" subtitle="Upload your master CV. Used for job rating and tailoring.">
+            {uploading ? (
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: "var(--space-2)",
-                  background: "var(--success-bg)",
-                  border: "1px solid var(--success)",
-                  borderRadius: "var(--radius-sm)",
-                  padding: "8px 14px",
+                  width: "100%",
+                  padding: "16px 20px",
+                  border: "2px dashed var(--accent)",
+                  borderRadius: "var(--radius)",
+                  background: "var(--bg-secondary)",
                 }}
               >
-                <Check size={14} style={{ color: "var(--success)" }} />
-                <span
-                  style={{
-                    fontSize: "var(--text-sm)",
-                    color: "var(--success)",
-                    fontWeight: 500,
-                  }}
-                >
-                  {cv.filename}
+                <Loader size={20} className="animate-spin" style={{ color: "var(--accent)" }} />
+                <span style={{ fontSize: "var(--text-sm)", color: "var(--text)" }}>
+                  {cv ? "Replacing your CV: " : ""}
+                  {CV_UPLOAD_MESSAGES[uploadMsgIdx]}
                 </span>
               </div>
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="btn btn-ghost"
-                style={{ fontSize: "var(--text-xs)" }}
-              >
-                <Upload size={13} /> Replace
-              </button>
-              <button
-                onClick={() => {
-                  if (window.confirm("Delete your CV from JobRadar? You can upload again later.")) {
-                    deleteCvMutation.mutate();
-                  }
-                }}
-                disabled={deleteCvMutation.isPending}
-                className="btn btn-ghost"
-                style={{ fontSize: "var(--text-xs)", color: "var(--danger)" }}
-              >
-                <Trash2 size={13} /> Delete CV
-              </button>
-              <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
-                {cv.structured?.skills?.length} skills · {cv.structured?.projects?.length} projects
-                · {cv.structured?.experience?.length} roles
-                {cv.structured?.parsed_by_model && (
-                  <> · parsed by {cv.structured.parsed_by_model}</>
-                )}
-              </span>
-            </div>
-          ) : (
-            <button
-              onClick={() => fileRef.current?.click()}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                width: "100%",
-                padding: "32px 20px",
-                border: "2px dashed var(--border)",
-                borderRadius: "var(--radius)",
-                background: "var(--bg-secondary)",
-                cursor: "pointer",
-                gap: "var(--space-2)",
-              }}
-            >
-              <Upload size={20} style={{ color: "var(--text-muted)" }} />
-              <span style={{ fontSize: "var(--text-sm)", color: "var(--text)" }}>
-                Click to upload your CV
-              </span>
-              <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
-                PDF · Max 5MB
-              </span>
-            </button>
-          )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".pdf"
-            style={{ display: "none" }}
-            onChange={handleUpload}
-          />
-        </Section>
-
-        {/* About you — NEW */}
-        <Section
-          title="About you"
-          subtitle="Career context fed directly to the rating engine. Pivot goals, constraints, priorities, injected before the JD so the LLM factors it into strengths, not just gaps."
-        >
-          <textarea
-            className="input"
-            placeholder="e.g. Looking to move from backend into AI engineering. Built production LangChain apps but PyTorch isn't on my CV, comfortable learning on the job. Not interested in pure enterprise Java roles."
-            value={localPrefs.about_me}
-            onChange={(e) => update({ about_me: e.target.value })}
-            rows={4}
-            style={{ resize: "vertical", lineHeight: 1.6 }}
-          />
-        </Section>
-      </SectionGroup>
-
-      <SectionGroup id="notifications" icon={Bell} label="Notifications">
-        {/* Email reminders */}
-        <Section
-          title="Email reminders"
-          subtitle="Get up to 3 emails per day when you have unapplied jobs scoring 8+/10, same nudge as the dashboard banner."
-        >
-          <label
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: "var(--space-3)",
-              cursor: "pointer",
-              padding: "12px 14px",
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--border)",
-              background: "var(--bg-secondary)",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={localPrefs.email_reminders_enabled}
-              onChange={(e) => update({ email_reminders_enabled: e.target.checked })}
-              style={{ marginTop: 3, accentColor: "var(--accent)" }}
-            />
-            <span>
-              <span
+            ) : cv ? (
+              <div
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: "var(--space-2)",
-                  fontSize: "var(--text-base)",
-                  fontWeight: 600,
-                  color: "var(--text)",
-                  marginBottom: "var(--space-1)",
+                  gap: "var(--space-3)",
+                  flexWrap: "wrap",
                 }}
               >
-                <Mail size={15} />
-                Remind me to apply to high-scoring jobs
-              </span>
-              <span
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "var(--space-2)",
+                    background: "var(--success-bg)",
+                    border: "1px solid var(--success)",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "8px 14px",
+                  }}
+                >
+                  <Check size={14} style={{ color: "var(--success)" }} />
+                  <span
+                    style={{
+                      fontSize: "var(--text-sm)",
+                      color: "var(--success)",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {cv.filename}
+                  </span>
+                </div>
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  className="btn btn-ghost"
+                  style={{ fontSize: "var(--text-xs)" }}
+                >
+                  <Upload size={13} /> Replace
+                </button>
+                <button
+                  onClick={() => {
+                    if (
+                      window.confirm("Delete your CV from JobRadar? You can upload again later.")
+                    ) {
+                      deleteCvMutation.mutate();
+                    }
+                  }}
+                  disabled={deleteCvMutation.isPending}
+                  className="btn btn-ghost"
+                  style={{ fontSize: "var(--text-xs)", color: "var(--danger)" }}
+                >
+                  <Trash2 size={13} /> Delete CV
+                </button>
+                <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                  {cv.structured?.skills?.length} skills · {cv.structured?.projects?.length}{" "}
+                  projects · {cv.structured?.experience?.length} roles
+                  {cv.structured?.parsed_by_model && (
+                    <> · parsed by {cv.structured.parsed_by_model}</>
+                  )}
+                </span>
+              </div>
+            ) : (
+              <button
+                onClick={() => fileRef.current?.click()}
                 style={{
-                  fontSize: "var(--text-sm)",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  width: "100%",
+                  padding: "32px 20px",
+                  border: "2px dashed var(--border)",
+                  borderRadius: "var(--radius)",
+                  background: "var(--bg-secondary)",
+                  cursor: "pointer",
+                  gap: "var(--space-2)",
+                }}
+              >
+                <Upload size={20} style={{ color: "var(--text-muted)" }} />
+                <span style={{ fontSize: "var(--text-sm)", color: "var(--text)" }}>
+                  Click to upload your CV
+                </span>
+                <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                  PDF · Max 5MB
+                </span>
+              </button>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf"
+              style={{ display: "none" }}
+              onChange={handleUpload}
+            />
+          </Section>
+
+          {/* About you */}
+          <Section
+            title="About you"
+            subtitle="Career context fed directly to the rating engine. Pivot goals, constraints, priorities, injected before the JD so the LLM factors it into strengths, not just gaps."
+          >
+            <textarea
+              className="input"
+              placeholder="e.g. Looking to move from backend into AI engineering. Built production LangChain apps but PyTorch isn't on my CV, comfortable learning on the job. Not interested in pure enterprise Java roles."
+              value={localPrefs.about_me}
+              onChange={(e) => update({ about_me: e.target.value })}
+              rows={8}
+              style={{ resize: "vertical", lineHeight: 1.6 }}
+            />
+          </Section>
+        </SectionGroup>
+
+        <SectionGroup id="ai-models" icon={Brain} label="AI models">
+          <AiModelPicker
+            purpose="rating"
+            title="Rating model"
+            subtitle="Which AI rates your jobs and generates apply packs. All models available to you right now, pick any of them any time."
+            providerField="rating_provider"
+            modelField="rating_model"
+            requestField="rating_model_request"
+            localPrefs={localPrefs}
+            setLocalPrefs={setLocalPrefs}
+          />
+          <AiModelPicker
+            purpose="cv_parsing"
+            title="CV parsing model"
+            subtitle="Which AI turns your uploaded CV into structured data. Re-upload your CV after switching for it to take effect."
+            providerField="cv_parsing_provider"
+            modelField="cv_parsing_model"
+            requestField="cv_parsing_model_request"
+            localPrefs={localPrefs}
+            setLocalPrefs={setLocalPrefs}
+          />
+          <CalibrationNotesSection localPrefs={localPrefs} setLocalPrefs={setLocalPrefs} />
+        </SectionGroup>
+
+        <SectionGroup id="preferences" icon={SlidersHorizontal} label="Job search preferences">
+          {/* Role */}
+          <Section title="Role" subtitle="What roles should we search for?">
+            <div style={{ marginBottom: "var(--space-3)" }}>
+              <label className="label">Primary role</label>
+              <input
+                className="input settings-field-narrow"
+                value={localPrefs.primary_role}
+                onChange={(e) => update({ primary_role: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="label">Also search for</label>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "var(--space-2)",
+                  marginBottom: "var(--space-2)",
+                }}
+              >
+                {localPrefs.secondary_roles.map((r) => (
+                  <Tag
+                    key={r}
+                    label={r}
+                    onRemove={() =>
+                      update({
+                        secondary_roles: localPrefs.secondary_roles.filter((x) => x !== r),
+                      })
+                    }
+                  />
+                ))}
+              </div>
+              <TagInput
+                value={newRole}
+                onChange={setNewRole}
+                onAdd={addRole}
+                placeholder="e.g. AI Engineer"
+              />
+            </div>
+          </Section>
+
+          {/* Experience level */}
+          <Section
+            title="Experience level"
+            subtitle="Helps the rating engine catch seniority mismatches (e.g. a role requiring 'lead a team' when you're IC)."
+          >
+            <div className="settings-exp-levels">
+              {EXPERIENCE_LEVELS.map((lvl) => {
+                const active = localPrefs.experience_level === lvl.value;
+                return (
+                  <button
+                    key={lvl.value}
+                    onClick={() => update({ experience_level: lvl.value })}
+                    style={{
+                      flex: 1,
+                      padding: "10px 14px",
+                      borderRadius: "var(--radius-sm)",
+                      cursor: "pointer",
+                      border: active ? "1.5px solid var(--accent)" : "1px solid var(--border)",
+                      background: active ? "var(--accent-light)" : "var(--bg-secondary)",
+                      textAlign: "left",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "var(--text-sm)",
+                        fontWeight: 600,
+                        color: active ? "var(--accent)" : "var(--text)",
+                      }}
+                    >
+                      {lvl.label}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "var(--text-xs)",
+                        color: "var(--text-muted)",
+                        marginTop: 2,
+                      }}
+                    >
+                      {lvl.hint}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </Section>
+
+          {/* Work authorization */}
+          <Section
+            title="Work authorization"
+            subtitle="Used to flag jobs requiring sponsorship you don't have, or citizenship you can't meet."
+          >
+            <input
+              className="input"
+              placeholder="e.g. Stamp 1G, Ireland, no sponsorship needed"
+              value={localPrefs.work_authorization}
+              onChange={(e) => update({ work_authorization: e.target.value })}
+            />
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "var(--space-2)",
+                marginTop: "var(--space-2)",
+              }}
+            >
+              <Info size={13} style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }} />
+              <p
+                style={{
+                  fontSize: "var(--text-xs)",
                   color: "var(--text-muted)",
+                  margin: 0,
                   lineHeight: 1.5,
                 }}
               >
-                Requires SMTP on the server. Lists your top matches with scores and links. Disable
-                anytime here.
-              </span>
-            </span>
-          </label>
-        </Section>
+                Be specific: "Stamp 1G, no sponsorship needed" works much better than just "Irish
+                work visa."
+              </p>
+            </div>
+          </Section>
 
-        {/* Timezone */}
-        <Section
-          title="Timezone"
-          subtitle="Auto job search (5am/5pm) and reminder emails (9am/2pm/7pm) run at these times in your local timezone, wherever you're based."
-        >
-          <label className="label">Where are you currently based?</label>
-          <select
-            className="input settings-field-narrow"
-            value={localPrefs.timezone}
-            onChange={(e) => update({ timezone: e.target.value })}
+          {/* Locations */}
+          <Section
+            title="Locations"
+            subtitle="Every location gets its own separate search. Add as many as you want."
           >
-            {!TIMEZONE_OPTIONS.includes(localPrefs.timezone) && (
-              <option value={localPrefs.timezone}>{localPrefs.timezone}</option>
-            )}
-            {TIMEZONE_OPTIONS.map((tz) => (
-              <option key={tz} value={tz}>
-                {tz.replace(/_/g, " ")}
-              </option>
-            ))}
-          </select>
-        </Section>
-      </SectionGroup>
-
-      <SectionGroup id="preferences" icon={SlidersHorizontal} label="Job search preferences">
-        {/* Role */}
-        <Section title="Role" subtitle="What roles should we search for?">
-          <div style={{ marginBottom: "var(--space-3)" }}>
-            <label className="label">Primary role</label>
-            <input
-              className="input settings-field-narrow"
-              value={localPrefs.primary_role}
-              onChange={(e) => update({ primary_role: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="label">Also search for</label>
             <div
               style={{
                 display: "flex",
@@ -584,221 +674,72 @@ export function SettingsPage() {
                 marginBottom: "var(--space-2)",
               }}
             >
-              {localPrefs.secondary_roles.map((r) => (
+              {localPrefs.preferred_locations.map((l) => (
                 <Tag
-                  key={r}
-                  label={r}
+                  key={l}
+                  label={l}
                   onRemove={() =>
                     update({
-                      secondary_roles: localPrefs.secondary_roles.filter((x) => x !== r),
+                      preferred_locations: localPrefs.preferred_locations.filter((x) => x !== l),
                     })
                   }
                 />
               ))}
             </div>
             <TagInput
-              value={newRole}
-              onChange={setNewRole}
-              onAdd={addRole}
-              placeholder="e.g. AI Engineer"
+              value={newLocation}
+              onChange={setNewLocation}
+              onAdd={addLocation}
+              placeholder="e.g. Dublin Ireland"
             />
-          </div>
-        </Section>
-
-        {/* Experience level */}
-        <Section
-          title="Experience level"
-          subtitle="Helps the rating engine catch seniority mismatches (e.g. a role requiring 'lead a team' when you're IC)."
-        >
-          <div className="settings-exp-levels">
-            {EXPERIENCE_LEVELS.map((lvl) => {
-              const active = localPrefs.experience_level === lvl.value;
-              return (
-                <button
-                  key={lvl.value}
-                  onClick={() => update({ experience_level: lvl.value })}
-                  style={{
-                    flex: 1,
-                    padding: "10px 14px",
-                    borderRadius: "var(--radius-sm)",
-                    cursor: "pointer",
-                    border: active ? "1.5px solid var(--accent)" : "1px solid var(--border)",
-                    background: active ? "var(--accent-light)" : "var(--bg-secondary)",
-                    textAlign: "left",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: "var(--text-sm)",
-                      fontWeight: 600,
-                      color: active ? "var(--accent)" : "var(--text)",
-                    }}
-                  >
-                    {lvl.label}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "var(--text-xs)",
-                      color: "var(--text-muted)",
-                      marginTop: 2,
-                    }}
-                  >
-                    {lvl.hint}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </Section>
-
-        {/* Work authorization */}
-        <Section
-          title="Work authorization"
-          subtitle="Used to flag jobs requiring sponsorship you don't have, or citizenship you can't meet."
-        >
-          <input
-            className="input"
-            placeholder="e.g. Stamp 1G, Ireland, no sponsorship needed"
-            value={localPrefs.work_authorization}
-            onChange={(e) => update({ work_authorization: e.target.value })}
-          />
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: "var(--space-2)",
-              marginTop: "var(--space-2)",
-            }}
-          >
-            <Info size={13} style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }} />
-            <p
-              style={{
-                fontSize: "var(--text-xs)",
-                color: "var(--text-muted)",
-                margin: 0,
-                lineHeight: 1.5,
-              }}
-            >
-              Be specific: "Stamp 1G, no sponsorship needed" works much better than just "Irish work
-              visa."
-            </p>
-          </div>
-        </Section>
-
-        {/* Locations */}
-        <Section
-          title="Locations"
-          subtitle="Every location gets its own separate search. Add as many as you want."
-        >
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "var(--space-2)",
-              marginBottom: "var(--space-2)",
-            }}
-          >
-            {localPrefs.preferred_locations.map((l) => (
-              <Tag
-                key={l}
-                label={l}
-                onRemove={() =>
-                  update({
-                    preferred_locations: localPrefs.preferred_locations.filter((x) => x !== l),
-                  })
-                }
-              />
-            ))}
-          </div>
-          <TagInput
-            value={newLocation}
-            onChange={setNewLocation}
-            onAdd={addLocation}
-            placeholder="e.g. Dublin Ireland"
-          />
-          {/* quick-add examples */}
-          <div style={{ marginTop: "var(--space-3)" }}>
-            <p
-              style={{
-                fontSize: "var(--text-xs)",
-                color: "var(--text-muted)",
-                margin: "0 0 6px",
-              }}
-            >
-              Quick add:
-            </p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
-              {LOCATION_EXAMPLES.filter((ex) => !localPrefs.preferred_locations.includes(ex)).map(
-                (ex) => (
-                  <button
-                    key={ex}
-                    onClick={() =>
-                      update({
-                        preferred_locations: [...localPrefs.preferred_locations, ex],
-                      })
-                    }
-                    style={{
-                      fontSize: "var(--text-xs)",
-                      padding: "3px 9px",
-                      borderRadius: "var(--radius-pill)",
-                      cursor: "pointer",
-                      border: "1px dashed var(--border)",
-                      background: "transparent",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    + {ex}
-                  </button>
-                ),
-              )}
-            </div>
-          </div>
-        </Section>
-
-        {/* Work mode */}
-        <Section
-          title="Work mode"
-          subtitle="Onsite-only roles will be flagged as a mismatch if not selected here."
-        >
-          <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
-            {(["remote", "hybrid", "onsite"] as const).map((mode) => (
-              <label
-                key={mode}
+            {/* quick-add examples */}
+            <div style={{ marginTop: "var(--space-3)" }}>
+              <p
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "var(--space-2)",
-                  cursor: "pointer",
-                  fontSize: "var(--text-sm)",
+                  fontSize: "var(--text-xs)",
+                  color: "var(--text-muted)",
+                  margin: "0 0 6px",
                 }}
               >
-                <input
-                  type="checkbox"
-                  checked={localPrefs.work_mode[mode]}
-                  onChange={(e) =>
-                    update({
-                      work_mode: {
-                        ...localPrefs.work_mode,
-                        [mode]: e.target.checked,
-                      },
-                    })
-                  }
-                />
-                <span style={{ color: "var(--text)", textTransform: "capitalize" }}>{mode}</span>
-              </label>
-            ))}
-          </div>
-        </Section>
+                Quick add:
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
+                {LOCATION_EXAMPLES.filter((ex) => !localPrefs.preferred_locations.includes(ex)).map(
+                  (ex) => (
+                    <button
+                      key={ex}
+                      onClick={() =>
+                        update({
+                          preferred_locations: [...localPrefs.preferred_locations, ex],
+                        })
+                      }
+                      style={{
+                        fontSize: "var(--text-xs)",
+                        padding: "3px 9px",
+                        borderRadius: "var(--radius-pill)",
+                        cursor: "pointer",
+                        border: "1px dashed var(--border)",
+                        background: "transparent",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      + {ex}
+                    </button>
+                  ),
+                )}
+              </div>
+            </div>
+          </Section>
 
-        {/* Job types */}
-        <Section title="Job types" subtitle="What types of roles to include?">
-          <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
-            {(Object.keys(localPrefs.job_types) as (keyof typeof localPrefs.job_types)[])
-              .filter((key) => key !== "remote")
-              .map((key) => (
+          {/* Work mode */}
+          <Section
+            title="Work mode"
+            subtitle="Onsite-only roles will be flagged as a mismatch if not selected here."
+          >
+            <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
+              {(["remote", "hybrid", "onsite"] as const).map((mode) => (
                 <label
-                  key={key}
+                  key={mode}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -809,385 +750,546 @@ export function SettingsPage() {
                 >
                   <input
                     type="checkbox"
-                    checked={localPrefs.job_types[key]}
+                    checked={localPrefs.work_mode[mode]}
                     onChange={(e) =>
                       update({
-                        job_types: {
-                          ...localPrefs.job_types,
-                          [key]: e.target.checked,
+                        work_mode: {
+                          ...localPrefs.work_mode,
+                          [mode]: e.target.checked,
                         },
                       })
                     }
                   />
-                  <span style={{ color: "var(--text)", textTransform: "capitalize" }}>
-                    {key.replace("_", " ")}
-                  </span>
+                  <span style={{ color: "var(--text)", textTransform: "capitalize" }}>{mode}</span>
                 </label>
               ))}
-          </div>
-        </Section>
+            </div>
+          </Section>
 
-        {/* Avoid industries */}
-        <Section
-          title="Industries to avoid"
-          subtitle="Jobs in these sectors will be flagged even if technically a skills fit."
-        >
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "var(--space-2)",
-              marginBottom: "var(--space-2)",
-            }}
-          >
-            {localPrefs.avoid_industries.map((ind) => (
-              <Tag
-                key={ind}
-                label={ind}
-                onRemove={() =>
-                  update({
-                    avoid_industries: localPrefs.avoid_industries.filter((x) => x !== ind),
-                  })
-                }
-                color="var(--danger-bg)"
-                textColor="var(--danger)"
-              />
-            ))}
-          </div>
-          <TagInput
-            value={newIndustry}
-            onChange={setNewIndustry}
-            onAdd={addIndustry}
-            placeholder="e.g. Payments, Healthcare compliance"
-          />
-        </Section>
+          {/* Job types */}
+          <Section title="Job types" subtitle="What types of roles to include?">
+            <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
+              {(Object.keys(localPrefs.job_types) as (keyof typeof localPrefs.job_types)[])
+                .filter((key) => key !== "remote")
+                .map((key) => (
+                  <label
+                    key={key}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "var(--space-2)",
+                      cursor: "pointer",
+                      fontSize: "var(--text-sm)",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={localPrefs.job_types[key]}
+                      onChange={(e) =>
+                        update({
+                          job_types: {
+                            ...localPrefs.job_types,
+                            [key]: e.target.checked,
+                          },
+                        })
+                      }
+                    />
+                    <span style={{ color: "var(--text)", textTransform: "capitalize" }}>
+                      {key.replace("_", " ")}
+                    </span>
+                  </label>
+                ))}
+            </div>
+          </Section>
 
-        {/* Key skills */}
-        <Section title="Key skills" subtitle="Used to generate personalised search queries.">
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "var(--space-2)",
-              marginBottom: "var(--space-2)",
-            }}
+          {/* Avoid industries */}
+          <Section
+            title="Industries to avoid"
+            subtitle="Jobs in these sectors will be flagged even if technically a skills fit."
           >
-            {localPrefs.key_skills.map((s) => (
-              <Tag
-                key={s}
-                label={s}
-                onRemove={() =>
-                  update({
-                    key_skills: localPrefs.key_skills.filter((x) => x !== s),
-                  })
-                }
-                color="var(--accent-light)"
-                textColor="var(--accent)"
-              />
-            ))}
-          </div>
-          <TagInput
-            value={newSkill}
-            onChange={setNewSkill}
-            onAdd={addSkill}
-            placeholder="e.g. React"
-          />
-        </Section>
-
-        {/* Minimum salary */}
-        <Section
-          title="Minimum salary"
-          subtitle="Jobs below this are flagged. Pick the currency that matches your target market."
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--space-3)",
-              flexWrap: "wrap",
-            }}
-          >
-            <select
-              value={salaryCurrency}
-              onChange={(e) => setSalaryCurrency(e.target.value)}
-              className="input"
-              style={{ maxWidth: 90, cursor: "pointer" }}
-            >
-              {CURRENCIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-            <input
-              className="input"
-              type="number"
-              value={minSalaryInput}
-              onChange={(e) => {
-                const raw = e.target.value;
-                setMinSalaryInput(raw);
-                if (raw !== "") update({ min_salary: parseInt(raw, 10) || 0 });
-              }}
-              onBlur={() => {
-                if (minSalaryInput === "") {
-                  setMinSalaryInput("0");
-                  update({ min_salary: 0 });
-                }
-              }}
-              style={{ maxWidth: 140 }}
-            />
-            <span style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>per year</span>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: "var(--space-2)",
-              marginTop: "var(--space-2)",
-            }}
-          >
-            <Info size={13} style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }} />
-            <p
-              style={{
-                fontSize: "var(--text-xs)",
-                color: "var(--text-muted)",
-                margin: 0,
-                lineHeight: 1.5,
-              }}
-            >
-              €40-70k is mid-level in Ireland · ₹20-40 LPA is strong in India · AED 15-25k/mo is
-              good in UAE (tax-free, higher real value than EUR equivalent).
-            </p>
-          </div>
-        </Section>
-
-        {/* Skill overrides — NEW */}
-        <Section
-          title="Skill overrides"
-          subtitle="Skills you have that aren't on your CV. Injected into every rating call so the LLM stops flagging them as gaps."
-        >
-          {overrides.length > 0 && (
             <div
               style={{
                 display: "flex",
-                flexDirection: "column",
+                flexWrap: "wrap",
                 gap: "var(--space-2)",
-                marginBottom: "var(--space-4)",
+                marginBottom: "var(--space-2)",
               }}
             >
-              {overrides.map((o) => (
-                <div
-                  key={o.skill}
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: "var(--space-3)",
-                    background: "var(--purple-bg)",
-                    borderRadius: "var(--radius-sm)",
-                    padding: "10px 12px",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  <Brain
-                    size={13}
-                    style={{
-                      color: "var(--purple)",
-                      flexShrink: 0,
-                      marginTop: 1,
-                    }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: "var(--text-xs)",
-                        fontWeight: 600,
-                        color: "var(--purple)",
-                        marginBottom: 2,
-                      }}
-                    >
-                      {o.skill}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "var(--text-xs)",
-                        color: "var(--text-secondary)",
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      {o.context}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => deleteOverrideMutation.mutate(o.skill)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      color: "var(--text-muted)",
-                      display: "flex",
-                      padding: 2,
-                      flexShrink: 0,
-                    }}
-                    title="Remove override"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
+              {localPrefs.avoid_industries.map((ind) => (
+                <Tag
+                  key={ind}
+                  label={ind}
+                  onRemove={() =>
+                    update({
+                      avoid_industries: localPrefs.avoid_industries.filter((x) => x !== ind),
+                    })
+                  }
+                  color="var(--danger-bg)"
+                  textColor="var(--danger)"
+                />
               ))}
             </div>
-          )}
+            <TagInput
+              value={newIndustry}
+              onChange={setNewIndustry}
+              onAdd={addIndustry}
+              placeholder="e.g. Payments, Healthcare compliance"
+            />
+          </Section>
 
-          {!addingOverride ? (
-            <button
-              onClick={() => setAddingOverride(true)}
-              className="btn btn-ghost"
-              style={{ fontSize: "var(--text-xs)" }}
-            >
-              <Plus size={13} /> Add skill override
-            </button>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-              <div style={{ display: "flex", gap: "var(--space-2)" }}>
-                <input
-                  className="input"
-                  placeholder="Skill (e.g. plotly)"
-                  value={newOverrideSkill}
-                  onChange={(e) => setNewOverrideSkill(e.target.value)}
-                  style={{ maxWidth: 160 }}
-                  autoFocus
-                />
-                <input
-                  className="input"
-                  placeholder="Your experience with it..."
-                  value={newOverrideContext}
-                  onChange={(e) => setNewOverrideContext(e.target.value)}
-                  onKeyDown={(e) =>
-                    e.key === "Enter" &&
-                    newOverrideSkill &&
-                    newOverrideContext &&
-                    addOverrideMutation.mutate()
-                  }
-                />
-              </div>
-              <p style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", margin: 0 }}>
-                e.g. "plotly" → "used in BEng for ML model visualisation across 3 projects"
-              </p>
-              <div style={{ display: "flex", gap: "var(--space-2)" }}>
-                <button
-                  onClick={() => addOverrideMutation.mutate()}
-                  disabled={
-                    !newOverrideSkill.trim() ||
-                    !newOverrideContext.trim() ||
-                    addOverrideMutation.isPending
-                  }
-                  className="btn btn-primary"
-                  style={{ fontSize: "var(--text-xs)" }}
-                >
-                  {addOverrideMutation.isPending ? "Saving..." : "Save override"}
-                </button>
-                <button
-                  onClick={() => {
-                    setAddingOverride(false);
-                    setNewOverrideSkill("");
-                    setNewOverrideContext("");
-                  }}
-                  className="btn btn-ghost"
-                  style={{ fontSize: "var(--text-xs)" }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-        </Section>
-      </SectionGroup>
-
-      <SectionGroup id="account" icon={KeyRound} label="Account & security">
-        <Section title="Password" subtitle="Change your sign-in password">
-          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-            <div>
-              <label className="label">Current password</label>
-              <input
-                className="input"
-                type="password"
-                value={pwForm.current}
-                onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="label">New password</label>
-              <input
-                className="input"
-                type="password"
-                placeholder="Min. 8 characters"
-                value={pwForm.next}
-                onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="label">Confirm new password</label>
-              <input
-                className="input"
-                type="password"
-                value={pwForm.confirm}
-                onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
-              />
-            </div>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={changingPassword}
-              style={{ alignSelf: "flex-start" }}
-              onClick={async () => {
-                if (pwForm.next.length < 8) {
-                  toast.error("New password must be at least 8 characters");
-                  return;
-                }
-                if (pwForm.next !== pwForm.confirm) {
-                  toast.error("New passwords do not match");
-                  return;
-                }
-                setChangingPassword(true);
-                try {
-                  const res = await authApi.changePassword(pwForm.current, pwForm.next);
-                  toast.success(res.message);
-                  setPwForm({ current: "", next: "", confirm: "" });
-                } catch (err: any) {
-                  toast.error(err.response?.data?.detail || "Could not change password");
-                } finally {
-                  setChangingPassword(false);
-                }
+          {/* Key skills */}
+          <Section title="Key skills" subtitle="Used to generate personalised search queries.">
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "var(--space-2)",
+                marginBottom: "var(--space-2)",
               }}
             >
-              {changingPassword ? "Updating..." : "Change password"}
-            </button>
-            <p style={{ margin: 0, fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
-              Forgot your password?{" "}
-              <a href="/forgot-password" style={{ color: "var(--accent)" }}>
-                Reset via email
-              </a>
-            </p>
-          </div>
-        </Section>
-      </SectionGroup>
+              {localPrefs.key_skills.map((s) => (
+                <Tag
+                  key={s}
+                  label={s}
+                  onRemove={() =>
+                    update({
+                      key_skills: localPrefs.key_skills.filter((x) => x !== s),
+                    })
+                  }
+                  color="var(--accent-light)"
+                  textColor="var(--accent)"
+                />
+              ))}
+            </div>
+            <TagInput
+              value={newSkill}
+              onChange={setNewSkill}
+              onAdd={addSkill}
+              placeholder="e.g. React"
+            />
+          </Section>
 
-      <SectionGroup id="data" icon={DatabaseZap} label="Data & privacy">
-        {/* Job cleanup */}
-        <JobCleanupSection />
+          {/* Minimum salary */}
+          <Section
+            title="Minimum salary"
+            subtitle="Jobs below this are flagged. Pick the currency that matches your target market."
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-3)",
+                flexWrap: "wrap",
+              }}
+            >
+              <select
+                value={salaryCurrency}
+                onChange={(e) => setSalaryCurrency(e.target.value)}
+                className="input"
+                style={{ maxWidth: 90, cursor: "pointer" }}
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="input"
+                type="number"
+                value={minSalaryInput}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setMinSalaryInput(raw);
+                  if (raw !== "") update({ min_salary: parseInt(raw, 10) || 0 });
+                }}
+                onBlur={() => {
+                  if (minSalaryInput === "") {
+                    setMinSalaryInput("0");
+                    update({ min_salary: 0 });
+                  }
+                }}
+                style={{ maxWidth: 140 }}
+              />
+              <span style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+                per year
+              </span>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "var(--space-2)",
+                marginTop: "var(--space-2)",
+              }}
+            >
+              <Info size={13} style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }} />
+              <p
+                style={{
+                  fontSize: "var(--text-xs)",
+                  color: "var(--text-muted)",
+                  margin: 0,
+                  lineHeight: 1.5,
+                }}
+              >
+                €40-70k is mid-level in Ireland · ₹20-40 LPA is strong in India · AED 15-25k/mo is
+                good in UAE (tax-free, higher real value than EUR equivalent).
+              </p>
+            </div>
+          </Section>
 
-        {/* Data & privacy */}
-        <DataPrivacySection
-          summary={dataSummary}
-          onExport={handleExportData}
-          onDeleteCv={() => {
-            if (window.confirm("Delete your CV from JobRadar? You can upload again later.")) {
-              deleteCvMutation.mutate();
-            }
-          }}
-          deleteCvPending={deleteCvMutation.isPending}
-          onDeleteAccount={() => setShowDeleteAccount(true)}
-        />
-      </SectionGroup>
+          {/* Skill overrides */}
+          <Section
+            title="Skill overrides"
+            subtitle="Skills you have that aren't on your CV. Injected into every rating call so the LLM stops flagging them as gaps."
+          >
+            {overrides.length > 0 && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "var(--space-2)",
+                  marginBottom: "var(--space-4)",
+                }}
+              >
+                {overrides.map((o) => (
+                  <div
+                    key={o.skill}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: "var(--space-3)",
+                      background: "var(--purple-bg)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "10px 12px",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    <Brain
+                      size={13}
+                      style={{
+                        color: "var(--purple)",
+                        flexShrink: 0,
+                        marginTop: 1,
+                      }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: "var(--text-xs)",
+                          fontWeight: 600,
+                          color: "var(--purple)",
+                          marginBottom: 2,
+                        }}
+                      >
+                        {o.skill}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "var(--text-xs)",
+                          color: "var(--text-secondary)",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {o.context}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => deleteOverrideMutation.mutate(o.skill)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "var(--text-muted)",
+                        display: "flex",
+                        padding: 2,
+                        flexShrink: 0,
+                      }}
+                      title="Remove override"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!addingOverride ? (
+              <button
+                onClick={() => setAddingOverride(true)}
+                className="btn btn-ghost"
+                style={{ fontSize: "var(--text-xs)" }}
+              >
+                <Plus size={13} /> Add skill override
+              </button>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+                <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                  <input
+                    className="input"
+                    placeholder="Skill (e.g. plotly)"
+                    value={newOverrideSkill}
+                    onChange={(e) => setNewOverrideSkill(e.target.value)}
+                    style={{ maxWidth: 160 }}
+                    autoFocus
+                  />
+                  <input
+                    className="input"
+                    placeholder="Your experience with it..."
+                    value={newOverrideContext}
+                    onChange={(e) => setNewOverrideContext(e.target.value)}
+                    onKeyDown={(e) =>
+                      e.key === "Enter" &&
+                      newOverrideSkill &&
+                      newOverrideContext &&
+                      addOverrideMutation.mutate()
+                    }
+                  />
+                </div>
+                <p style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", margin: 0 }}>
+                  e.g. "plotly" → "used in BEng for ML model visualisation across 3 projects"
+                </p>
+                <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                  <button
+                    onClick={() => addOverrideMutation.mutate()}
+                    disabled={
+                      !newOverrideSkill.trim() ||
+                      !newOverrideContext.trim() ||
+                      addOverrideMutation.isPending
+                    }
+                    className="btn btn-primary"
+                    style={{ fontSize: "var(--text-xs)" }}
+                  >
+                    {addOverrideMutation.isPending ? "Saving..." : "Save override"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAddingOverride(false);
+                      setNewOverrideSkill("");
+                      setNewOverrideContext("");
+                    }}
+                    className="btn btn-ghost"
+                    style={{ fontSize: "var(--text-xs)" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </Section>
+        </SectionGroup>
+
+        <SectionGroup id="notifications" icon={Bell} label="Notifications">
+          {/* Email reminders */}
+          <Section
+            title="Email reminders"
+            subtitle="Get up to 3 emails per day when you have unapplied jobs scoring 8+/10, same nudge as the dashboard banner."
+          >
+            <label
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "var(--space-3)",
+                cursor: "pointer",
+                padding: "12px 14px",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border)",
+                background: "var(--bg-secondary)",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={localPrefs.email_reminders_enabled}
+                onChange={(e) => update({ email_reminders_enabled: e.target.checked })}
+                style={{ marginTop: 3, accentColor: "var(--accent)" }}
+              />
+              <span>
+                <span
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "var(--space-2)",
+                    fontSize: "var(--text-base)",
+                    fontWeight: 600,
+                    color: "var(--text)",
+                    marginBottom: "var(--space-1)",
+                  }}
+                >
+                  <Mail size={15} />
+                  Remind me to apply to high-scoring jobs
+                </span>
+                <span
+                  style={{
+                    fontSize: "var(--text-sm)",
+                    color: "var(--text-muted)",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Requires SMTP on the server. Lists your top matches with scores and links. Disable
+                  anytime here.
+                </span>
+              </span>
+            </label>
+
+            {localPrefs.email_reminders_enabled && (
+              <div style={{ marginTop: "var(--space-4)" }}>
+                <label className="label">When should we remind you?</label>
+                <p
+                  style={{
+                    fontSize: "var(--text-xs)",
+                    color: "var(--text-muted)",
+                    margin: "0 0 var(--space-2)",
+                  }}
+                >
+                  Pick any times that work for you, in your own timezone (below). Leave none picked
+                  to use the app default ({DEFAULT_REMINDER_HOURS_LABEL}). Max 3 emails/day either
+                  way.
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
+                  {REMINDER_HOUR_OPTIONS.map((opt) => {
+                    const active = localPrefs.reminder_hours.includes(opt.hour);
+                    return (
+                      <button
+                        key={opt.hour}
+                        type="button"
+                        onClick={() =>
+                          update({
+                            reminder_hours: active
+                              ? localPrefs.reminder_hours.filter((h) => h !== opt.hour)
+                              : [...localPrefs.reminder_hours, opt.hour].sort((a, b) => a - b),
+                          })
+                        }
+                        style={{
+                          padding: "6px 14px",
+                          borderRadius: "var(--radius-pill)",
+                          border: active ? "1.5px solid var(--accent)" : "1px solid var(--border)",
+                          background: active ? "var(--accent-light)" : "var(--bg-secondary)",
+                          color: active ? "var(--accent)" : "var(--text-secondary)",
+                          fontSize: "var(--text-sm)",
+                          fontWeight: active ? 600 : 400,
+                          cursor: "pointer",
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </Section>
+
+          {/* Timezone */}
+          <Section
+            title="Timezone"
+            subtitle="Auto job search (5am/5pm) runs at these times, and reminder emails run at whatever times you've picked above (or the app default), all in your local timezone."
+          >
+            <label className="label">Where are you currently based?</label>
+            <select
+              className="input settings-field-narrow"
+              value={localPrefs.timezone}
+              onChange={(e) => update({ timezone: e.target.value })}
+            >
+              {!TIMEZONE_OPTIONS.includes(localPrefs.timezone) && (
+                <option value={localPrefs.timezone}>{localPrefs.timezone}</option>
+              )}
+              {TIMEZONE_OPTIONS.map((tz) => (
+                <option key={tz} value={tz}>
+                  {tz.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+          </Section>
+        </SectionGroup>
+
+        <SectionGroup id="account" icon={KeyRound} label="Account & security">
+          <Section title="Password" subtitle="Change your sign-in password">
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+              <div>
+                <label className="label">Current password</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={pwForm.current}
+                  onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="label">New password</label>
+                <input
+                  className="input"
+                  type="password"
+                  placeholder="Min. 8 characters"
+                  value={pwForm.next}
+                  onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="label">Confirm new password</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={pwForm.confirm}
+                  onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
+                />
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={changingPassword}
+                style={{ alignSelf: "flex-start" }}
+                onClick={async () => {
+                  if (pwForm.next.length < 8) {
+                    toast.error("New password must be at least 8 characters");
+                    return;
+                  }
+                  if (pwForm.next !== pwForm.confirm) {
+                    toast.error("New passwords do not match");
+                    return;
+                  }
+                  setChangingPassword(true);
+                  try {
+                    const res = await authApi.changePassword(pwForm.current, pwForm.next);
+                    toast.success(res.message);
+                    setPwForm({ current: "", next: "", confirm: "" });
+                  } catch (err: any) {
+                    toast.error(err.response?.data?.detail || "Could not change password");
+                  } finally {
+                    setChangingPassword(false);
+                  }
+                }}
+              >
+                {changingPassword ? "Updating..." : "Change password"}
+              </button>
+              <p style={{ margin: 0, fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                Forgot your password?{" "}
+                <a href="/forgot-password" style={{ color: "var(--accent)" }}>
+                  Reset via email
+                </a>
+              </p>
+            </div>
+          </Section>
+        </SectionGroup>
+
+        <SectionGroup id="data" icon={DatabaseZap} label="Data & privacy">
+          {/* Job cleanup */}
+          <JobCleanupSection />
+
+          {/* Data & privacy */}
+          <DataPrivacySection
+            summary={dataSummary}
+            onExport={handleExportData}
+            onDeleteCv={() => {
+              if (window.confirm("Delete your CV from JobRadar? You can upload again later.")) {
+                deleteCvMutation.mutate();
+              }
+            }}
+            deleteCvPending={deleteCvMutation.isPending}
+            onDeleteAccount={() => setShowDeleteAccount(true)}
+          />
+        </SectionGroup>
+      </div>
 
       {showDeleteAccount && (
         <div
@@ -1326,6 +1428,281 @@ export function SettingsPage() {
         <LimitContactModal kind={limitModalKind} onClose={() => setLimitModalKind(null)} />
       )}
     </div>
+  );
+}
+
+// ── AI model picker (rating + CV parsing share this) ─────────────────────────
+
+function AiModelPicker({
+  purpose,
+  title,
+  subtitle,
+  providerField,
+  modelField,
+  requestField,
+  localPrefs,
+  setLocalPrefs,
+}: {
+  purpose: ModelPurpose;
+  title: string;
+  subtitle: string;
+  providerField: "rating_provider" | "cv_parsing_provider";
+  modelField: "rating_model" | "cv_parsing_model";
+  requestField: "rating_model_request" | "cv_parsing_model_request";
+  localPrefs: UserPreferences;
+  setLocalPrefs: React.Dispatch<React.SetStateAction<UserPreferences>>;
+}) {
+  const queryClient = useQueryClient();
+  const [pendingSelection, setPendingSelection] = useState<{
+    provider: string;
+    model: string;
+    label: string;
+  } | null>(null);
+  const [showRequestModel, setShowRequestModel] = useState(false);
+
+  const { data } = useQuery({
+    queryKey: ["ai-models", purpose],
+    queryFn: () => userApi.getAiModels(purpose),
+  });
+  const models: AiModelCatalogEntry[] = data?.models || [];
+  const providers = Array.from(new Set(models.map((m) => m.provider)));
+  const defaultModel = models.find((m) => m.is_default);
+  const defaultLabel = defaultModel ? `App default (${defaultModel.label})` : "App default";
+
+  const currentProvider = localPrefs[providerField];
+  const currentModel = localPrefs[modelField];
+  const requestInfo = localPrefs[requestField];
+  const isCustomSelection =
+    !!currentProvider &&
+    !models.some((m) => m.provider === currentProvider && m.model === currentModel);
+
+  const switchMutation = useMutation({
+    mutationFn: (next: { provider: string; model: string; label: string }) =>
+      userApi.updatePreferences({
+        ...localPrefs,
+        [providerField]: next.provider,
+        [modelField]: next.model,
+      }),
+    onSuccess: (_data, next) => {
+      setLocalPrefs((p) => ({ ...p, [providerField]: next.provider, [modelField]: next.model }));
+      queryClient.invalidateQueries({ queryKey: ["prefs"] });
+      toast.success(`${title} switched to ${next.label}`);
+      setPendingSelection(null);
+    },
+    onError: () => toast.error(`Failed to switch ${title.toLowerCase()}`),
+  });
+
+  const requestMutation = useMutation({
+    mutationFn: ({ model, note }: { model: string; note: string }) =>
+      userApi.requestModel(model, note, purpose),
+    onSuccess: (_data, { model, note }) => {
+      setLocalPrefs((p) => ({
+        ...p,
+        [requestField]: { model, note, requested_at: new Date().toISOString() },
+      }));
+      queryClient.invalidateQueries({ queryKey: ["prefs"] });
+      toast.success("Request sent, we'll email you when it's ready");
+      setShowRequestModel(false);
+    },
+    onError: () => toast.error("Failed to send request"),
+  });
+
+  const handleSelect = (value: string) => {
+    const next =
+      value === DEFAULT_MODEL_VALUE
+        ? { provider: "", model: "", label: defaultLabel }
+        : (() => {
+            const [provider, model] = value.split("::");
+            const entry = models.find((m) => m.provider === provider && m.model === model);
+            return { provider, model, label: entry?.label || model };
+          })();
+
+    if (next.provider === currentProvider) {
+      switchMutation.mutate(next);
+    } else {
+      setPendingSelection(next);
+    }
+  };
+
+  return (
+    <Section title={title} subtitle={subtitle}>
+      {isCustomSelection && (
+        <div
+          style={{
+            fontSize: "var(--text-sm)",
+            color: "var(--text-secondary)",
+            background: "var(--bg-secondary)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            padding: "10px 14px",
+            marginBottom: "var(--space-3)",
+          }}
+        >
+          Currently on{" "}
+          <strong>
+            {currentProvider}/{currentModel}
+          </strong>
+          , a custom model admin granted you. Pick anything below to switch off it.
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+        <div>
+          <div className="settings-eyebrow">Default</div>
+          <div className="settings-exp-levels">
+            <ModelPill
+              active={!currentProvider}
+              label={defaultLabel}
+              hint="App's recommended choice"
+              onClick={() => handleSelect(DEFAULT_MODEL_VALUE)}
+            />
+          </div>
+        </div>
+
+        {providers.map((provider) => {
+          const providerModels = models.filter((m) => m.provider === provider);
+          return (
+            <div key={provider}>
+              <div className="settings-eyebrow">
+                {provider}: {providerModels.length} model{providerModels.length === 1 ? "" : "s"}{" "}
+                available
+              </div>
+              <div className="settings-exp-levels">
+                {providerModels.map((m) => (
+                  <ModelPill
+                    key={m.id}
+                    active={currentProvider === m.provider && currentModel === m.model}
+                    label={m.label}
+                    hint={
+                      m.cost_multiplier > 1
+                        ? `uses ${m.cost_multiplier}x quota`
+                        : "standard quota use"
+                    }
+                    onClick={() => handleSelect(`${m.provider}::${m.model}`)}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ marginTop: "var(--space-3)" }}>
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={() => setShowRequestModel(true)}
+          disabled={!!requestInfo}
+        >
+          {requestInfo ? "Request pending" : "Request a different model"}
+        </button>
+        {requestInfo && (
+          <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", marginTop: 4 }}>
+            "{requestInfo.model}": we'll email you when it's ready
+          </div>
+        )}
+      </div>
+
+      {pendingSelection !== null && (
+        <RatingProviderConfirmModal
+          label={pendingSelection.label}
+          busy={switchMutation.isPending}
+          onConfirm={() => switchMutation.mutate(pendingSelection)}
+          onCancel={() => setPendingSelection(null)}
+        />
+      )}
+
+      {showRequestModel && (
+        <RequestModelModal
+          busy={requestMutation.isPending}
+          onSubmit={(model, note) => requestMutation.mutate({ model, note })}
+          onCancel={() => setShowRequestModel(false)}
+        />
+      )}
+    </Section>
+  );
+}
+
+function CalibrationNotesSection({
+  localPrefs,
+  setLocalPrefs,
+}: {
+  localPrefs: UserPreferences;
+  setLocalPrefs: React.Dispatch<React.SetStateAction<UserPreferences>>;
+}) {
+  const regenerateMutation = useMutation({
+    mutationFn: userApi.regenerateCalibrationNotes,
+    onSuccess: ({ calibration_notes }) => {
+      setLocalPrefs((p) => ({
+        ...p,
+        calibration_notes,
+        calibration_notes_updated_at: new Date().toISOString(),
+      }));
+      toast.success("Calibration notes refreshed");
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Failed to refresh, try again");
+    },
+  });
+
+  return (
+    <Section
+      title="Rating calibration"
+      subtitle="Standing rules distilled from your rating feedback (comments/stars on individual ratings), applied to EVERY future rating, not just similar jobs."
+    >
+      {localPrefs.calibration_notes ? (
+        <>
+          <pre
+            style={{
+              whiteSpace: "pre-wrap",
+              fontFamily: "inherit",
+              fontSize: "var(--text-sm)",
+              lineHeight: 1.6,
+              color: "var(--text)",
+              background: "var(--bg-secondary)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-sm)",
+              padding: "12px 14px",
+              margin: "0 0 var(--space-2)",
+            }}
+          >
+            {localPrefs.calibration_notes}
+          </pre>
+          <p
+            style={{
+              fontSize: "var(--text-xs)",
+              color: "var(--text-muted)",
+              margin: "0 0 var(--space-3)",
+            }}
+          >
+            Based on {localPrefs.calibration_notes_source_count} feedback entr
+            {localPrefs.calibration_notes_source_count === 1 ? "y" : "ies"}
+            {localPrefs.calibration_notes_updated_at &&
+              ` · updated ${new Date(localPrefs.calibration_notes_updated_at).toLocaleDateString()}`}
+          </p>
+        </>
+      ) : (
+        <p
+          style={{
+            fontSize: "var(--text-sm)",
+            color: "var(--text-muted)",
+            margin: "0 0 var(--space-3)",
+          }}
+        >
+          No standing rules yet. Leave feedback (stars or a comment) on at least 3 job ratings and
+          they'll be summarized here automatically, or click refresh below if you've already left
+          feedback.
+        </p>
+      )}
+      <button
+        type="button"
+        className="btn btn-secondary"
+        onClick={() => regenerateMutation.mutate()}
+        disabled={regenerateMutation.isPending}
+      >
+        {regenerateMutation.isPending ? "Refreshing..." : "Refresh now"}
+      </button>
+    </Section>
   );
 }
 
@@ -1927,6 +2304,49 @@ function Section({
       </p>
       {children}
     </div>
+  );
+}
+
+function ModelPill({
+  active,
+  label,
+  hint,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  hint: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={active}
+      style={{
+        flex: "1 1 160px",
+        padding: "10px 14px",
+        borderRadius: "var(--radius-sm)",
+        cursor: active ? "default" : "pointer",
+        border: active ? "1.5px solid var(--accent)" : "1px solid var(--border)",
+        background: active ? "var(--accent-light)" : "var(--bg-secondary)",
+        textAlign: "left",
+        transition: "all 0.15s",
+      }}
+    >
+      <div
+        style={{
+          fontSize: "var(--text-sm)",
+          fontWeight: 600,
+          color: active ? "var(--accent)" : "var(--text)",
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", marginTop: 2 }}>
+        {hint}
+      </div>
+    </button>
   );
 }
 

@@ -37,7 +37,7 @@ const COPY: Record<
     subtitle: "You've used today's AI token allowance.",
     body: (
       <>
-        <strong>Your daily AI credit resets at midnight UTC.</strong>
+        <strong>Your daily AI credit resets at midnight in your local timezone.</strong>
         <br />
         Ratings, searches, and CV parsing all use AI tokens. Come back tomorrow, or email the admin
         if you need more credits sooner.
@@ -219,7 +219,9 @@ export function LimitContactModal({ kind, onClose }: { kind: LimitKind; onClose:
           }}
         >
           Daily limits reset at{" "}
-          <strong style={{ color: "var(--text-secondary)" }}>midnight UTC</strong>
+          <strong style={{ color: "var(--text-secondary)" }}>
+            midnight in your local timezone
+          </strong>
           <br />
           Email: <strong style={{ color: "var(--text-secondary)" }}>{ADMIN_EMAIL}</strong>
         </div>

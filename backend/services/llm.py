@@ -19,7 +19,12 @@ The code respects these common env var names from your .env:
   - GROK_API_KEY / XAI_API_KEY
   - GROK_MODEL / XAI_MODEL
   - MISTRAL_API_KEY / MISTRAL_MODEL
+  - DEEPSEEK_API_KEY / DEEPSEEK_MODEL
   - RATING_PROVIDER / RATING_MODEL
+
+Per-user rating provider selection (Settings page) is layered on top of this —
+see services/ai_models.py (admin-managed catalog) and get_rating_llm()'s
+provider/model params.
 
 Embeddings (for fast pre-filter) always use OpenAI, regardless of LLM_PROVIDER
 or RATING_PROVIDER — they're a cheap, working cosine-prefilter step, not
@@ -128,41 +133,69 @@ def _make_llm(provider: str, model: str, **extra) -> BaseChatModel:
         }
         return ChatOpenAI(**params)
 
+    if p == "deepseek":
+        from langchain_openai import ChatOpenAI
+
+        resolved_model = model or settings.deepseek_model
+        if not resolved_model:
+            raise ValueError("No DEEPSEEK_MODEL set in .env for deepseek provider.")
+
+        params = {
+            "api_key": settings.deepseek_api_key,
+            "model": resolved_model,
+            "base_url": "https://api.deepseek.com",
+            "temperature": 0.1,
+            **extra,
+        }
+        return ChatOpenAI(**params)
+
     raise ValueError(
-        f"Unknown LLM provider: {p!r}. Use 'ollama', 'openai', 'xai', or 'mistral'."
+        f"Unknown LLM provider: {p!r}. Use 'ollama', 'openai', 'xai', 'mistral', or 'deepseek'."
     )
 
 
-@lru_cache(maxsize=1)
-def get_llm() -> BaseChatModel:
-    """Main LLM used for CV parsing, briefs, roasts, etc."""
-    return _make_llm(settings.llm_provider, "")
+@lru_cache(maxsize=32)
+def get_llm(provider: str | None = None, model: str | None = None) -> BaseChatModel:
+    """
+    Main LLM used for CV parsing, briefs, roasts, etc.
+
+    Pass a user's `cv_parsing_provider`/`cv_parsing_model` (see
+    services/ai_models.py for the admin-managed catalog) to parse their CV
+    with their chosen provider. Called with no args, falls back to the
+    app-wide default from LLM_PROVIDER in .env — unchanged behavior for
+    users who haven't picked one. Cached per (provider, model) pair since
+    the catalog stays small.
+    """
+    return _make_llm(provider or settings.llm_provider, model or "")
 
 
-@lru_cache(maxsize=1)
-def get_rating_llm() -> BaseChatModel:
+@lru_cache(maxsize=32)
+def get_rating_llm(
+    provider: str | None = None, model: str | None = None
+) -> BaseChatModel:
     """
     LLM used ONLY for rating jobs (the heavy part when you have 600+ jobs).
 
-    This can be a COMPLETELY DIFFERENT provider and model than the main LLM.
-    Controlled by RATING_PROVIDER and RATING_MODEL in .env.
+    Pass a user's `rating_provider`/`rating_model` (see services/ai_models.py
+    for the admin-managed catalog they're picked from) to rate with their chosen
+    provider. Called with no args, falls back to the app-wide default from
+    RATING_PROVIDER/RATING_MODEL in .env — unchanged behavior for users who
+    haven't picked a provider. Cached per (provider, model) pair since the
+    catalog stays small.
     """
-    provider = settings.rating_provider or settings.llm_provider
-    model = settings.rating_model or ""
+    resolved_provider = provider or settings.rating_provider or settings.llm_provider
+    resolved_model = model or settings.rating_model or ""
     # Bulk rating fires many calls back-to-back — bump retries so a
     # transient 429 (tokens-per-minute) backs off and retries instead of
     # failing the job outright. The SDK honors the provider's Retry-After.
-    llm = _make_llm(provider, model, temperature=0.0, max_retries=5)
+    llm = _make_llm(resolved_provider, resolved_model, temperature=0.0, max_retries=5)
 
     # Helpful visibility so you can see what's actually being used for bulk rating
-    # (printed once thanks to caching)
+    # (printed once per distinct provider/model thanks to caching)
     mname = getattr(
         llm, "model", getattr(llm, "model_name", getattr(llm, "model_id", "unknown"))
     )
-    print(f"[rating] Using provider={provider} model={mname}")
-    print(
-        f"[rating] (from .env: RATING_PROVIDER={settings.rating_provider} RATING_MODEL={settings.rating_model})"
-    )
+    print(f"[rating] Using provider={resolved_provider} model={mname}")
     return llm
 
 

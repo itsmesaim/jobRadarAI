@@ -15,6 +15,7 @@ from config import settings
 from services.ai_usage import record_from_llm_response
 from services.jd_text import is_incomplete_jd
 from services.llm import get_rating_llm
+from services.ai_models import get_cost_multiplier, get_default_model_for_provider
 from services.cv_latex_boilerplate import (
     format_boilerplate_section,
     suggested_tex_filename,
@@ -28,6 +29,7 @@ def _attribution_line(user: dict) -> str:
     name = user.get("name") or "you"
     when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     return f"Built by JobRadarAI ({settings.frontend_url.rstrip('/')}) for {name} on {when}"
+
 
 APPLY_PACK_SYSTEM_PROMPT = """
 You help a candidate tailor their application for ONE specific job using ONLY their MASTER CV.
@@ -197,7 +199,9 @@ def _cv_context(user: dict) -> str:
     return json.dumps(payload, indent=2)[:12000]
 
 
-def format_apply_pack(job: dict, rating: dict, content: ApplyPackContent, user: dict) -> str:
+def format_apply_pack(
+    job: dict, rating: dict, content: ApplyPackContent, user: dict
+) -> str:
     matched = content.ats_keywords_matched or []
     missing = content.ats_keywords_missing or []
     xyz = content.xyz_bullets or []
@@ -349,13 +353,22 @@ async def generate_apply_pack(job: dict, user: dict, rating: dict) -> str:
     jd_text = (job.get("full_text") or "")[:5000]
     user_id = str(user.get("_id", ""))
 
-    llm = get_rating_llm()
+    user_provider = user.get("rating_provider") or None
+    user_model = user.get("rating_model") or (
+        await get_default_model_for_provider(user_provider, "rating")
+        if user_provider
+        else None
+    )
+    cost_multiplier = await get_cost_multiplier(user_provider, user_model, "rating")
+    llm = get_rating_llm(provider=user_provider, model=user_model)
     structured_llm = llm.with_structured_output(
         ApplyPackContent, include_raw=True, method="function_calling"
     )
-    provider = settings.rating_provider or settings.llm_provider
+    provider = user_provider or settings.rating_provider or settings.llm_provider
     model = getattr(
-        llm, "model", getattr(llm, "model_name", settings.rating_model or "unknown")
+        llm,
+        "model",
+        getattr(llm, "model_name", user_model or settings.rating_model or "unknown"),
     )
 
     human = f"""
@@ -392,6 +405,7 @@ CANDIDATE (JSON):
                 operation="apply_pack",
                 provider=provider,
                 model=str(model),
+                cost_multiplier=cost_multiplier,
             )
     else:
         parsed = raw_result

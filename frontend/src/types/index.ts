@@ -79,7 +79,30 @@ export interface UserPreferences {
   work_mode: WorkMode;
   about_me: string;
   email_reminders_enabled: boolean;
+  reminder_hours: number[];
   timezone: string;
+  rating_provider: string;
+  rating_model: string;
+  rating_model_request?: { model: string; note: string; requested_at: string } | null;
+  cv_parsing_provider: string;
+  cv_parsing_model: string;
+  cv_parsing_model_request?: { model: string; note: string; requested_at: string } | null;
+  calibration_notes: string;
+  calibration_notes_updated_at: string | null;
+  calibration_notes_source_count: number;
+}
+
+export type ModelPurpose = "rating" | "cv_parsing";
+
+export interface AiModelCatalogEntry {
+  id: string;
+  provider: string;
+  model: string;
+  label: string;
+  purpose: ModelPurpose;
+  cost_multiplier: number;
+  active: boolean;
+  is_default: boolean;
 }
 
 export interface CVData {

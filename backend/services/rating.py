@@ -31,6 +31,7 @@ from services.ai_usage import (
     record_from_llm_response,
 )
 from services.llm import get_embeddings, get_llm, get_rating_llm
+from services.ai_models import get_cost_multiplier, get_default_model_for_provider
 from services.limits import (
     _get_fresh_user,
     check_ai_token_quota,
@@ -488,6 +489,23 @@ def _build_about_me_block(user: dict) -> str:
     return f"Additional candidate context (weight this alongside CV skills and overrides):\n{about_me}"
 
 
+def _build_calibration_notes_block(user: dict) -> str:
+    """
+    Standing rules distilled from ALL of the user's past rating feedback
+    (services/calibration.py) — unlike _retrieve_similar_rated_jobs below,
+    this applies to EVERY rating, not just embedding-similar past jobs.
+    """
+    notes = (user.get("calibration_notes") or "").strip()
+    if not notes:
+        return ""
+    return (
+        "Standing rules from this candidate's past feedback on your ratings "
+        "(apply these to every rating, they're recurring corrections, not "
+        "one-off comments):\n"
+        f"{notes}"
+    )
+
+
 # ── Quota helpers ─────────────────────────────────────────────────────────────
 
 _NON_BILLABLE_VERDICT_PREFIXES = (
@@ -601,6 +619,7 @@ Education: {json.dumps(structured.get('education', []))}
     about_me_block = _build_about_me_block(user)
     overrides_block = _build_overrides_block(user)
     constraints_block = _build_constraints_block(user)
+    calibration_block = _build_calibration_notes_block(user)
 
     from services.jd_text import is_incomplete_jd
 
@@ -646,6 +665,9 @@ Education: {json.dumps(structured.get('education', []))}
     if overrides_block:
         sections += ["", "CANDIDATE KNOWLEDGE OVERRIDES:", overrides_block]
 
+    if calibration_block:
+        sections += ["", calibration_block]
+
     sections += ["", "CANDIDATE STATED CONSTRAINTS:", constraints_block]
 
     if similar_block:
@@ -663,7 +685,11 @@ Education: {json.dumps(structured.get('education', []))}
     ]
 
     async def _try_structured(
-        llm, provider_label: str, model_label: str, max_attempts: int
+        llm,
+        provider_label: str,
+        model_label: str,
+        max_attempts: int,
+        cost_multiplier: float = 1.0,
     ):
         """Retry a structured rating call against one LLM. Some providers
         (observed with DeepSeek) intermittently report finish_reason=
@@ -692,6 +718,7 @@ Education: {json.dumps(structured.get('education', []))}
                         model=model_label,
                         prompt_chars=prompt_chars,
                         completion_chars=completion_chars,
+                        cost_multiplier=cost_multiplier,
                     )
             else:
                 parsed = raw_result
@@ -703,6 +730,7 @@ Education: {json.dumps(structured.get('education', []))}
                         model=model_label,
                         llm_calls=1,
                         prompt_tokens=max(prompt_chars // 4, 1),
+                        cost_multiplier=cost_multiplier,
                     )
 
             if parsed is not None:
@@ -719,13 +747,28 @@ Education: {json.dumps(structured.get('education', []))}
         return None
 
     try:
-        llm = get_rating_llm()
-        provider = settings.rating_provider or settings.llm_provider
-        model = getattr(
-            llm, "model", getattr(llm, "model_name", settings.rating_model or "unknown")
+        user_provider = user.get("rating_provider") or None
+        user_model = user.get("rating_model") or (
+            await get_default_model_for_provider(user_provider, "rating")
+            if user_provider
+            else None
         )
-        print(f"[rating] [job] LLM invoke provider={provider} model={model}")
-        result = await _try_structured(llm, provider, str(model), max_attempts=3)
+        cost_multiplier = await get_cost_multiplier(user_provider, user_model, "rating")
+        llm = get_rating_llm(provider=user_provider, model=user_model)
+        provider = user_provider or settings.rating_provider or settings.llm_provider
+        model = getattr(
+            llm,
+            "model",
+            getattr(
+                llm, "model_name", user_model or settings.rating_model or "unknown"
+            ),
+        )
+        print(
+            f"[rating] [job] LLM invoke provider={provider} model={model} cost_multiplier={cost_multiplier}"
+        )
+        result = await _try_structured(
+            llm, provider, str(model), max_attempts=3, cost_multiplier=cost_multiplier
+        )
         used_by = f"{provider}:{model}"
 
         # If the (usually cheaper) rating provider keeps failing to return a

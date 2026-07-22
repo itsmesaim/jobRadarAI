@@ -865,10 +865,18 @@
   }
 
   .settings-page {
-    max-width: 700px;
+    max-width: 1080px;
     margin: 0 auto;
     padding: var(--space-6) var(--space-4) var(--space-7);
     width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: var(--space-6);
+    align-items: start;
+  }
+
+  .settings-content {
     min-width: 0;
   }
 
@@ -877,6 +885,7 @@
   }
 
   .settings-header {
+    grid-column: 1 / -1;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -955,45 +964,38 @@
     margin-bottom: var(--space-4);
   }
 
-  .settings-jump-nav {
+  .settings-sidebar {
     display: flex;
-    gap: var(--space-2);
-    overflow-x: auto;
-    scrollbar-width: none;
-    margin-bottom: var(--space-5);
-    padding-bottom: 2px;
+    flex-direction: column;
+    gap: 2px;
     position: sticky;
-    top: 60px;
-    z-index: 30;
-    background: var(--bg-page);
-    padding-top: var(--space-2);
+    top: 76px;
   }
 
-  .settings-jump-nav::-webkit-scrollbar {
-    display: none;
-  }
-
-  .settings-jump-pill {
-    flex-shrink: 0;
-    display: inline-flex;
+  .settings-sidebar-link {
+    display: flex;
     align-items: center;
     gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--border);
-    background: var(--bg-card);
+    padding: 9px 12px;
+    border-radius: var(--radius-sm);
     color: var(--text-secondary);
-    font-size: var(--text-xs);
+    font-size: var(--text-sm);
     font-weight: 500;
     text-decoration: none;
-    white-space: nowrap;
     transition: all 0.15s;
   }
 
-  .settings-jump-pill:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: var(--accent-light);
+  .settings-sidebar-link:hover {
+    background: var(--bg-secondary);
+    color: var(--text);
+  }
+
+  .settings-eyebrow {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: var(--space-2);
   }
 
   .settings-group {
@@ -1254,6 +1256,7 @@
     }
 
     .settings-page {
+      grid-template-columns: 1fr;
       padding: var(--space-4) var(--space-3) var(--space-6);
     }
 
@@ -1290,14 +1293,31 @@
       margin-bottom: var(--space-3);
     }
 
-    .settings-jump-nav {
+    .settings-sidebar {
+      position: sticky;
+      top: 60px;
+      z-index: 30;
+      flex-direction: row;
+      overflow-x: auto;
+      scrollbar-width: none;
+      gap: var(--space-2);
+      background: var(--bg-page);
       margin: 0 calc(-1 * var(--space-3)) var(--space-4);
       padding: var(--space-2) var(--space-3) var(--space-1);
     }
 
-    .settings-jump-pill {
+    .settings-sidebar::-webkit-scrollbar {
+      display: none;
+    }
+
+    .settings-sidebar-link {
+      flex-shrink: 0;
+      white-space: nowrap;
       padding: var(--space-2) var(--space-3);
       font-size: var(--text-xs);
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border);
+      background: var(--bg-card);
     }
 
     .settings-group {
@@ -1493,11 +1513,33 @@
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
+    /* .landing-nav-links carries the margin-left:auto that pushes the right
+       side of the bar over — but it's display:none on mobile until opened,
+       so nothing pushes this group right without its own auto margin.
+       Without this, the toggle + hamburger sit bunched against the logo on
+       mobile instead of at the right edge. */
+    margin-left: auto;
+  }
+
+  /* Icon-only buttons in the nav (theme toggle, hamburger) read as clunky
+     boxes with the default .btn-ghost border — drop it here for a plain
+     icon-button feel, hover state does the affordance instead. */
+  .landing-nav-actions .btn-ghost {
+    width: 40px;
+    height: 40px;
+    padding: 0 !important;
+    justify-content: center;
+    border: none !important;
+    background: transparent !important;
+    border-radius: var(--radius) !important;
+  }
+
+  .landing-nav-actions .btn-ghost:hover:not(:disabled) {
+    background: var(--bg-hover) !important;
   }
 
   .landing-menu-btn {
     display: none;
-    padding: 8px 10px !important;
   }
 
   .landing-main {
@@ -1530,6 +1572,54 @@
     color: var(--accent);
     background: var(--accent-light);
     border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+    opacity: 0;
+    animation: hero-fade-up 0.6s ease forwards;
+  }
+
+  @keyframes hero-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .landing-hero-title span {
+    opacity: 0;
+    animation: hero-fade-up 0.6s ease forwards;
+    animation-delay: calc(80ms + var(--word-i, 0) * 45ms);
+  }
+
+  .landing-hero-sub {
+    opacity: 0;
+    animation: hero-fade-up 0.6s ease forwards;
+    animation-delay: 0.35s;
+  }
+
+  .landing-hero-actions {
+    opacity: 0;
+    animation: hero-fade-up 0.6s ease forwards;
+    animation-delay: 0.45s;
+  }
+
+  .landing-stats {
+    opacity: 0;
+    animation: hero-fade-up 0.6s ease forwards;
+    animation-delay: 0.55s;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .landing-eyebrow,
+    .landing-hero-title span,
+    .landing-hero-sub,
+    .landing-hero-actions,
+    .landing-stats {
+      animation: none;
+      opacity: 1;
+    }
   }
 
   .landing-hero-title {
@@ -1994,21 +2084,235 @@
     color: var(--text);
   }
 
-  .landing-flow-card ol {
-    margin: 0;
-    padding: 0 0 0 18px;
-    display: grid;
-    gap: 16px;
+  /* Scroll-reveal — fade + rise once a section enters the viewport (see
+     src/components/Reveal.tsx). Reduced-motion users get the end state
+     immediately, no animation. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(18px);
+    transition:
+      opacity 0.6s ease,
+      transform 0.6s ease;
   }
 
-  .landing-flow-card li {
-    font-size: 14px;
-    color: var(--text-secondary);
-    line-height: 1.6;
+  .reveal.is-visible {
+    opacity: 1;
+    transform: translateY(0);
   }
 
-  .landing-flow-card strong {
+  @media (prefers-reduced-motion: reduce) {
+    .reveal {
+      transition: none;
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Per-child stagger on top of .reveal — each direct child fades in with an
+     increasing delay once the parent enters the viewport. */
+  .landing-stagger > * {
+    opacity: 0;
+    transform: translateY(14px);
+    transition:
+      opacity 0.5s ease,
+      transform 0.5s ease;
+  }
+
+  .reveal.is-visible.landing-stagger > * {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .landing-stagger > *:nth-child(1) {
+    transition-delay: 0ms;
+  }
+  .landing-stagger > *:nth-child(2) {
+    transition-delay: 70ms;
+  }
+  .landing-stagger > *:nth-child(3) {
+    transition-delay: 140ms;
+  }
+  .landing-stagger > *:nth-child(4) {
+    transition-delay: 210ms;
+  }
+  .landing-stagger > *:nth-child(5) {
+    transition-delay: 280ms;
+  }
+  .landing-stagger > *:nth-child(6) {
+    transition-delay: 350ms;
+  }
+  .landing-stagger > *:nth-child(7) {
+    transition-delay: 420ms;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .landing-stagger > * {
+      transition: none;
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Flow diagram — connected icon-node sequence (src/components/FlowDiagram.tsx) */
+  .flow-diagram {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 18px 0;
+  }
+
+  .flow-diagram-step {
+    display: flex;
+    align-items: center;
+    flex: 0 1 auto;
+    max-width: 210px;
+    opacity: 0;
+    transform: translateY(10px);
+    animation: flow-step-in 0.5s ease forwards;
+    animation-delay: var(--flow-delay, 0ms);
+  }
+
+  @keyframes flow-step-in {
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .flow-diagram-step {
+      animation: none;
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .flow-diagram-node {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: var(--accent-light);
+    color: var(--accent);
+    border: 1px solid var(--border);
+  }
+
+  .flow-diagram-node.tone-purple {
+    background: var(--purple-bg);
+    color: var(--purple);
+  }
+
+  .flow-diagram-node.tone-success {
+    background: var(--success-bg);
+    color: var(--success);
+  }
+
+  .flow-diagram-node.tone-warning {
+    background: var(--warning-bg);
+    color: var(--warning);
+  }
+
+  .flow-diagram-text {
+    margin-left: 10px;
+    min-width: 0;
+  }
+
+  .flow-diagram-text h4 {
+    margin: 0 0 2px;
+    font-size: 13px;
+    font-weight: 700;
     color: var(--text);
+  }
+
+  .flow-diagram-text p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+
+  .flow-diagram-arrow {
+    flex: 0 0 24px;
+    height: 2px;
+    margin: 0 4px;
+    align-self: center;
+    position: relative;
+    background-image: linear-gradient(90deg, var(--border) 50%, transparent 50%);
+    background-size: 6px 2px;
+  }
+
+  .flow-diagram-arrow::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    border-top: 2px solid var(--border);
+    border-right: 2px solid var(--border);
+    transform: translateY(-50%) rotate(45deg);
+  }
+
+  @media (max-width: 860px) {
+    .flow-diagram {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 4px;
+    }
+
+    .flow-diagram-step {
+      flex: none;
+      max-width: none;
+      padding: 6px 0;
+    }
+
+    .flow-diagram-arrow {
+      display: none;
+    }
+  }
+
+  /* GDPR rights grid */
+  .gdpr-rights-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+  }
+
+  .gdpr-right-card {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 14px 16px;
+  }
+
+  .gdpr-right-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: var(--success-bg);
+    color: var(--success);
+  }
+
+  .gdpr-right-card h4 {
+    margin: 0 0 2px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .gdpr-right-card p {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    line-height: 1.5;
   }
 
   .landing-cta-section {
@@ -2117,7 +2421,7 @@
 
   @media (max-width: 768px) {
     .landing-nav-links {
-      display: none;
+      display: flex;
       position: absolute;
       top: 100%;
       left: 0;
@@ -2129,10 +2433,25 @@
       background: var(--bg-card);
       border-bottom: 1px solid var(--border);
       box-shadow: var(--shadow-md);
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-6px);
+      transition:
+        opacity 0.18s ease,
+        transform 0.18s ease,
+        visibility 0.18s;
     }
 
     .landing-nav-links.is-open {
-      display: flex;
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .landing-nav-links {
+        transition: none;
+      }
     }
 
     .landing-nav-links a:not(.btn) {

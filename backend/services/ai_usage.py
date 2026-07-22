@@ -94,12 +94,20 @@ async def record_ai_usage(
     embedding_tokens: int = 0,
     llm_calls: int = 1,
     embedding_calls: int = 0,
+    cost_multiplier: float = 1.0,
 ) -> None:
     if not user_id:
         return
 
-    total_tokens = prompt_tokens + completion_tokens + embedding_tokens
+    # $ estimate uses the real token counts (actual provider spend); quota
+    # consumption (below) is weighted by cost_multiplier so a pricier catalog
+    # model burns through the daily free-tier quota faster than a cheap one.
     cost = _estimate_cost_usd(prompt_tokens, completion_tokens, embedding_tokens)
+    if cost_multiplier != 1.0:
+        prompt_tokens = round(prompt_tokens * cost_multiplier)
+        completion_tokens = round(completion_tokens * cost_multiplier)
+        embedding_tokens = round(embedding_tokens * cost_multiplier)
+    total_tokens = prompt_tokens + completion_tokens + embedding_tokens
     month = _current_month_key()
 
     inc: dict = {
@@ -177,6 +185,7 @@ async def record_from_llm_response(
     model: str = "",
     prompt_chars: int = 0,
     completion_chars: int = 0,
+    cost_multiplier: float = 1.0,
 ) -> None:
     if not user_id or message is None:
         return
@@ -196,6 +205,7 @@ async def record_from_llm_response(
         prompt_tokens=usage["prompt_tokens"],
         completion_tokens=usage["completion_tokens"],
         llm_calls=1,
+        cost_multiplier=cost_multiplier,
     )
 
 

@@ -20,6 +20,25 @@ from services.job_dedup import content_fingerprint, hash_url, job_exists_for_use
 JOOBLE_BASE = "https://jooble.org/api"
 MAX_JOB_AGE_DAYS = 21
 
+# Jooble's own index lags behind the source site — a listing can be "updated"
+# recently in Jooble while the actual posting was pulled. Since expired
+# postings on most boards redirect (200 OK) to a generic page instead of
+# 404ing, an HTTP 200 alone doesn't mean the job is still live — check the
+# scraped page for the phrases boards use on that fallback page.
+_DEAD_LISTING_MARKERS = (
+    "no longer available",
+    "no longer accepting applications",
+    "position has been filled",
+    "job has expired",
+    "posting has expired",
+    "vacancy is closed",
+    "vacancy has closed",
+    "job not found",
+    "page not found",
+    "this job is closed",
+    "this position is closed",
+)
+
 
 def _build_search_terms(user: dict) -> list[str]:
     primary_role = user.get("primary_role", "Full Stack Developer")
@@ -170,6 +189,15 @@ async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) 
                         skipped += 1
                         continue
 
+                    # Expired listings on most boards redirect (200 OK) to a
+                    # generic page instead of 404ing — catch that here so a
+                    # dead posting doesn't get stored and shown as live.
+                    if any(
+                        marker in full_text.lower() for marker in _DEAD_LISTING_MARKERS
+                    ):
+                        skipped += 1
+                        continue
+
                     # === Relevance filter to avoid non-relevant jobs (saves tokens later) ===
                     if not _is_relevant_job(full_text, snippet, user):
                         skipped += 1
@@ -244,7 +272,7 @@ async def _fetch_full_text(client: httpx.AsyncClient, url: str) -> str:
         headers = {"User-Agent": "Mozilla/5.0 (compatible; JobRadarBot/1.0)"}
         r = await client.get(url, headers=headers, follow_redirects=True, timeout=10)
         if r.status_code == 200:
-            return r.text[:8000]
+            return _clean_html(r.text[:20000])[:8000]
     except Exception:
         pass
     return ""

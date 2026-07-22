@@ -420,7 +420,7 @@ export function Dashboard() {
         if (!isFullAccess && (ratingsLeft <= 0 || tokensBlocked)) {
           toast.error(
             tokensBlocked
-              ? "AI token limit reached. New jobs saved but not rated. Resets at midnight UTC or contact admin."
+              ? "AI token limit reached. New jobs saved but not rated. Resets at midnight local time or contact admin."
               : "Rating limit reached. New jobs saved but not rated. Contact admin or wait for reset.",
             { duration: 6000 },
           );
@@ -755,7 +755,7 @@ export function Dashboard() {
               <AlertCircle size={12} />
               {isMonthlyTokensLimited
                 ? "Monthly AI limit reached, resets on the 1st, or contact admin for credits"
-                : "Daily AI limit reached, resets at midnight UTC, or contact admin for credits"}
+                : "Daily AI limit reached, resets at midnight local time, or contact admin for credits"}
             </div>
           )}
         </div>

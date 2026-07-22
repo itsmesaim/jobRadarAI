@@ -13,12 +13,15 @@ import {
   Ban,
   AlertTriangle,
   RefreshCw,
+  Plus,
 } from "lucide-react";
 import { ProgressBar } from "../components/ProgressBar";
+import { SetRatingModelModal } from "../components/SetRatingModelModal";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useAuthStore } from "../hooks/useStores";
 import { adminApi, jobsApi } from "../api";
 import { toast } from "react-hot-toast";
+import type { AiModelCatalogEntry, ModelPurpose } from "../types";
 
 interface AiUsageSnapshot {
   total_tokens?: number;
@@ -78,6 +81,12 @@ interface AdminUser {
   suspended?: boolean;
   suspended_reason?: string;
   suspended_at?: string;
+  rating_provider?: string;
+  rating_model?: string;
+  rating_model_request?: { model: string; note: string; requested_at: string } | null;
+  cv_parsing_provider?: string;
+  cv_parsing_model?: string;
+  cv_parsing_model_request?: { model: string; note: string; requested_at: string } | null;
 }
 
 function formatTokens(n?: number) {
@@ -544,7 +553,22 @@ function AdminUserCard({ user, onOpen }: { user: AdminUser; onOpen: () => void }
             {user.email}
           </div>
         </div>
-        <StatusBadge user={user} />
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+          <StatusBadge user={user} />
+          {user.rating_model_request && (
+            <span
+              className="badge"
+              style={{
+                background: "var(--accent-light)",
+                color: "var(--accent)",
+                border: "1px solid var(--border)",
+              }}
+              title={`Requested: ${user.rating_model_request.model}`}
+            >
+              Model requested
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="admin-stat-row">
@@ -665,17 +689,23 @@ function ActivityStat({ label, value, stale }: { label: string; value: string; s
 function UserDetailModal({
   user,
   basePath,
+  ratingModels,
+  cvParsingModels,
   onClose,
   onChanged,
 }: {
   user: AdminUser;
   basePath: string;
+  ratingModels: AiModelCatalogEntry[];
+  cvParsingModels: AiModelCatalogEntry[];
   onClose: () => void;
   onChanged: () => void;
 }) {
   const [editingAccess, setEditingAccess] = useState(false);
   const [form, setForm] = useState<EditForm>(() => buildFormFromUser(user));
   const [busy, setBusy] = useState(false);
+  const [showSetRatingModel, setShowSetRatingModel] = useState(false);
+  const [showSetCvParsingModel, setShowSetCvParsingModel] = useState(false);
 
   useEffect(() => {
     setForm(buildFormFromUser(user));
@@ -726,6 +756,34 @@ function UserDetailModal({
       } finally {
         setBusy(false);
       }
+    }
+  };
+
+  const handleSetRatingModel = async (provider: string, model: string) => {
+    setBusy(true);
+    try {
+      await adminApi.setModel(basePath, user.id, { provider, model, purpose: "rating" });
+      toast.success(`Set ${user.email}'s rating model to ${provider}/${model}`);
+      setShowSetRatingModel(false);
+      onChanged();
+    } catch {
+      toast.error("Failed to set rating model");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSetCvParsingModel = async (provider: string, model: string) => {
+    setBusy(true);
+    try {
+      await adminApi.setModel(basePath, user.id, { provider, model, purpose: "cv_parsing" });
+      toast.success(`Set ${user.email}'s CV-parsing model to ${provider}/${model}`);
+      setShowSetCvParsingModel(false);
+      onChanged();
+    } catch {
+      toast.error("Failed to set CV-parsing model");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -990,6 +1048,121 @@ function UserDetailModal({
             borderTop: "1px solid var(--border)",
           }}
         >
+          <p className="label" style={{ marginBottom: "var(--space-3)" }}>
+            Custom rating model
+          </p>
+          <p
+            style={{
+              fontSize: "var(--text-sm)",
+              color: "var(--text-muted)",
+              marginBottom: "var(--space-3)",
+            }}
+          >
+            Current: {user.rating_provider || "default"}
+            {user.rating_model ? ` / ${user.rating_model}` : ""}. Overrides the curated Settings
+            picker (mistral/openai/deepseek) with any provider/model.
+          </p>
+          {user.rating_model_request && (
+            <p
+              style={{
+                fontSize: "var(--text-sm)",
+                color: "var(--accent)",
+                marginBottom: "var(--space-3)",
+              }}
+            >
+              Requested: <strong>{user.rating_model_request.model}</strong>
+              {user.rating_model_request.note ? `: "${user.rating_model_request.note}"` : ""}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowSetRatingModel(true)}
+            disabled={busy}
+            className="btn btn-secondary"
+          >
+            Set rating model
+          </button>
+        </div>
+
+        <div
+          style={{
+            marginTop: "var(--space-5)",
+            paddingTop: 18,
+            borderTop: "1px solid var(--border)",
+          }}
+        >
+          <p className="label" style={{ marginBottom: "var(--space-3)" }}>
+            Custom CV-parsing model
+          </p>
+          <p
+            style={{
+              fontSize: "var(--text-sm)",
+              color: "var(--text-muted)",
+              marginBottom: "var(--space-3)",
+            }}
+          >
+            Current: {user.cv_parsing_provider || "default"}
+            {user.cv_parsing_model ? ` / ${user.cv_parsing_model}` : ""}. Overrides the self-service
+            Settings picker with any provider/model.
+          </p>
+          {user.cv_parsing_model_request && (
+            <p
+              style={{
+                fontSize: "var(--text-sm)",
+                color: "var(--accent)",
+                marginBottom: "var(--space-3)",
+              }}
+            >
+              Requested: <strong>{user.cv_parsing_model_request.model}</strong>
+              {user.cv_parsing_model_request.note
+                ? `: "${user.cv_parsing_model_request.note}"`
+                : ""}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowSetCvParsingModel(true)}
+            disabled={busy}
+            className="btn btn-secondary"
+          >
+            Set CV-parsing model
+          </button>
+        </div>
+
+        {showSetRatingModel && (
+          <SetRatingModelModal
+            userEmail={user.email}
+            defaultProvider={user.rating_provider || ""}
+            defaultModel={user.rating_model || user.rating_model_request?.model || ""}
+            pendingNote={user.rating_model_request?.note}
+            models={ratingModels}
+            busy={busy}
+            onSubmit={handleSetRatingModel}
+            onCancel={() => setShowSetRatingModel(false)}
+          />
+        )}
+
+        {showSetCvParsingModel && (
+          <SetRatingModelModal
+            title="Set CV-parsing model"
+            userEmail={user.email}
+            defaultProvider={user.cv_parsing_provider || ""}
+            defaultModel={user.cv_parsing_model || user.cv_parsing_model_request?.model || ""}
+            pendingNote={user.cv_parsing_model_request?.note}
+            models={cvParsingModels}
+            busy={busy}
+            onSubmit={handleSetCvParsingModel}
+            onCancel={() => setShowSetCvParsingModel(false)}
+          />
+        )}
+
+        <div
+          style={{
+            marginTop: "var(--space-5)",
+            paddingTop: 18,
+            borderTop: "1px solid var(--border)",
+          }}
+        >
           <p className="label" style={{ marginBottom: "var(--space-3)", color: "var(--danger)" }}>
             Danger zone
           </p>
@@ -1141,7 +1314,7 @@ function ForceRerateAllPanel() {
           Force re-rate all my saved jobs
         </div>
         <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
-          Re-runs the AI rating on every job you've already scored (admin-only — use after a
+          Re-runs the AI rating on every job you've already scored (admin-only, use after a
           rating-logic fix). Overwrites existing scores.
         </div>
       </div>
@@ -1171,6 +1344,280 @@ function ForceRerateAllPanel() {
         <RefreshCw size={14} />
         {loading ? "Starting…" : "Re-rate all"}
       </button>
+    </div>
+  );
+}
+
+function AiModelsPanel({
+  basePath,
+  ratingModels,
+  cvParsingModels,
+  onRatingChanged,
+  onCvParsingChanged,
+}: {
+  basePath: string;
+  ratingModels: AiModelCatalogEntry[];
+  cvParsingModels: AiModelCatalogEntry[];
+  onRatingChanged: () => void;
+  onCvParsingChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [purpose, setPurpose] = useState<ModelPurpose>("rating");
+  const [provider, setProvider] = useState("");
+  const [model, setModel] = useState("");
+  const [label, setLabel] = useState("");
+  const [costMultiplier, setCostMultiplier] = useState("1.0");
+  const [saving, setSaving] = useState(false);
+
+  const models = purpose === "rating" ? ratingModels : cvParsingModels;
+  const onChanged = purpose === "rating" ? onRatingChanged : onCvParsingChanged;
+
+  const handleAdd = async () => {
+    if (!provider.trim() || !model.trim()) return toast.error("Provider and model are required");
+    setSaving(true);
+    try {
+      await adminApi.addAiModel(basePath, {
+        provider: provider.trim(),
+        model: model.trim(),
+        label: label.trim(),
+        purpose,
+        cost_multiplier: parseFloat(costMultiplier) || 1.0,
+      });
+      toast.success("Model added");
+      setProvider("");
+      setModel("");
+      setLabel("");
+      setCostMultiplier("1.0");
+      onChanged();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Failed to add model");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleActive = async (m: AiModelCatalogEntry) => {
+    try {
+      await adminApi.updateAiModelEntry(basePath, m.id, { active: !m.active });
+      onChanged();
+    } catch {
+      toast.error("Failed to update model");
+    }
+  };
+
+  const setAsDefault = async (m: AiModelCatalogEntry) => {
+    try {
+      await adminApi.updateAiModelEntry(basePath, m.id, { is_default: true });
+      toast.success(`${m.label} is now the app default`);
+      onChanged();
+    } catch {
+      toast.error("Failed to set default");
+    }
+  };
+
+  const handleDelete = async (m: AiModelCatalogEntry) => {
+    try {
+      await adminApi.deleteAiModelEntry(basePath, m.id);
+      toast.success("Model removed");
+      onChanged();
+    } catch {
+      toast.error("Failed to delete model");
+    }
+  };
+
+  return (
+    <div className="card" style={{ padding: 0, marginTop: "var(--space-6)", overflow: "hidden" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "16px 20px",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          gap: "var(--space-3)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "var(--radius-sm)",
+              background: "var(--accent-light)",
+              border: "1px solid var(--border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <Cpu size={15} style={{ color: "var(--accent)" }} />
+          </div>
+          <div style={{ textAlign: "left" }}>
+            <div style={{ fontSize: "var(--text-base)", fontWeight: 600, color: "var(--text)" }}>
+              AI models
+            </div>
+            <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+              Models users can pick in Settings, add new ones here, no deploy needed
+            </div>
+          </div>
+        </div>
+        {open ? (
+          <ChevronUp size={16} style={{ color: "var(--text-muted)" }} />
+        ) : (
+          <ChevronDown size={16} style={{ color: "var(--text-muted)" }} />
+        )}
+      </button>
+
+      {open && (
+        <div style={{ borderTop: "1px solid var(--border)", padding: "20px" }}>
+          <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-4)" }}>
+            {(["rating", "cv_parsing"] as ModelPurpose[]).map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPurpose(p)}
+                className="btn btn-ghost"
+                style={{
+                  fontSize: "var(--text-xs)",
+                  padding: "6px 12px",
+                  border: `1px solid ${purpose === p ? "var(--accent)" : "var(--border)"}`,
+                  color: purpose === p ? "var(--accent)" : "var(--text-secondary)",
+                  fontWeight: purpose === p ? 600 : 400,
+                }}
+              >
+                {p === "rating" ? "Rating" : "CV parsing"}
+              </button>
+            ))}
+          </div>
+          <div style={{ overflowX: "auto", marginBottom: "var(--space-5)" }}>
+            <table
+              style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-sm)" }}
+            >
+              <thead>
+                <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
+                  <th style={{ padding: "6px 8px" }}>Provider</th>
+                  <th style={{ padding: "6px 8px" }}>Model</th>
+                  <th style={{ padding: "6px 8px" }}>Label</th>
+                  <th style={{ padding: "6px 8px" }}>Quota cost</th>
+                  <th style={{ padding: "6px 8px" }}>Default</th>
+                  <th style={{ padding: "6px 8px" }}>Active</th>
+                  <th style={{ padding: "6px 8px" }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {models.map((m) => (
+                  <tr key={m.id} style={{ borderTop: "1px solid var(--border)" }}>
+                    <td style={{ padding: "6px 8px" }}>{m.provider}</td>
+                    <td style={{ padding: "6px 8px", fontFamily: "monospace" }}>{m.model}</td>
+                    <td style={{ padding: "6px 8px" }}>{m.label}</td>
+                    <td style={{ padding: "6px 8px" }}>{m.cost_multiplier}x</td>
+                    <td style={{ padding: "6px 8px" }}>
+                      {m.is_default ? (
+                        <span style={{ color: "var(--accent)", fontWeight: 600 }}>Default</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setAsDefault(m)}
+                          className="btn btn-ghost"
+                          style={{ fontSize: "var(--text-xs)", padding: "4px 8px" }}
+                        >
+                          Set default
+                        </button>
+                      )}
+                    </td>
+                    <td style={{ padding: "6px 8px" }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleActive(m)}
+                        className="btn btn-ghost"
+                        style={{ fontSize: "var(--text-xs)", padding: "4px 8px" }}
+                      >
+                        {m.active ? "Active" : "Disabled"}
+                      </button>
+                    </td>
+                    <td style={{ padding: "6px 8px" }}>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(m)}
+                        className="btn btn-ghost"
+                        style={{
+                          fontSize: "var(--text-xs)",
+                          padding: "4px 8px",
+                          color: "var(--danger)",
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {models.length === 0 && (
+                  <tr>
+                    <td colSpan={7} style={{ padding: "10px 8px", color: "var(--text-muted)" }}>
+                      No models yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="label" style={{ marginBottom: "var(--space-3)" }}>
+            Add a model
+          </p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+              gap: "var(--space-3)",
+              marginBottom: "var(--space-3)",
+            }}
+          >
+            <input
+              className="input"
+              placeholder="Provider (e.g. deepseek)"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+            />
+            <input
+              className="input"
+              placeholder="Model (e.g. deepseek-reasoner)"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+            />
+            <input
+              className="input"
+              placeholder="Label shown to users"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+            />
+            <input
+              className="input"
+              type="number"
+              step="0.1"
+              min="0.1"
+              placeholder="Quota cost multiplier"
+              value={costMultiplier}
+              onChange={(e) => setCostMultiplier(e.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={saving}
+            className="btn btn-primary"
+            style={{ gap: "var(--space-2)" }}
+          >
+            <Plus size={14} />
+            Add model
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1779,6 +2226,28 @@ export function AdminPage() {
   const basePath = user?.adminBasePath || "";
   const isMobile = useIsMobile();
   const [aiSummary, setAiSummary] = useState<PlatformAiSummary | null>(null);
+  const [ratingModels, setRatingModels] = useState<AiModelCatalogEntry[]>([]);
+  const [cvParsingModels, setCvParsingModels] = useState<AiModelCatalogEntry[]>([]);
+
+  const loadRatingModels = async () => {
+    if (!basePath) return;
+    try {
+      const data = await adminApi.listAiModels(basePath, "rating");
+      setRatingModels(data.models || []);
+    } catch {
+      /* non-fatal */
+    }
+  };
+
+  const loadCvParsingModels = async () => {
+    if (!basePath) return;
+    try {
+      const data = await adminApi.listAiModels(basePath, "cv_parsing");
+      setCvParsingModels(data.models || []);
+    } catch {
+      /* non-fatal */
+    }
+  };
 
   const loadUsers = async () => {
     if (!basePath) return;
@@ -1806,6 +2275,8 @@ export function AdminPage() {
   useEffect(() => {
     loadUsers();
     loadAiSummary();
+    loadRatingModels();
+    loadCvParsingModels();
   }, [basePath]);
 
   const filteredUsers = users.filter(
@@ -2156,12 +2627,22 @@ export function AdminPage() {
         <UserDetailModal
           user={selectedUser}
           basePath={basePath}
+          ratingModels={ratingModels}
+          cvParsingModels={cvParsingModels}
           onClose={() => setSelectedUserId(null)}
           onChanged={handleChanged}
         />
       )}
 
       <ForceRerateAllPanel />
+
+      <AiModelsPanel
+        basePath={basePath}
+        ratingModels={ratingModels}
+        cvParsingModels={cvParsingModels}
+        onRatingChanged={loadRatingModels}
+        onCvParsingChanged={loadCvParsingModels}
+      />
 
       <JobCleanupPanel users={users} basePath={basePath} />
 

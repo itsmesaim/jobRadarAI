@@ -20,7 +20,9 @@ from database import get_database
 from deps import get_current_user
 from config import settings
 from services.ai_usage import get_platform_ai_summary
+from services.email import send_model_granted_email, smtp_configured
 from services.limits import admin_list_users, admin_update_user_limits, get_user_usage
+from services.ai_models import create_model, delete_model, list_models, update_model
 
 
 class JobCleanupRequest(BaseModel):
@@ -46,6 +48,27 @@ class UserSuspendUpdate(BaseModel):
     reason: str | None = None
 
 
+class UserModelOverride(BaseModel):
+    provider: str  # e.g. "openai" — not restricted to the self-service catalog
+    model: str  # exact model name for that provider
+    purpose: Literal["rating", "cv_parsing"] = "rating"
+
+
+class AiModelCreate(BaseModel):
+    provider: str
+    model: str
+    label: str = ""
+    purpose: Literal["rating", "cv_parsing"] = "rating"
+    cost_multiplier: float = 1.0
+
+
+class AiModelUpdate(BaseModel):
+    label: str | None = None
+    cost_multiplier: float | None = None
+    active: bool | None = None
+    is_default: bool | None = None
+
+
 class UserAccessUpdate(BaseModel):
     search_limit: int | None = None
     rating_limit: int | None = None
@@ -67,6 +90,51 @@ def _require_admin(user: dict):
         raise HTTPException(
             status_code=http_status.HTTP_403_FORBIDDEN, detail="Admin access only."
         )
+
+
+@router.get("/ai-models")
+async def list_all_ai_models(
+    purpose: Literal["rating", "cv_parsing"] = "rating", user=Depends(get_current_user)
+):
+    _require_admin(user)
+    return {"models": await list_models(purpose)}
+
+
+@router.post("/ai-models")
+async def add_ai_model(payload: AiModelCreate, user=Depends(get_current_user)):
+    _require_admin(user)
+    try:
+        return await create_model(
+            payload.provider.strip(),
+            payload.model.strip(),
+            payload.label.strip(),
+            payload.purpose,
+            payload.cost_multiplier,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=400, detail=f"Could not add model (duplicate?): {e}"
+        )
+
+
+@router.patch("/ai-models/{catalog_id}")
+async def edit_ai_model(
+    catalog_id: str, payload: AiModelUpdate, user=Depends(get_current_user)
+):
+    _require_admin(user)
+    updated = await update_model(catalog_id, **payload.model_dump(exclude_unset=True))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Model not found.")
+    return updated
+
+
+@router.delete("/ai-models/{catalog_id}")
+async def remove_ai_model(catalog_id: str, user=Depends(get_current_user)):
+    _require_admin(user)
+    deleted = await delete_model(catalog_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Model not found.")
+    return {"deleted": True}
 
 
 @router.get("/users")
@@ -131,6 +199,64 @@ async def suspend_user(
         f"user={target.get('email')} reason={payload.reason!r}"
     )
     return {"user_id": user_id, "email": target.get("email"), **update}
+
+
+@router.patch("/users/{user_id}/model")
+async def override_user_model(
+    user_id: str, payload: UserModelOverride, user=Depends(get_current_user)
+):
+    """Grant a user a provider/model outside the self-service catalog, for
+    either purpose (rating or CV-parsing) — for one-off requests."""
+    _require_admin(user)
+    db = get_database()
+
+    target = await db.users.find_one(
+        {"_id": ObjectId(user_id)}, {"email": 1, "name": 1}
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    provider_field = (
+        "rating_provider" if payload.purpose == "rating" else "cv_parsing_provider"
+    )
+    model_field = "rating_model" if payload.purpose == "rating" else "cv_parsing_model"
+    request_field = (
+        "rating_model_request"
+        if payload.purpose == "rating"
+        else "cv_parsing_model_request"
+    )
+
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {
+            "$set": {provider_field: payload.provider, model_field: payload.model},
+            "$unset": {request_field: ""},
+        },
+    )
+    print(
+        f"[admin] Set custom {payload.purpose} model for user={target.get('email')}: "
+        f"{payload.provider}/{payload.model}"
+    )
+
+    if target.get("email") and smtp_configured():
+        try:
+            send_model_granted_email(
+                to_email=target["email"],
+                user_name=target.get("name") or "there",
+                provider=payload.provider,
+                model=payload.model,
+                purpose=payload.purpose,
+            )
+        except Exception as e:
+            print(f"[admin] Failed to email user about granted model: {e}")
+
+    return {
+        "user_id": user_id,
+        "email": target.get("email"),
+        "provider": payload.provider,
+        "model": payload.model,
+        "purpose": payload.purpose,
+    }
 
 
 @router.delete("/users/{user_id}")

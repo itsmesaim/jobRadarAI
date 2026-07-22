@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -6,16 +6,25 @@ import {
   Briefcase,
   Check,
   Clock,
+  Database,
+  Download,
   ExternalLink,
+  Eraser,
+  FileCheck2,
   Kanban,
   LayoutGrid,
+  Lock,
   MapPin,
   Menu,
   Radar,
+  Scale,
+  ScanSearch,
   Search,
   Shield,
+  ShieldCheck,
   Sparkles,
   Star,
+  Upload,
   UserCircle,
   X,
   Zap,
@@ -24,6 +33,8 @@ import { Logo } from "../components/Logo";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { ScoreBadge } from "../components/ScoreBadge";
 import { StatTile } from "../components/StatTile";
+import { Reveal } from "../components/Reveal";
+import { FlowDiagram, type FlowStep } from "../components/FlowDiagram";
 
 const FEATURES = [
   {
@@ -57,8 +68,8 @@ const FEATURES = [
     Icon: Briefcase,
   },
   {
-    title: "EU-hosted & transparent",
-    desc: "CV parsing and job rating both run on Mistral AI, hosted in the EU — no CV or job data leaves the EU for processing. Every rating shows exactly which model scored it.",
+    title: "EU-hosted by default, your choice always",
+    desc: "CV parsing and job rating default to Mistral AI, hosted in the EU. No CV or job data leaves the EU unless you opt into a different provider yourself. Every rating shows exactly which model scored it.",
     Icon: Shield,
   },
 ];
@@ -73,7 +84,7 @@ const WITHOUT = [
 const WITH = [
   "One search across every board, tuned to your roles and locations",
   "Every job scored against your full profile: CV, preferences, and about-you notes",
-  "Rate a rating wrong and it calibrates every similar job after that",
+  "Rate a rating wrong and it calibrates similar jobs immediately, recurring corrections become a standing rule",
   "A Kanban board that shows where each application actually stands",
 ];
 
@@ -81,10 +92,99 @@ const STACK = [
   "React 18 + TypeScript + Vite",
   "FastAPI + Motor (MongoDB)",
   "LangChain (split main + rating LLM)",
-  "Mistral AI — EU-hosted, both CV parsing and rating",
+  "Mistral AI by default (EU-hosted), switch to OpenAI or DeepSeek per model in Settings",
   "FAISS RAG for JD context + rating calibration",
   "TanStack Query + Zustand",
   "Jooble · JobsAPI (Indeed)",
+];
+
+const SEARCH_FLOW: FlowStep[] = [
+  {
+    icon: UserCircle,
+    label: "Build profile",
+    desc: "CV parsed to structured data, plus roles, locations, and skills.",
+    tone: "accent",
+  },
+  {
+    icon: Search,
+    label: "Search jobs",
+    desc: "Jooble + Indeed crawled per market. Duplicates cut.",
+    tone: "purple",
+  },
+  {
+    icon: Sparkles,
+    label: "AI rates it",
+    desc: "1-10 fit score, strengths, gaps, tailoring tips.",
+    tone: "success",
+  },
+  {
+    icon: Star,
+    label: "You rate it back",
+    desc: "Star + note when it's off. Recalibrates from there.",
+    tone: "warning",
+  },
+  {
+    icon: Kanban,
+    label: "Track on Kanban",
+    desc: "Drag through Saved, Applied, Interview, Offer.",
+    tone: "accent",
+  },
+];
+
+const DATA_FLOW: FlowStep[] = [
+  {
+    icon: Upload,
+    label: "You upload your CV",
+    desc: "PDF text extracted server-side, original file discarded.",
+    tone: "accent",
+  },
+  {
+    icon: Eraser,
+    label: "Contact details redacted",
+    desc: "Phone & email stripped locally before anything leaves for AI processing.",
+    tone: "purple",
+  },
+  {
+    icon: ScanSearch,
+    label: "AI parses & rates",
+    desc: "Mistral (EU) by default, or OpenAI/DeepSeek if you opt in per model.",
+    tone: "success",
+  },
+  {
+    icon: Database,
+    label: "Stored in the EU",
+    desc: "Structured CV + ratings on our France-hosted MongoDB.",
+    tone: "warning",
+  },
+  {
+    icon: Lock,
+    label: "Always your control",
+    desc: "Export or permanently delete everything, any time.",
+    tone: "accent",
+  },
+];
+
+const GDPR_RIGHTS: { icon: React.ElementType; title: string; desc: string }[] = [
+  {
+    icon: FileCheck2,
+    title: "Right to access",
+    desc: "Download a complete JSON export of everything we hold about you, on demand.",
+  },
+  {
+    icon: Eraser,
+    title: "Right to erasure",
+    desc: "Delete just your CV, or your entire account and every job tied to it, permanently.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Data minimization",
+    desc: "Phone and email are redacted before your CV ever reaches an AI provider.",
+  },
+  {
+    icon: Scale,
+    title: "Consent, not defaults",
+    desc: "Switching your CV-parsing or rating model to a non-EU provider requires explicit confirmation first.",
+  },
 ];
 
 const HOW_IT_WORKS = [
@@ -281,11 +381,23 @@ function PreviewJobCard({
 export function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const year = new Date().getFullYear();
+  const navRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnOutsideClick = (e: MouseEvent) => {
+      if (navRef.current && !navRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, [menuOpen]);
 
   return (
     <div className="landing-page">
       <header className="landing-nav">
-        <div className="landing-nav-inner">
+        <div className="landing-nav-inner" ref={navRef}>
           <Link to="/" className="landing-nav-brand">
             <Logo size={32} wordmarkSize={19} />
           </Link>
@@ -303,9 +415,9 @@ export function LandingPage() {
             <a href="#stack" onClick={() => setMenuOpen(false)}>
               Tech stack
             </a>
-            <Link to="/privacy" onClick={() => setMenuOpen(false)}>
-              Privacy
-            </Link>
+            <a href="#privacy" onClick={() => setMenuOpen(false)}>
+              Privacy & GDPR
+            </a>
             <Link to="/login" className="btn btn-secondary" onClick={() => setMenuOpen(false)}>
               Log in
             </Link>
@@ -342,6 +454,7 @@ export function LandingPage() {
                 <span
                   key={`${word}-${i}`}
                   className={HERO_HIGHLIGHT.has(word) ? "landing-hero-highlight" : undefined}
+                  style={{ "--word-i": i } as React.CSSProperties}
                 >
                   {word}
                 </span>
@@ -445,7 +558,7 @@ export function LandingPage() {
             </p>
           </div>
 
-          <div className="landing-feature-grid">
+          <Reveal className="landing-feature-grid landing-stagger">
             {FEATURES.map((f) => (
               <article key={f.title} className="card card-hover landing-feature-card">
                 <span className="landing-feature-icon">
@@ -455,7 +568,7 @@ export function LandingPage() {
                 <p>{f.desc}</p>
               </article>
             ))}
-          </div>
+          </Reveal>
         </section>
 
         <section id="how-it-works" className="landing-section">
@@ -464,7 +577,7 @@ export function LandingPage() {
             <h2>How it works</h2>
           </div>
 
-          <div className="landing-steps">
+          <Reveal className="landing-steps landing-stagger">
             <div className="landing-steps-line" aria-hidden />
             {HOW_IT_WORKS.map((step, i) => (
               <div key={step.title} className="landing-step">
@@ -473,11 +586,11 @@ export function LandingPage() {
                 <p>{step.body}</p>
               </div>
             ))}
-          </div>
+          </Reveal>
         </section>
 
         <section className="landing-section landing-compare-section">
-          <div className="landing-compare">
+          <Reveal className="landing-compare landing-stagger">
             <div className="card card-hover landing-compare-card">
               <h3>Without JobRadar</h3>
               <ul>
@@ -501,7 +614,7 @@ export function LandingPage() {
                 ))}
               </ul>
             </div>
-          </div>
+          </Reveal>
         </section>
 
         <section id="stack" className="landing-section">
@@ -512,9 +625,10 @@ export function LandingPage() {
               <p>
                 React frontend on TanStack Query, FastAPI backend, MongoDB for storage, and
                 LangChain with two LLMs: one for CV parsing, a faster one for bulk job ratings
-                against your CV and saved preferences — both running on Mistral AI, so your CV and
-                job data are processed inside the EU end to end. FAISS retrieval picks the most
-                relevant JD context and pulls in your past feedback on similar jobs.
+                against your CV and saved preferences. Both default to Mistral AI, so your CV and
+                job data are processed inside the EU end to end, with OpenAI and DeepSeek available
+                per model if you switch. FAISS retrieval picks the most relevant JD context and
+                pulls in your past feedback on similar jobs.
               </p>
               <ul className="landing-stack-list">
                 {STACK.map((item) => (
@@ -526,38 +640,51 @@ export function LandingPage() {
               </ul>
             </div>
 
-            <div className="card landing-flow-card">
+            <Reveal className="card landing-flow-card">
               <div className="landing-flow-head">
                 <Shield size={18} />
                 <h3>How a search works</h3>
               </div>
-              <ol>
-                <li>
-                  <strong>Build profile.</strong> CV gets parsed to structured data. You add
-                  about-me, roles, locations, experience level, work mode, salary, and skills in
-                  Settings.
-                </li>
-                <li>
-                  <strong>Search jobs.</strong> Crawlers hit Jooble and Indeed (via JobsAPI) using
-                  your prefs, or paste a JD in directly. Each market is searched separately.
-                  Duplicates are cut.
-                </li>
-                <li>
-                  <strong>AI rates each listing.</strong> Rating LLM scores fit 1 to 10 from your CV
-                  plus preferences, retrieving the most relevant parts of the JD by search rather
-                  than just truncating it. You get strengths, gaps, and tailoring tips.
-                </li>
-                <li>
-                  <strong>You rate the rating.</strong> Star it and leave a note when it's off. That
-                  feedback gets retrieved again next time a similar job comes up.
-                </li>
-                <li>
-                  <strong>Track on Kanban.</strong> Drag cards through your pipeline. Status stays
-                  in sync on the dashboard and board.
-                </li>
-              </ol>
-            </div>
+              <FlowDiagram steps={SEARCH_FLOW} />
+            </Reveal>
           </div>
+        </section>
+
+        <section id="privacy" className="landing-section">
+          <div className="landing-section-head">
+            <p className="landing-section-label">Privacy & GDPR</p>
+            <h2>Where your data actually goes</h2>
+            <p>
+              Not a policy PDF nobody reads, the actual path your CV takes, and the rights you have
+              over it at every step.
+            </p>
+          </div>
+
+          <Reveal className="card landing-flow-card" delay={80}>
+            <FlowDiagram steps={DATA_FLOW} />
+          </Reveal>
+
+          <Reveal className="gdpr-rights-grid" delay={160}>
+            {GDPR_RIGHTS.map((right) => (
+              <div key={right.title} className="card gdpr-right-card">
+                <span className="gdpr-right-icon">
+                  <right.icon size={17} strokeWidth={2} />
+                </span>
+                <div>
+                  <h4>{right.title}</h4>
+                  <p>{right.desc}</p>
+                </div>
+              </div>
+            ))}
+          </Reveal>
+
+          <p className="landing-preview-caption" style={{ marginTop: 20 }}>
+            <Link to="/privacy" style={{ color: "var(--accent)" }}>
+              Read the full Privacy Policy
+            </Link>{" "}
+            for retention periods, every third party we share data with, and how to exercise these
+            rights.
+          </p>
         </section>
 
         <section className="landing-section landing-cta-section">
@@ -593,6 +720,7 @@ export function LandingPage() {
               <a href="#features">Features</a>
               <a href="#how-it-works">How it works</a>
               <a href="#stack">Tech stack</a>
+              <a href="#privacy">Privacy & GDPR</a>
               <Link to="/privacy">Privacy Policy</Link>
               <Link to="/terms">Terms of Service</Link>
               <Link to="/login">Log in</Link>

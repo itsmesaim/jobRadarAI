@@ -85,6 +85,12 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""
     mistral_model: str = ""
 
+    # DeepSeek — OpenAI-API-compatible endpoint, same shape as Mistral above.
+    # One of the default per-user rating providers seeded into the admin-managed
+    # catalog (see services/ai_models.py).
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
+
     # Optional separate model just for job rating (bulk / rate-all).
     # Lets you mix providers, e.g. parse CV with OpenAI, rate jobs with fast Grok.
     # Control everything via .env (RATING_MODEL, RATING_PROVIDER, etc.)

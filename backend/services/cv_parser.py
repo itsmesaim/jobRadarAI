@@ -17,6 +17,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
 
 from config import settings
+from services.ai_models import get_cost_multiplier, get_default_model_for_provider
 from services.ai_usage import record_from_llm_response
 from services.llm import get_llm
 
@@ -108,8 +109,17 @@ def _extract_contact_details(text: str) -> tuple[str | None, str | None]:
 
 
 @traceable(name="parse_cv_with_llm", run_type="llm")
-async def parse_cv_with_llm(raw_text: str, user_id: str | None = None) -> dict:
-    llm = get_llm()
+async def parse_cv_with_llm(raw_text: str, user: dict | None = None) -> dict:
+    user = user or {}
+    user_id = str(user.get("_id", "")) or None
+    user_provider = user.get("cv_parsing_provider") or None
+    user_model = user.get("cv_parsing_model") or (
+        await get_default_model_for_provider(user_provider, "cv_parsing")
+        if user_provider
+        else None
+    )
+    cost_multiplier = await get_cost_multiplier(user_provider, user_model, "cv_parsing")
+    llm = get_llm(provider=user_provider, model=user_model)
 
     redacted_text = _redact_contact_details(raw_text)
     messages = [
@@ -118,15 +128,19 @@ async def parse_cv_with_llm(raw_text: str, user_id: str | None = None) -> dict:
     ]
 
     response = await llm.ainvoke(messages)
-    model = getattr(llm, "model", getattr(llm, "model_name", settings.openai_model))
+    provider = user_provider or settings.llm_provider
+    model = getattr(
+        llm, "model", getattr(llm, "model_name", user_model or settings.openai_model)
+    )
     model = str(model or "unknown")
     if user_id:
         await record_from_llm_response(
             user_id,
             response,
             operation="cv_parse",
-            provider=settings.llm_provider,
+            provider=provider,
             model=model,
+            cost_multiplier=cost_multiplier,
         )
     content = response.content.strip()
 
@@ -143,16 +157,16 @@ async def parse_cv_with_llm(raw_text: str, user_id: str | None = None) -> dict:
     phone, email = _extract_contact_details(raw_text)
     parsed["phone"] = phone
     parsed["email"] = email
-    parsed["parsed_by_model"] = f"{settings.llm_provider}:{model}"
+    parsed["parsed_by_model"] = f"{provider}:{model}"
     return parsed
 
 
 # ── Combined: PDF bytes → structured dict ────────────────
-async def process_cv(pdf_bytes: bytes, user_id: str | None = None) -> tuple[str, dict]:
+async def process_cv(pdf_bytes: bytes, user: dict | None = None) -> tuple[str, dict]:
     """
     Returns (raw_text, structured_json).
     We store both — raw_text for embedding later, structured for display.
     """
     raw_text = extract_text_from_pdf(pdf_bytes)
-    structured = await parse_cv_with_llm(raw_text, user_id=user_id)
+    structured = await parse_cv_with_llm(raw_text, user=user)
     return raw_text, structured

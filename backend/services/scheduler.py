@@ -9,7 +9,6 @@ per cycle (see AUTO_CRAWL_MAX_STORED_PER_CYCLE).
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -22,6 +21,7 @@ from services.job_reminders import send_job_apply_reminders
 from services.jooble_crawler import crawl_jobs_for_user_jooble
 from services.jobsapi_indeed_crawler import crawl_jobs_for_user_jobsapi
 from services.rating import rate_all_jobs_for_user
+from services.user_time import user_local_time as _user_local_time
 
 scheduler = AsyncIOScheduler()
 
@@ -34,20 +34,10 @@ DEAD_USER_INACTIVE_HOURS = 24 * 7
 # Local hours (in the user's own timezone) to auto crawl+rate.
 CRAWL_HOURS = (5, 17)
 
-DEFAULT_TIMEZONE = "Europe/Dublin"
-
 # How often the sweep tick runs. Every user's target hour falls inside some
 # tick's [hour:00, hour:15) window, so a 15-min sweep hits it once a day
 # without needing one cron job per timezone in use.
 SWEEP_WINDOW_MINUTES = 15
-
-
-def _user_local_time(user: dict, now_utc: datetime) -> datetime:
-    tz_name = user.get("timezone") or DEFAULT_TIMEZONE
-    try:
-        return now_utc.astimezone(ZoneInfo(tz_name))
-    except Exception:
-        return now_utc.astimezone(ZoneInfo(DEFAULT_TIMEZONE))
 
 
 async def _auto_crawl_and_rate():
@@ -189,7 +179,9 @@ def start_scheduler():
         )
 
     scheduler.start()
-    print("[scheduler] APScheduler started (auto crawl+rate: local 05:00/17:00 per user timezone)")
+    print(
+        "[scheduler] APScheduler started (auto crawl+rate: local 05:00/17:00 per user timezone)"
+    )
 
 
 def shutdown_scheduler():

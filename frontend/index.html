@@ -12,19 +12,20 @@
     <link rel="canonical" href="https://jobradar.saimjs.com/" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
-    <title>JobRadar — AI-powered job search &amp; application tracking</title>
+    <title>JobRadar: AI job search and application tracking</title>
 
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://jobradar.saimjs.com/" />
-    <meta property="og:title" content="JobRadar — AI-powered job search & application tracking" />
+    <meta property="og:title" content="JobRadar: AI job search and application tracking" />
     <meta
       property="og:description"
       content="Crawl every job board at once, get AI-rated fit scores against your CV, and track applications on a Kanban board."
     />
     <meta property="og:image" content="https://jobradar.saimjs.com/favicon.svg" />
+    <meta property="og:locale" content="en_IE" />
 
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="JobRadar — AI-powered job search & application tracking" />
+    <meta name="twitter:title" content="JobRadar: AI job search and application tracking" />
     <meta
       name="twitter:description"
       content="Crawl every job board at once, get AI-rated fit scores against your CV, and track applications on a Kanban board."
@@ -44,6 +45,22 @@
         var dark = localStorage.getItem("theme") !== "light";
         if (dark) document.documentElement.classList.add("dark");
       })();
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "JobRadar",
+        "url": "https://jobradar.saimjs.com/",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web",
+        "description": "JobRadar crawls job boards, rates every listing against your CV with AI, and tracks applications on a Kanban board.",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "EUR"
+        }
+      }
     </script>
   </head>
   <body>

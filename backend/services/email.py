@@ -173,6 +173,107 @@ If you did not request this, you can ignore this email.
     _send_email(msg)
 
 
+def send_model_request_admin_email(
+    *,
+    to_email: str,
+    user_email: str,
+    requested_model: str,
+    note: str,
+    purpose: str = "rating",
+) -> None:
+    """Notify the admin a user asked for a model outside the self-service catalog."""
+    if not smtp_configured():
+        raise RuntimeError("SMTP is not configured")
+
+    purpose_label = "rating" if purpose == "rating" else "CV-parsing"
+    admin_url = f"{settings.frontend_url.rstrip('/')}/{(settings.admin_secret_path or '').strip('/')}"
+    note_line = f"\nNote: {note}" if note else ""
+    text = f"""Hi,
+
+{user_email} requested a {purpose_label} model that isn't in the Settings list:
+
+Requested model: {requested_model}{note_line}
+
+Grant it (or decline) from the admin panel:
+{admin_url}
+
+— JobRadar
+"""
+    note_html = (
+        f'<p style="margin:10px 0 0;font-size:14px;color:#3f3f46;"><strong>Note:</strong> {_escape(note)}</p>'
+        if note
+        else ""
+    )
+    body = f"""
+<p style="margin:0 0 12px;font-size:15px;">Hi,</p>
+<p style="margin:0 0 18px;font-size:15px;color:#3f3f46;">
+  <strong>{_escape(user_email)}</strong> requested a {_escape(purpose_label)} model that isn't in the
+  Settings list.
+</p>
+<p style="margin:0;font-size:15px;"><strong>Requested model:</strong> {_escape(requested_model)}</p>
+{note_html}
+<p style="margin:22px 0 0;">{_button(admin_url, "Open admin panel")}</p>
+"""
+    html_doc = _email_shell(
+        preheader=f"{user_email} requested {purpose_label} model: {requested_model}",
+        body_html=body,
+    )
+
+    msg = EmailMessage()
+    msg["Subject"] = f"JobRadar — model request: {requested_model}"
+    _apply_mail_headers(msg, to_email=to_email)
+    msg.set_content(text)
+    msg.add_alternative(html_doc, subtype="html")
+    _send_email(msg)
+
+
+def send_model_granted_email(
+    *, to_email: str, user_name: str, provider: str, model: str, purpose: str = "rating"
+) -> None:
+    """Tell a user their requested model is now active on their account."""
+    if not smtp_configured():
+        raise RuntimeError("SMTP is not configured")
+
+    use_line = (
+        "Your jobs will be rated with this model from now on."
+        if purpose == "rating"
+        else "Your CV will be parsed with this model from now on."
+    )
+    text = f"""Hi {user_name},
+
+Good news — the AI model you requested is now active on your JobRadar account:
+
+Provider: {provider}
+Model: {model}
+
+{use_line}
+
+— JobRadar
+"""
+    body = f"""
+<p style="margin:0 0 12px;font-size:16px;font-weight:600;">Hi {_escape(user_name)},</p>
+<p style="margin:0 0 18px;font-size:15px;color:#3f3f46;">
+  Good news — the AI model you requested is now active on your account.
+</p>
+<p style="margin:0;font-size:15px;"><strong>Provider:</strong> {_escape(provider)}</p>
+<p style="margin:4px 0 0;font-size:15px;"><strong>Model:</strong> {_escape(model)}</p>
+<p style="margin:18px 0 0;font-size:13px;color:#71717a;">
+  {_escape(use_line)}
+</p>
+"""
+    html_doc = _email_shell(
+        preheader=f"Your requested model ({model}) is now live",
+        body_html=body,
+    )
+
+    msg = EmailMessage()
+    msg["Subject"] = "Your requested AI model is live"
+    _apply_mail_headers(msg, to_email=to_email)
+    msg.set_content(text)
+    msg.add_alternative(html_doc, subtype="html")
+    _send_email(msg)
+
+
 def _job_card_html(job: dict, index: int) -> str:
     title = _escape(job.get("title") or "Untitled role")
     company = _escape(job.get("company") or "Company not listed")

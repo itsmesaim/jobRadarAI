@@ -46,7 +46,8 @@ def _is_users_reminder_slot(user: dict, now_utc: datetime) -> bool:
         local = now_utc.astimezone(ZoneInfo(tz_name))
     except Exception:
         local = now_utc.astimezone(ZoneInfo(DEFAULT_TIMEZONE))
-    return local.hour in _parse_reminder_hours() and local.minute < SWEEP_WINDOW_MINUTES
+    hours = user.get("reminder_hours") or _parse_reminder_hours()
+    return local.hour in hours and local.minute < SWEEP_WINDOW_MINUTES
 
 
 def _high_score_unapplied_filter(user_id: str, *, min_score: int) -> dict:
@@ -194,7 +195,9 @@ async def send_job_apply_reminders() -> None:
     if not due:
         return
 
-    print(f"[reminders] === REMINDER RUN ({len(due)}/{len(users)} users due) {now_utc.isoformat()} ===")
+    print(
+        f"[reminders] === REMINDER RUN ({len(due)}/{len(users)} users due) {now_utc.isoformat()} ==="
+    )
 
     sent = 0
     skipped = 0

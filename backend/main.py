@@ -63,6 +63,19 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"[startup] WARNING: job index setup failed: {exc}")
 
+    from services.ai_models import seed_default_rating_models
+
+    try:
+        # Old index predates the "purpose" field (rating vs cv_parsing) —
+        # drop it so the same provider/model can exist once per purpose.
+        await db.rating_models.drop_index("provider_1_model_1")
+    except Exception:
+        pass
+    await db.rating_models.create_index(
+        [("provider", 1), ("model", 1), ("purpose", 1)], unique=True
+    )
+    await seed_default_rating_models(db)
+
     orphan_result = await db.jobs.delete_many(
         {
             "$or": [

@@ -109,15 +109,23 @@ export function PrivacyPage() {
               your CV or identity.
             </li>
             <li>
-              <strong style={{ color: "var(--text)" }}>Mistral (EU-based):</strong> receives your CV
-              text (with phone/email redacted, see above) and job descriptions to parse your CV into
-              structured data, generate fit ratings, gaps, tailoring tips, briefs, and roasts.
+              <strong style={{ color: "var(--text)" }}>Mistral (EU-based), by default:</strong>{" "}
+              receives your CV text (with phone/email redacted, see above) and job descriptions to
+              parse your CV into structured data, generate fit ratings, gaps, tailoring tips,
+              briefs, and roasts. You can independently switch the CV-parsing model and the rating
+              model to OpenAI or DeepSeek from Settings; doing so sends that data to the provider
+              you pick instead, and requires your explicit confirmation first.
             </li>
             <li>
-              <strong style={{ color: "var(--text)" }}>OpenAI:</strong> receives your CV text and
-              job description text solely to generate similarity embeddings (a numeric vector) used
-              for a fast pre-filter step before rating — this text is not used for parsing or
-              rating.
+              <strong style={{ color: "var(--text)" }}>OpenAI:</strong> always receives your CV text
+              and job description text to generate similarity embeddings (a numeric vector) used for
+              a fast pre-filter step before rating, regardless of which provider you've picked for
+              parsing/rating; this text is not used for parsing or rating unless you've also chosen
+              OpenAI for that.
+            </li>
+            <li>
+              <strong style={{ color: "var(--text)" }}>DeepSeek:</strong> only receives data if you
+              choose it as your CV-parsing or rating provider in Settings; not used otherwise.
             </li>
             <li>
               <strong style={{ color: "var(--text)" }}>MongoDB:</strong> our database provider,
@@ -128,9 +136,11 @@ export function PrivacyPage() {
 
         <Section title="Where your data is stored and processed">
           <p>
-            Our servers and database run on infrastructure located in Lauterbourg, France (EU).
-            Combined with Mistral (EU-based) handling CV parsing and job rating, the core processing
-            of your CV and job data stays within the EU end to end.
+            Our servers and database run on infrastructure located in Lauterbourg, France (EU). With
+            the default Mistral provider handling CV parsing and job rating, the core processing of
+            your CV and job data stays within the EU end to end. If you switch either model to
+            OpenAI or DeepSeek in Settings, that data is processed by that provider instead (outside
+            the EU) for whichever step you switched.
           </p>
         </Section>
 

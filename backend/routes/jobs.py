@@ -30,6 +30,7 @@ from services.rating import (
     rate_job_for_user,
 )
 from services.apply_pack import MIN_APPLY_PACK_SCORE, generate_apply_pack
+from services.calibration import regenerate_calibration_notes
 from services.limits import (
     check_ai_token_quota,
     check_and_increment_apply_pack,
@@ -138,7 +139,12 @@ def _build_list_query(
 
     query: dict = {**_user_job_filter(user_id), hidden_key: {"$ne": True}}
 
-    if status:
+    if status == "NEW":
+        # Jobs never touched in Kanban have no status field at all yet — they're
+        # implicitly NEW (see the formatter default at line ~112 and the same
+        # convention in _list_kanban_jobs' new_jobs query below).
+        query["$or"] = [{status_key: {"$exists": False}}, {status_key: "NEW"}]
+    elif status:
         query[status_key] = status
     elif exclude_terminal:
         query[status_key] = {"$nin": TERMINAL_STATUSES}
@@ -670,11 +676,17 @@ class RatingFeedbackRequest(BaseModel):
 
 @router.post("/{job_id}/rating-feedback")
 async def submit_rating_feedback(
-    job_id: str, body: RatingFeedbackRequest, user=Depends(get_current_user)
+    job_id: str,
+    body: RatingFeedbackRequest,
+    background_tasks: BackgroundTasks,
+    user=Depends(get_current_user),
 ):
     """Store the user's feedback on a job's AI rating. Future ratings of
     similar jobs retrieve this feedback + stars as calibration context — see
-    _retrieve_similar_rated_jobs in services/rating.py."""
+    _retrieve_similar_rated_jobs in services/rating.py. Also (in the
+    background, so this response doesn't wait on an LLM call) re-summarizes
+    ALL of the user's feedback into standing calibration_notes applied to
+    EVERY rating — see services/calibration.py."""
     comment = body.comment.strip()
     stars = body.stars
     if stars is not None and not (1 <= stars <= 5):
@@ -708,6 +720,7 @@ async def submit_rating_feedback(
             }
         },
     )
+    background_tasks.add_task(regenerate_calibration_notes, user_id)
     return {"message": "Feedback saved."}
 
 

@@ -57,7 +57,7 @@ async def upload_cv(
 
     # ── parse ─────────────────────────────────────────────
     try:
-        raw_text, structured = await process_cv(pdf_bytes, user_id=str(user["_id"]))
+        raw_text, structured = await process_cv(pdf_bytes, user=user)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

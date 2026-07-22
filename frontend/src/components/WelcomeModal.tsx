@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
-import { Upload, Settings, Search, Zap, Star, LayoutDashboard, X, ArrowRight } from "lucide-react";
+import {
+  Upload,
+  Settings,
+  Search,
+  Zap,
+  Star,
+  LayoutDashboard,
+  X,
+  ArrowRight,
+  Brain,
+} from "lucide-react";
 
 const STEPS = [
   {
@@ -8,6 +18,14 @@ const STEPS = [
     bg: "var(--accent-light)",
     title: "Upload your CV",
     desc: "Go to Settings → CV section. The AI uses it to rate every job against your actual skills and experience.",
+    action: { label: "Go to Settings →", href: "/settings" },
+  },
+  {
+    icon: Brain,
+    color: "var(--purple)",
+    bg: "var(--purple-bg)",
+    title: "Pick your AI models",
+    desc: 'Settings → AI models lets you choose which AI parses your CV and which one rates your jobs, independently. Mistral (EU-hosted) is the default, OpenAI and DeepSeek are also available. Don\'t see the model you want? Use "Request a different model" right there and the admin gets notified.',
     action: { label: "Go to Settings →", href: "/settings" },
   },
   {
@@ -47,7 +65,7 @@ const STEPS = [
     color: "var(--warning)",
     bg: "var(--warning-bg)",
     title: "Rate the AI's ratings",
-    desc: "Open a job and use the star rating + note under its review to tell us when it got something wrong. That feedback calibrates how similar jobs get rated next time.",
+    desc: "Open a job and use the star rating + note under its review to tell us when it got something wrong. That feedback calibrates similar jobs immediately, and after a few corrections gets distilled into standing rules applied to every rating. See Settings → AI models → Rating calibration.",
     action: null,
   },
 ];

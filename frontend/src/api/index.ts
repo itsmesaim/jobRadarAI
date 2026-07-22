@@ -6,6 +6,8 @@ import type {
   JobStatus,
   UserPreferences,
   CVData,
+  AiModelCatalogEntry,
+  ModelPurpose,
 } from "../types";
 
 export const authApi = {
@@ -201,6 +203,21 @@ export const userApi = {
     return res.data;
   },
 
+  requestModel: async (requested_model: string, note: string, purpose: ModelPurpose = "rating") => {
+    const res = await api.post("/users/rating-model-request", { requested_model, note, purpose });
+    return res.data as { message: string; requested_model: string };
+  },
+
+  getAiModels: async (purpose: ModelPurpose) => {
+    const res = await api.get("/users/ai-models", { params: { purpose } });
+    return res.data as { models: AiModelCatalogEntry[] };
+  },
+
+  regenerateCalibrationNotes: async () => {
+    const res = await api.post("/users/calibration-notes/regenerate");
+    return res.data as { calibration_notes: string };
+  },
+
   getDataSummary: async () => {
     const res = await api.get("/users/data-summary");
     return res.data;
@@ -263,6 +280,49 @@ export const adminApi = {
   deleteUser: async (basePath: string, userId: string) => {
     const res = await api.delete(`${basePath}/users/${userId}`);
     return res.data as { deleted_user: string; deleted_jobs: number };
+  },
+  setModel: async (
+    basePath: string,
+    userId: string,
+    data: { provider: string; model: string; purpose: ModelPurpose },
+  ) => {
+    const res = await api.patch(`${basePath}/users/${userId}/model`, data);
+    return res.data as {
+      user_id: string;
+      email: string;
+      provider: string;
+      model: string;
+      purpose: ModelPurpose;
+    };
+  },
+  listAiModels: async (basePath: string, purpose: ModelPurpose) => {
+    const res = await api.get(`${basePath}/ai-models`, { params: { purpose } });
+    return res.data as { models: AiModelCatalogEntry[] };
+  },
+  addAiModel: async (
+    basePath: string,
+    data: {
+      provider: string;
+      model: string;
+      label?: string;
+      purpose: ModelPurpose;
+      cost_multiplier?: number;
+    },
+  ) => {
+    const res = await api.post(`${basePath}/ai-models`, data);
+    return res.data as AiModelCatalogEntry;
+  },
+  updateAiModelEntry: async (
+    basePath: string,
+    catalogId: string,
+    data: { label?: string; cost_multiplier?: number; active?: boolean; is_default?: boolean },
+  ) => {
+    const res = await api.patch(`${basePath}/ai-models/${catalogId}`, data);
+    return res.data as AiModelCatalogEntry;
+  },
+  deleteAiModelEntry: async (basePath: string, catalogId: string) => {
+    const res = await api.delete(`${basePath}/ai-models/${catalogId}`);
+    return res.data as { deleted: boolean };
   },
   cleanupJobs: async (
     basePath: string,
