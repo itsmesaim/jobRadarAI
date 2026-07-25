@@ -110,7 +110,18 @@ export default function App() {
             color: "var(--text)",
             border: "1px solid var(--border)",
             fontSize: 13,
-            boxShadow: "var(--shadow-md)",
+            fontWeight: 500,
+            padding: "12px 16px",
+            borderRadius: "var(--radius-lg)",
+            boxShadow: "var(--shadow-lg)",
+          },
+          success: {
+            iconTheme: { primary: "var(--success)", secondary: "var(--bg-card)" },
+            style: { border: "1px solid var(--success)" },
+          },
+          error: {
+            iconTheme: { primary: "var(--danger)", secondary: "var(--bg-card)" },
+            style: { border: "1px solid var(--danger)" },
           },
         }}
       />

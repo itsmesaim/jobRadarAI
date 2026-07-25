@@ -383,6 +383,16 @@ export function SettingsPage() {
 
       <div className="settings-content">
         <SectionGroup id="profile" icon={UserCircle} label="Profile & CV">
+          <AiModelPicker
+            purpose="cv_parsing"
+            title="CV parsing model"
+            subtitle="Which AI turns your uploaded CV into structured data."
+            providerField="cv_parsing_provider"
+            modelField="cv_parsing_model"
+            requestField="cv_parsing_model_request"
+            localPrefs={localPrefs}
+            setLocalPrefs={setLocalPrefs}
+          />
           {/* CV Section */}
           <Section title="CV" subtitle="Upload your master CV. Used for job rating and tailoring.">
             {uploading ? (
@@ -522,16 +532,6 @@ export function SettingsPage() {
             providerField="rating_provider"
             modelField="rating_model"
             requestField="rating_model_request"
-            localPrefs={localPrefs}
-            setLocalPrefs={setLocalPrefs}
-          />
-          <AiModelPicker
-            purpose="cv_parsing"
-            title="CV parsing model"
-            subtitle="Which AI turns your uploaded CV into structured data. Re-upload your CV after switching for it to take effect."
-            providerField="cv_parsing_provider"
-            modelField="cv_parsing_model"
-            requestField="cv_parsing_model_request"
             localPrefs={localPrefs}
             setLocalPrefs={setLocalPrefs}
           />
@@ -1668,18 +1668,25 @@ function CalibrationNotesSection({
           >
             {localPrefs.calibration_notes}
           </pre>
-          <p
-            style={{
-              fontSize: "var(--text-xs)",
-              color: "var(--text-muted)",
-              margin: "0 0 var(--space-3)",
-            }}
-          >
-            Based on {localPrefs.calibration_notes_source_count} feedback entr
-            {localPrefs.calibration_notes_source_count === 1 ? "y" : "ies"}
-            {localPrefs.calibration_notes_updated_at &&
-              ` · updated ${new Date(localPrefs.calibration_notes_updated_at).toLocaleDateString()}`}
-          </p>
+          {(localPrefs.calibration_notes_source_count > 0 ||
+            localPrefs.calibration_notes_updated_at) && (
+            <p
+              style={{
+                fontSize: "var(--text-xs)",
+                color: "var(--text-muted)",
+                margin: "0 0 var(--space-3)",
+              }}
+            >
+              {localPrefs.calibration_notes_source_count > 0 && (
+                <>
+                  Based on {localPrefs.calibration_notes_source_count} feedback entr
+                  {localPrefs.calibration_notes_source_count === 1 ? "y" : "ies"}
+                </>
+              )}
+              {localPrefs.calibration_notes_updated_at &&
+                `${localPrefs.calibration_notes_source_count > 0 ? " · " : ""}updated ${new Date(localPrefs.calibration_notes_updated_at).toLocaleDateString()}`}
+            </p>
+          )}
         </>
       ) : (
         <p
@@ -2321,10 +2328,10 @@ function ModelPill({
   return (
     <button
       type="button"
+      className="model-pill"
       onClick={onClick}
       disabled={active}
       style={{
-        flex: "1 1 160px",
         padding: "10px 14px",
         borderRadius: "var(--radius-sm)",
         cursor: active ? "default" : "pointer",

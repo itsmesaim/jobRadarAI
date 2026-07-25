@@ -120,6 +120,7 @@ async def parse_cv_with_llm(raw_text: str, user: dict | None = None) -> dict:
     )
     cost_multiplier = await get_cost_multiplier(user_provider, user_model, "cv_parsing")
     llm = get_llm(provider=user_provider, model=user_model)
+    provider = user_provider or settings.llm_provider
 
     redacted_text = _redact_contact_details(raw_text)
     messages = [
@@ -127,8 +128,10 @@ async def parse_cv_with_llm(raw_text: str, user: dict | None = None) -> dict:
         HumanMessage(content=f"Parse this CV:\n\n{redacted_text}"),
     ]
 
-    response = await llm.ainvoke(messages)
-    provider = user_provider or settings.llm_provider
+    try:
+        response = await llm.ainvoke(messages)
+    except Exception as e:
+        raise ValueError(f"CV parsing failed ({provider}): {e}") from e
     model = getattr(
         llm, "model", getattr(llm, "model_name", user_model or settings.openai_model)
     )
