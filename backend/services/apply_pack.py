@@ -45,6 +45,13 @@ Rules:
 - Tier every keyword (Essential vs Desirable / Required vs Preferred) using the JD's OWN section
   headers exactly as written. Never infer or upgrade a tier from wording alone — if the JD lists a
   skill under "Desirable" or "Nice to have", it is Desirable, even if it sounds important.
+- FALSE EQUIVALENCE CHECK on matched keywords: before listing a keyword as matched, confirm it
+  actually satisfies the JD's requirement, not just a similar-sounding one. A CV term that sounds
+  related but doesn't cover the JD ask (e.g. "mobile-first responsive web" ≠ "native mobile app
+  development"; "LangSmith observability" ≠ "frontend observability tooling like Sentry/Lighthouse")
+  must NOT be listed as matched — put it in missing instead, or if listed as matched, append an
+  inline caveat to the string itself, e.g. "mobile-first development (web only — does not cover
+  native mobile app development)".
 - Specifically check for named AI/agent protocols or frameworks the JD calls out as core requirements
   (e.g. MCP / Model Context Protocol server experience). If MASTER CV only shows the candidate
   learning or building toward it (not shipped/production experience), list it as missing — do not
@@ -64,6 +71,16 @@ Rules:
   X-Z format and leave others as a verbatim copy-paste of the MASTER CV line — pick XYZ or X/Z per
   bullet based on whether it has a metric, but every bullet must be rephrased, none skipped.
 - Cover opener: 3-4 sentences for email or LinkedIn note — specific, grounded in MASTER CV facts.
+  Structure it by FIT SCORE (given below):
+    - Score >= 8: lead with the single strongest technical match, stated as fact.
+    - Score 6-7: sentence 1 states the strongest unambiguous match as fact (no "excited", no
+      "aligns with"/"aligns directly"); sentence 2 gives one concrete example using the JD's exact
+      wording; sentence 3 names the Essential gaps plainly ("I don't have X") with no hedging
+      ("my background doesn't include formal X experience" is hedging — don't write that); sentence
+      4 is a specific close tied to the actual work, not generic ("I look forward to hearing from
+      you" / "I'm confident I'd be a great fit" are banned).
+  NEVER write "aligns directly with" or "excited by the opportunity" before giving one concrete,
+  specific connection first.
 - LaTeX snippet: short \\item bullets for experience (plain LaTeX, no preamble) — hints for the full .tex file.
 - honest_notes: 1-3 caveats (e.g. structural mismatch, thin JD). No invented positives.
 
@@ -76,7 +93,11 @@ class ApplyPackContent(BaseModel):
         description="0-100 honest keyword alignment between JD and CV (not inflated)"
     )
     ats_keywords_matched: list[str] = Field(
-        description="Important JD keywords/phrases already supported by the CV"
+        description=(
+            "Important JD keywords/phrases already supported by the CV. If a keyword only "
+            "partially satisfies the JD ask, append an inline caveat instead of overstating it "
+            '(e.g. "mobile-first development (web only — not native app dev)").'
+        )
     )
     ats_keywords_missing: list[str] = Field(
         description="JD keywords not found in CV — gaps only, do not fabricate"
@@ -91,7 +112,12 @@ class ApplyPackContent(BaseModel):
             "must be rephrased the same way; never leave one as a verbatim copy of MASTER CV."
         )
     )
-    cover_opener: str = Field(description="3-4 sentence tailored cover note opener")
+    cover_opener: str = Field(
+        description=(
+            "3-4 sentence tailored cover note opener, structured by FIT SCORE per the system "
+            'prompt rules. Never lead with "aligns directly with" or "excited by the opportunity".'
+        )
+    )
     latex_snippet: str = Field(
         description="LaTeX \\\\item bullets for experience section, no preamble"
     )
@@ -148,12 +174,12 @@ def _format_master_cv(user: dict) -> str:
     return f"""
 MASTER CV — SOURCE OF TRUTH (tailor ONLY from this; do not invent facts)
 {"=" * 42}
-Name:     {structured.get('name', '')}
-Summary:  {structured.get('summary', '')}
-Skills:   {', '.join(structured.get('skills', []))}
+Name:     {structured.get("name", "")}
+Summary:  {structured.get("summary", "")}
+Skills:   {", ".join(structured.get("skills", []))}
 
 ABOUT ME:
-  {user.get('about_me', '').strip() or '(not set)'}
+  {user.get("about_me", "").strip() or "(not set)"}
 
 KNOWLEDGE OVERRIDES:
 {overrides_text}
@@ -326,7 +352,7 @@ Output ONE fenced ```latex code block with a FULL compilable document:
 - Start from LATEX BOILERPLATE below — same \\documentclass, packages, geometry, section order.
 - Replace Summary, Technical Skills, Professional Experience, Key Projects, and Education
   using Part 1 content and MASTER CV facts only.
-- Tailor bullet order and keyword emphasis for this role ({job.get('title', '')} @ {job.get('company', '')}).
+- Tailor bullet order and keyword emphasis for this role ({job.get("title", "")} @ {job.get("company", "")}).
 - Escape LaTeX specials: % → \\%, & → \\&, _ → \\_ (outside \\texttt{{}}).
 - Suggested filename: {filename}
 - Must compile with pdflatex without errors.
@@ -376,14 +402,14 @@ async def generate_apply_pack(job: dict, user: dict, rating: dict) -> str:
 
     human = f"""
 JOB:
-Title: {job.get('title')}
-Company: {job.get('company')}
-Location: {job.get('location', '')}
+Title: {job.get("title")}
+Company: {job.get("company")}
+Location: {job.get("location", "")}
 
-FIT SCORE: {rating.get('score')}/10
-MATCHED STRENGTHS: {rating.get('matched_strengths', [])}
-GAPS: {rating.get('gaps', [])}
-VERDICT: {rating.get('verdict', '')}
+FIT SCORE: {rating.get("score")}/10
+MATCHED STRENGTHS: {rating.get("matched_strengths", [])}
+GAPS: {rating.get("gaps", [])}
+VERDICT: {rating.get("verdict", "")}
 
 JOB DESCRIPTION:
 {jd_text}
