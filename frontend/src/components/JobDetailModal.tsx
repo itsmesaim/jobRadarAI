@@ -72,6 +72,7 @@ export function JobDetailModal({ job, onClose }: Props) {
   const [copiedBrief, setCopiedBrief] = useState(false);
   const [copiedPack, setCopiedPack] = useState(false);
   const [packLoading, setPackLoading] = useState(false);
+  const [packStageText, setPackStageText] = useState<string | null>(null);
   const [showApplyPackLimit, setShowApplyPackLimit] = useState(false);
   const [reRating, setReRating] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
@@ -79,7 +80,7 @@ export function JobDetailModal({ job, onClose }: Props) {
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   // Rating fields can change without the job's identity changing (title,
-  // company, JD text stay the same) — track them separately so a re-rate
+  // company, JD text stay the same), track them separately so a re-rate
   // updates the modal immediately without needing the parent list to refetch.
   const [rating, setRating] = useState({
     score: job.score,
@@ -192,8 +193,19 @@ export function JobDetailModal({ job, onClose }: Props) {
       return;
     }
     setPackLoading(true);
+    let messages = ["Your CV is in the oven..."];
+    let idx = 0;
+    setPackStageText(messages[0]);
+    const rotate = setInterval(() => {
+      idx = (idx + 1) % messages.length;
+      setPackStageText(messages[idx]);
+    }, 2500);
     try {
-      const { pack } = await jobsApi.getApplyPack(job.id);
+      const { pack } = await jobsApi.streamApplyPack(job.id, (event) => {
+        messages = event.messages.length ? event.messages : messages;
+        idx = 0;
+        setPackStageText(messages[0]);
+      });
       await navigator.clipboard.writeText(pack);
       setCopiedPack(true);
       toast.success("Apply pack copied");
@@ -210,7 +222,9 @@ export function JobDetailModal({ job, onClose }: Props) {
         toast.error(detail || "Could not generate apply pack");
       }
     } finally {
+      clearInterval(rotate);
       setPackLoading(false);
+      setPackStageText(null);
     }
   };
 
@@ -343,7 +357,7 @@ export function JobDetailModal({ job, onClose }: Props) {
           </div>
         </div>
 
-        {/* Body — scrollable */}
+        {/* Body, scrollable */}
         <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-5) var(--space-6)" }}>
           {job.rating_in_progress && (
             <p
@@ -557,7 +571,7 @@ export function JobDetailModal({ job, onClose }: Props) {
           )}
         </div>
 
-        {/* Footer — always visible so a job can be re-rated even before it has a score */}
+        {/* Footer, always visible so a job can be re-rated even before it has a score */}
         <div className="job-modal-footer">
           {(rating.score ?? 0) >= MIN_APPLY_PACK_SCORE && (
             <>
@@ -575,7 +589,7 @@ export function JobDetailModal({ job, onClose }: Props) {
                   <Sparkles size={15} />
                 )}
                 {packLoading
-                  ? "Building your apply pack…"
+                  ? packStageText || "Building your apply pack…"
                   : copiedPack
                     ? "Copied, paste into ChatGPT / Claude"
                     : "Copy apply pack for LLM"}

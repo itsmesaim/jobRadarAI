@@ -198,9 +198,9 @@ def demo_gap_strength_inversion():
 
     # Bug 2: no duplicate entries in matched_strengths.
     normalized = [_normalize(s) for s in strengths]
-    assert len(normalized) == len(
-        set(normalized)
-    ), f"matched_strengths contains duplicate entries: {strengths}"
+    assert len(normalized) == len(set(normalized)), (
+        f"matched_strengths contains duplicate entries: {strengths}"
+    )
 
     # Bug 1: a skill already confirmed as a strength (TypeScript/React/Python)
     # must never also appear in gaps, regardless of "may also touch" phrasing.

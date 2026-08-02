@@ -74,6 +74,8 @@ export interface UserPreferences {
   min_salary: number;
   key_skills: string[];
   experience_level: "junior" | "mid" | "senior";
+  nationality: string;
+  visa_status: string;
   work_authorization: string;
   avoid_industries: string[];
   work_mode: WorkMode;

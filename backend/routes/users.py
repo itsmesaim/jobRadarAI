@@ -1,16 +1,16 @@
 """
 User preference routes.
 
-PATCH /users/preferences  — set locations, role, job types, skills, constraints
-GET   /users/preferences  — get current preferences
+PATCH /users/preferences , set locations, role, job types, skills, constraints
+GET   /users/preferences , get current preferences
 """
 
 """
-Skill override routes — candidate knowledge memory system.
+Skill override routes, candidate knowledge memory system.
 
-POST /users/skill-overrides        — add or update a skill override
-GET  /users/skill-overrides        — list all overrides
-DELETE /users/skill-overrides/{skill} — remove a specific override
+POST /users/skill-overrides       , add or update a skill override
+GET  /users/skill-overrides       , list all overrides
+DELETE /users/skill-overrides/{skill}, remove a specific override
 
 Also adds about_me to UserPreferences.
 """
@@ -34,6 +34,7 @@ from services.calibration import (
     regenerate_calibration_notes,
 )
 from services.text_cleanup import clean_candidate_text
+from routes.crawler import get_apply_soon_count, get_stale_followup_jobs
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -60,17 +61,19 @@ class UserPreferences(BaseModel):
     min_salary: int = 0
     key_skills: list[str] = []
     experience_level: str = "mid"
+    nationality: str = ""
+    visa_status: str = ""
     work_authorization: str = ""
     avoid_industries: list[str] = []
     work_mode: WorkMode = WorkMode()
     about_me: str = ""  # free-text career context, surfaced early in rating prompt
     email_reminders_enabled: bool = True  # daily high-score apply nudges via SMTP
-    reminder_hours: list[int] = (
-        []
-    )  # local hours (0-23) to send reminders; [] = app default (see job_reminders.py)
+    reminder_hours: list[
+        int
+    ] = []  # local hours (0-23) to send reminders; [] = app default (see job_reminders.py)
     timezone: str = "Europe/Dublin"  # IANA tz, drives when auto-crawl/reminders fire
     # "" = app default. Otherwise must match an active entry in the
-    # admin-managed AI model catalog (services/ai_models.py) — validated in
+    # admin-managed AI model catalog (services/ai_models.py), validated in
     # update_preferences below, not via a fixed Literal, since admin can
     # add/remove models without a code change.
     rating_provider: str = ""
@@ -93,7 +96,7 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
     db = get_database()
     prefs = payload.model_dump()
 
-    # Only re-run the LLM cleanup when about_me actually changed — this
+    # Only re-run the LLM cleanup when about_me actually changed, this
     # endpoint saves EVERY preference (including a bare rating-model switch),
     # and re-cleaning unchanged text on every save made unrelated saves (e.g.
     # picking a new rating model) wait on a full LLM round-trip for nothing.
@@ -130,6 +133,8 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
         "min_salary": prefs["min_salary"],
         "key_skills": prefs["key_skills"],
         "experience_level": prefs["experience_level"],
+        "nationality": prefs["nationality"],
+        "visa_status": prefs["visa_status"],
         "work_authorization": prefs["work_authorization"],
         "avoid_industries": prefs["avoid_industries"],
         "work_mode": prefs["work_mode"],
@@ -142,11 +147,11 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
         "cv_parsing_provider": prefs["cv_parsing_provider"],
         "cv_parsing_model": prefs["cv_parsing_model"],
     }
-    # Switching provider sends the user's CV/job data to a different company —
+    # Switching provider sends the user's CV/job data to a different company,
     # record when they last consented to that (surfaced as a confirm popup in
     # Settings before this request is even sent). Picking a different model
     # within the SAME provider doesn't need re-consent, and this also clears
-    # any earlier admin-granted override automatically — the self-service
+    # any earlier admin-granted override automatically, the self-service
     # "revert off an admin override" path, no special case.
     if prefs["rating_provider"] != user.get("rating_provider", ""):
         updates["rating_provider_consent_at"] = datetime.now(timezone.utc)
@@ -167,6 +172,8 @@ async def get_preferences(user=Depends(get_current_user)):
         "min_salary": user.get("min_salary", 0),
         "key_skills": user.get("key_skills", []),
         "experience_level": user.get("experience_level", "mid"),
+        "nationality": user.get("nationality", ""),
+        "visa_status": user.get("visa_status", ""),
         "work_authorization": user.get("work_authorization", ""),
         "avoid_industries": user.get("avoid_industries", []),
         "work_mode": user.get(
@@ -190,7 +197,7 @@ async def get_preferences(user=Depends(get_current_user)):
 
 @router.post("/calibration-notes/regenerate")
 async def regenerate_calibration_notes_now(user=Depends(get_current_user)):
-    """Manual "refresh now" — re-summarizes ALL of the user's existing
+    """Manual "refresh now", re-summarizes ALL of the user's existing
     rating-feedback history immediately, instead of waiting for their next
     feedback submission to trigger it (see services/calibration.py)."""
     notes = await regenerate_calibration_notes(str(user["_id"]))
@@ -198,7 +205,7 @@ async def regenerate_calibration_notes_now(user=Depends(get_current_user)):
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Not enough feedback yet — leave at least "
+                f"Not enough feedback yet, leave at least "
                 f"{MIN_FEEDBACK_FOR_CALIBRATION} ratings feedback comments/stars first."
             ),
         )
@@ -224,7 +231,7 @@ class ModelRequest(BaseModel):
 async def request_model(payload: ModelRequest, user=Depends(get_current_user)):
     """User asks for a model outside the self-service catalog, for either
     purpose. Admin sees it as a badge in the admin panel and grants it via
-    the matching override route — this just records the ask and best-effort
+    the matching override route, this just records the ask and best-effort
     pings the admin."""
     requested_model = payload.requested_model.strip()
     if not requested_model:
@@ -263,6 +270,85 @@ async def request_model(payload: ModelRequest, user=Depends(get_current_user)):
             print(f"[users] Failed to email admin about model request: {e}")
 
     return {"message": "Request sent.", "requested_model": requested_model}
+
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+# Small bell/badge, not a full history, computed live from signals that
+# already exist (apply-soon/stale-followup job counts, admin model catalog
+# entries) rather than a separate stored notification log.
+
+
+@router.get("/notifications")
+async def get_notifications(user=Depends(get_current_user)):
+    db = get_database()
+    user_id = str(user["_id"])
+    last_seen = user.get("notifications_last_seen_at")
+
+    notifications = []
+
+    apply_soon_count = await get_apply_soon_count(db, user_id)
+    if apply_soon_count > 0:
+        notifications.append(
+            {
+                "kind": "apply_soon",
+                "message": (
+                    f"{apply_soon_count} top match"
+                    f"{'es' if apply_soon_count != 1 else ''} scoring 8+/10 ready to apply to"
+                ),
+                "link": "/",
+            }
+        )
+
+    # Named per-job entries, not a bare count, "1 job needs a follow-up" gives
+    # nothing to act on. Capped at 5 so a long-neglected pipeline doesn't flood
+    # the dropdown; the rest still show up once these are cleared in Kanban.
+    stale_jobs = await get_stale_followup_jobs(db, user_id, limit=5)
+    for job in stale_jobs:
+        status_label = job["status"].replace("_", " ").title()
+        notifications.append(
+            {
+                "kind": "stale_followup",
+                "message": (
+                    f"{job['title']}"
+                    + (f" at {job['company']}" if job["company"] else "")
+                    + f", {status_label} {job['days_stale']}d ago with no update. "
+                    "Probably a silent rejection, or worth a follow-up."
+                ),
+                "link": "/kanban",
+            }
+        )
+
+    # Only compare against a baseline once one exists, otherwise every model
+    # ever added would show up as "new" on a user's very first bell check.
+    if last_seen:
+        for purpose in ("rating", "cv_parsing"):
+            new_model_count = await db.rating_models.count_documents(
+                {"purpose": purpose, "active": True, "created_at": {"$gt": last_seen}}
+            )
+            if new_model_count > 0:
+                label = "job rating" if purpose == "rating" else "CV parsing"
+                notifications.append(
+                    {
+                        "kind": "new_model",
+                        "message": (
+                            f"{new_model_count} new AI model"
+                            f"{'s' if new_model_count != 1 else ''} available for {label}"
+                        ),
+                        "link": "/settings",
+                    }
+                )
+
+    return {"notifications": notifications, "unseen_count": len(notifications)}
+
+
+@router.post("/notifications/seen")
+async def mark_notifications_seen(user=Depends(get_current_user)):
+    db = get_database()
+    await db.users.update_one(
+        {"_id": ObjectId(user["_id"])},
+        {"$set": {"notifications_last_seen_at": datetime.now(timezone.utc)}},
+    )
+    return {"message": "Marked as seen."}
 
 
 # ── Skill overrides ───────────────────────────────────────────────────────────
@@ -346,7 +432,7 @@ async def get_data_summary(user=Depends(get_current_user)):
         ),
         "legal_note": (
             "JobRadar is a personal job-search tool. Listings come from third-party APIs "
-            "(Jooble, Indeed/JobsAPI, etc.) — each has its own terms. Your CV and "
+            "(Jooble, Indeed/JobsAPI, etc.), each has its own terms. Your CV and "
             "preferences may be sent to an AI provider for job matching. This is not "
             "legal advice; for a public product you'd want a proper Privacy Policy. "
             "You can download or delete your data below anytime."
@@ -376,10 +462,10 @@ async def get_data_summary(user=Depends(get_current_user)):
             "ratings_used": usage.get("ratings_used", 0),
         },
         "third_party_services": [
-            "Jooble API — job listings",
-            "JobsAPI (Indeed) — job listings",
-            "AI/LLM provider — CV + job description matching",
-            "MongoDB — data storage",
+            "Jooble API, job listings",
+            "JobsAPI (Indeed), job listings",
+            "AI/LLM provider, CV + job description matching",
+            "MongoDB, data storage",
         ],
         "stored_items": [
             {
@@ -389,7 +475,7 @@ async def get_data_summary(user=Depends(get_current_user)):
             },
             {
                 "key": "cv",
-                "label": "CV — parsed PDF text & structured profile",
+                "label": "CV, parsed PDF text & structured profile",
                 "stored": bool(cv),
             },
             {

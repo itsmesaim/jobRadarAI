@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-# Default structure — external LLM tailors body sections from MASTER CV; keep preamble intact.
+# Default structure, external LLM tailors body sections from MASTER CV; keep preamble intact.
 CV_LATEX_BOILERPLATE = r"""\documentclass[10pt, a4paper]{article}
 \usepackage[a4paper, top=1.1cm, bottom=1.1cm, left=1.35cm, right=1.35cm]{geometry}
 \usepackage{enumitem}
@@ -66,12 +66,14 @@ CV_LATEX_BOILERPLATE = r"""\documentclass[10pt, a4paper]{article}
 
 \section{Key Projects}
 
-% Prioritize projects that match the JD. Use only facts from MASTER CV projects.
+% Prefer Production-tier (deployed/real users) over Academic over Toy projects; match diversity
+% to what the JD asks for; never bundle unrelated small projects into one bullet. Use only facts
+% from MASTER CV projects.
 {{{PROJECTS_PLACEHOLDER}}}
 
 \section{Education}
 
-% Copy ALL education entries from MASTER CV — do not omit.
+% Copy ALL education entries from MASTER CV, do not omit.
 {{{EDUCATION_PLACEHOLDER}}}
 
 \end{document}
@@ -203,7 +205,7 @@ def format_boilerplate_section(user: dict, job: dict) -> str:
     filename = suggested_tex_filename(user, job)
     body = personalize_boilerplate(user)
     return f"""
-LATEX BOILERPLATE — compilable .tex starting point (tailor body for this role)
+LATEX BOILERPLATE, compilable .tex starting point (tailor body for this role)
 {"=" * 42}
 Suggested filename: {filename}
 Compile: pdflatex {filename}   (or paste into Overleaf → Recompile)

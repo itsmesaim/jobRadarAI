@@ -1,20 +1,22 @@
 """
 Jobs routes.
 
-GET   /jobs              — list all jobs with user's rating
-GET   /jobs/{id}/brief   — export job brief
-PATCH /jobs/{id}/status  — update kanban status
-GET   /jobs/{id}         — single job detail
-POST  /jobs/rate-all     — trigger rating for all unrated jobs
-POST  /jobs/manual       — paste a JD manually and rate it instantly
+GET   /jobs             , list all jobs with user's rating
+GET   /jobs/{id}/brief  , export job brief
+PATCH /jobs/{id}/status , update kanban status
+GET   /jobs/{id}        , single job detail
+POST  /jobs/rate-all    , trigger rating for all unrated jobs
+POST  /jobs/manual      , paste a JD manually and rate it instantly
 """
 
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from bson import ObjectId
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from config import settings
@@ -30,7 +32,7 @@ from services.rating import (
     unrated_jobs_filter,
     rate_job_for_user,
 )
-from services.apply_pack import MIN_APPLY_PACK_SCORE, generate_apply_pack
+from services.apply_pack import MIN_APPLY_PACK_SCORE, generate_apply_pack_stream
 from services.calibration import regenerate_calibration_notes
 from services.limits import (
     check_ai_token_quota,
@@ -60,7 +62,7 @@ VALID_STATUSES = [
 
 PIPELINE_STATUSES = [s for s in VALID_STATUSES if s != "NEW"]
 
-# Statuses that represent completed/terminal actions — excluded from the default "Active" view
+# Statuses that represent completed/terminal actions, excluded from the default "Active" view
 TERMINAL_STATUSES = ["APPLIED", "REJECTED", "OFFER"]
 
 
@@ -85,7 +87,7 @@ def _format_job(job: dict, user_id: str) -> dict:
     # While a background rate-all worker has claimed this job it holds a
     # placeholder rating with verdict=RATING_IN_PROGRESS and score=0 so a
     # second overlapping run won't re-rate it. Never leak that internal
-    # sentinel to the client — surface it as an explicit flag instead so
+    # sentinel to the client, surface it as an explicit flag instead so
     # the UI can show a real "rating in progress" state.
     in_progress = rating.get("verdict") == RATING_IN_PROGRESS
     return {
@@ -95,7 +97,7 @@ def _format_job(job: dict, user_id: str) -> dict:
         "snippet": job.get("snippet", "")[:300],
         "crawled_at": job.get("crawled_at"),
         "posted_at": posted,
-        # True posting date only (None if the source never gave one) — lets
+        # True posting date only (None if the source never gave one), lets
         # the UI distinguish "posted 20m ago" from "we just happened to pull
         # it a moment ago" (crawled_at) rather than always faking one from
         # the other.
@@ -142,14 +144,14 @@ def _build_list_query(
     searching = bool(q and q.strip())
 
     if status == "NEW":
-        # Jobs never touched in Kanban have no status field at all yet — they're
+        # Jobs never touched in Kanban have no status field at all yet, they're
         # implicitly NEW (see the formatter default at line ~112 and the same
         # convention in _list_kanban_jobs' new_jobs query below).
         query["$or"] = [{status_key: {"$exists": False}}, {status_key: "NEW"}]
     elif status:
         query[status_key] = status
     elif exclude_terminal and not searching:
-        # Don't apply this while searching — a query for a job the user
+        # Don't apply this while searching, a query for a job the user
         # already marked APPLIED/REJECTED should still find it.
         query[status_key] = {"$nin": TERMINAL_STATUSES}
 
@@ -170,10 +172,11 @@ def _build_list_query(
                 ]
             }
         )
-    elif rating == "unrated":
-        # Score/rating filters are a "narrow what I'm browsing" tool, not a
-        # search modifier — a search term should surface a matching job
-        # regardless of its score, so these only apply when not searching.
+
+    # Score/rating filters narrow what you're browsing, they combine with a
+    # search term (AND), they don't get overridden by it. A search for "Ireland"
+    # with score 6+ set should only surface Ireland jobs scoring 6+.
+    if rating == "unrated":
         query[f"ratings.{user_id}"] = {"$exists": False}
     elif rating == "rated":
         query[rating_key] = {"$gte": score_min, "$lte": score_max}
@@ -207,18 +210,16 @@ def _passes_job_filters(
     score = formatted.get("score")
     searching = bool(q and q.strip())
 
-    # Score/rating filters narrow what you're browsing — they don't apply
-    # while searching, so a search term finds a matching job regardless of
-    # its score (see the matching comment in _build_list_query).
-    if not searching:
-        if rating == "unrated":
-            if score is not None:
-                return False
-        elif rating == "rated":
-            if score is None or score < score_min or score > score_max:
-                return False
-        elif score is not None and (score < score_min or score > score_max):
+    # Score/rating filters narrow what you're browsing, they combine with a
+    # search term (AND), not overridden by it (see _build_list_query).
+    if rating == "unrated":
+        if score is not None:
             return False
+    elif rating == "rated":
+        if score is None or score < score_min or score > score_max:
+            return False
+    elif score is not None and (score < score_min or score > score_max):
+        return False
 
     if status and formatted.get("status") != status:
         return False
@@ -440,7 +441,7 @@ RerateScope = Literal["unrated", "saved", "all"]
 
 # Re-rating already-scored jobs (scope != "unrated") re-runs the LLM on jobs
 # that normally would never be re-billed. This cooldown gates every account
-# except the admin (settings.admin_email) — full_access users still wait,
+# except the admin (settings.admin_email), full_access users still wait,
 # only the admin can force a re-rate on demand.
 RERATE_COOLDOWN_MINUTES = 48 * 60  # once in a 2 days;
 
@@ -448,8 +449,8 @@ RERATE_COOLDOWN_MINUTES = 48 * 60  # once in a 2 days;
 def _rerate_queue_filter(user_id: str, scope: RerateScope) -> dict:
     """scope="unrated" (default) is the normal rate-all queue. "saved"
     re-rates jobs the user has tracked in their Kanban pipeline (status !=
-    NEW) even if already scored — self-serve, still costs normal rating
-    quota. "all" re-rates every job regardless of status/score — admin-only,
+    NEW) even if already scored, self-serve, still costs normal rating
+    quota. "all" re-rates every job regardless of status/score, admin-only,
     for rolling out a rating-logic fix across a user's full history."""
     if scope == "unrated":
         return unrated_jobs_filter(user_id)
@@ -469,7 +470,7 @@ async def rate_all(
     user=Depends(get_current_user),
 ):
     if scope == "all":
-        # Re-rates the user's ENTIRE job history regardless of status/score —
+        # Re-rates the user's ENTIRE job history regardless of status/score,
         # expensive and rewrites existing ratings, so admin-only for now.
         _require_admin(user)
 
@@ -490,7 +491,7 @@ async def rate_all(
                 wait_hours = int(wait_left.total_seconds() // 3600) + 1
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Re-rate already run recently — try again in {wait_hours}h.",
+                    detail=f"Re-rate already run recently, try again in {wait_hours}h.",
                 )
 
     queue_filter = _rerate_queue_filter(user_id, scope)
@@ -576,7 +577,7 @@ async def add_manual_jd(payload: ManualJD, user=Depends(get_current_user)):
         raise HTTPException(status_code=409, detail="Job already exists for you.")
 
     doc = {
-        "title": f"{payload.title} — {payload.company}",
+        "title": f"{payload.title}, {payload.company}",
         "url": payload.url,
         "url_hash": url_hash,
         "content_fingerprint": content_fingerprint(payload.title, payload.company),
@@ -636,7 +637,7 @@ async def rate_single_job(job_id: str, user=Depends(get_current_user)):
     """Force a fresh rating for one job, bypassing the 'already rated' skip.
 
     Useful after the user updates their CV, preferences, or skill
-    overrides — the old score/verdict on this job may no longer reflect
+    overrides, the old score/verdict on this job may no longer reflect
     their profile.
     """
     db = get_database()
@@ -688,7 +689,7 @@ async def rate_single_job(job_id: str, user=Depends(get_current_user)):
     }
 
 
-# ── RATING FEEDBACK — "did we miss something?" ────
+# ── RATING FEEDBACK, "did we miss something?" ────
 class RatingFeedbackRequest(BaseModel):
     comment: str = ""
     stars: int | None = None
@@ -702,11 +703,11 @@ async def submit_rating_feedback(
     user=Depends(get_current_user),
 ):
     """Store the user's feedback on a job's AI rating. Future ratings of
-    similar jobs retrieve this feedback + stars as calibration context — see
+    similar jobs retrieve this feedback + stars as calibration context, see
     _retrieve_similar_rated_jobs in services/rating.py. Also (in the
     background, so this response doesn't wait on an LLM call) re-summarizes
     ALL of the user's feedback into standing calibration_notes applied to
-    EVERY rating — see services/calibration.py."""
+    EVERY rating, see services/calibration.py."""
     comment = body.comment.strip()
     stars = body.stars
     if stars is not None and not (1 <= stars <= 5):
@@ -744,7 +745,7 @@ async def submit_rating_feedback(
     return {"message": "Feedback saved."}
 
 
-# ── BRIEF — must be before /{job_id} ─────────────────────
+# ── BRIEF, must be before /{job_id} ─────────────────────
 @router.get("/{job_id}/brief")
 async def get_job_brief(job_id: str, user=Depends(get_current_user)):
     db = get_database()
@@ -842,21 +843,29 @@ async def get_job_apply_pack(job_id: str, user=Depends(get_current_user)):
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message
         )
 
-    try:
-        pack = await generate_apply_pack(job, user, rating)
-    except ValueError as exc:
-        await refund_apply_pack(user_id)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        await refund_apply_pack(user_id)
-        raise HTTPException(
-            status_code=500, detail="Failed to generate apply pack. Try again."
-        ) from exc
+    def _sse(event: str, data: dict) -> bytes:
+        return f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
 
-    return {"pack": pack, "apply_packs_remaining": remaining}
+    async def event_stream():
+        try:
+            pack = None
+            async for kind, payload in generate_apply_pack_stream(job, user, rating):
+                if kind == "stage":
+                    yield _sse("stage", payload)
+                elif kind == "done":
+                    pack = payload
+            yield _sse("done", {"pack": pack, "apply_packs_remaining": remaining})
+        except ValueError as exc:
+            await refund_apply_pack(user_id)
+            yield _sse("error", {"detail": str(exc)})
+        except Exception:
+            await refund_apply_pack(user_id)
+            yield _sse("error", {"detail": "Failed to generate apply pack. Try again."})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-# ── STATUS — must be before /{job_id} ────────────────────
+# ── STATUS, must be before /{job_id} ────────────────────
 @router.patch("/{job_id}/status")
 async def update_status(
     job_id: str, payload: StatusUpdate, user=Depends(get_current_user)
@@ -885,7 +894,7 @@ async def update_status(
     return {"message": "Status updated.", "status": payload.status}
 
 
-# ── SINGLE JOB — must be last ────────────────────────────
+# ── SINGLE JOB, must be last ────────────────────────────
 @router.get("/{job_id}")
 async def get_job(job_id: str, user=Depends(get_current_user)):
     db = get_database()

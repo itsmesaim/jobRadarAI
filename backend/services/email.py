@@ -401,7 +401,7 @@ def send_apply_reminder_email(
     body = f"""
 <p style="margin:0 0 12px;font-size:16px;font-weight:600;">Hi {_escape(user_name)},</p>
 <p style="margin:0 0 20px;font-size:15px;color:#3f3f46;">
-  <strong>{total_count}</strong> role{'s' if total_count != 1 else ''} in your pipeline score
+  <strong>{total_count}</strong> role{"s" if total_count != 1 else ""} in your pipeline score
   <strong>{min_score}+/10</strong> and are still marked <em>New</em>. Here are your best matches:
 </p>
 {cards_html}

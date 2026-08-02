@@ -1,5 +1,5 @@
 """
-Rating service — v3 (performance focused).
+Rating service, v3 (performance focused).
 
 Key improvements for speed at 500-1000+ jobs:
   - Embedding pre-filter: low-similarity JDs get score 2 instantly (no LLM call)
@@ -37,6 +37,7 @@ from services.llm import (
     structured_output_kwargs,
 )
 from services.ai_models import get_cost_multiplier, get_default_model_for_provider
+from services.prompt_safety import fence
 from services.limits import (
     _get_fresh_user,
     check_ai_token_quota,
@@ -60,13 +61,13 @@ class JobRating(BaseModel):
         description="Specific JD requirements the candidate is missing or weak on. "
         "Each entry MUST start with '[Essential]' or '[Preferred]' per the JD's own "
         "section heading (see STEP 2.5). One entry per distinct underlying "
-        "requirement — do not list the same missing skill more than once."
+        "requirement, do not list the same missing skill more than once."
     )
     structural_mismatch: bool = Field(
         default=False,
         description="True if there's a categorical disqualifier (role-type, "
         "core-domain mismatch, work authorization, or work mode) that cannot "
-        "be fixed by a better application — not a skill gap.",
+        "be fixed by a better application, not a skill gap.",
     )
     verdict: str = Field(
         description="One sentence summary with an actionable suggestion"
@@ -134,11 +135,11 @@ def _clean_rating_lists(
     """Deterministic backstop for STEP 2.5/2.6: dedup both lists and drop any
     gap that overlaps a confirmed strength. The prompt already tells the
     model to do this, but the same dedup rule already existed for gaps alone
-    and the model still violated it — so this doesn't rely on the model
+    and the model still violated it, so this doesn't rely on the model
     getting it right every time.
     ponytail: gap/strength overlap is a token-overlap heuristic (at least
     half the gap's meaningful words also present in one strength), not
-    semantic matching — upgrade to embedding similarity if paraphrased
+    semantic matching, upgrade to embedding similarity if paraphrased
     dupes start slipping through.
     """
 
@@ -205,12 +206,12 @@ appears to be a search results page rather than an actual job posting,
 score 0 and explain why in the verdict.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 1 — STRUCTURAL DISQUALIFIERS (check first)
+STEP 1, STRUCTURAL DISQUALIFIERS (check first)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 These are categorical mismatches. If any apply, cap the score at 3 or below
 and set structural_mismatch = true. Do NOT penalise for these the same way
-you penalise skill gaps — they are deal-breakers, not "areas to improve."
+you penalise skill gaps, they are deal-breakers, not "areas to improve."
 
 1. ROLE-TYPE / PEOPLE-MANAGEMENT MISMATCH
    Flag ONLY if the role title contains Lead/Principal/Head/Manager/Director
@@ -232,8 +233,12 @@ you penalise skill gaps — they are deal-breakers, not "areas to improve."
    If domain is just context ("join our payments team"), treat as nice-to-have.
 
 3. WORK AUTHORIZATION / SPONSORSHIP MISMATCH
-   If the JD says sponsorship is unavailable and the candidate's work auth
-   does not cover this jurisdiction, auto_reject = true, score ≤ 2.
+   Reason over the candidate's nationality, visa/permit status, and work
+   authorization together against the job's country and stated sponsorship
+   policy, use your own knowledge of how work rights/visas function for
+   that nationality in that country (no fixed rule table is provided).
+   If the JD says sponsorship is unavailable and the candidate cannot
+   legally work in that jurisdiction without it, auto_reject = true, score ≤ 2.
 
 4. WORK MODE MISMATCH
    If the JD is strictly onsite and the candidate's acceptable work modes
@@ -241,7 +246,7 @@ you penalise skill gaps — they are deal-breakers, not "areas to improve."
 
 5. PROFESSIONAL-EXPERIENCE-YEARS MISMATCH
    Freelance work, contract-for-multiple-clients, self-employment, internships,
-   and academic/personal projects are REAL skill evidence — never penalise the
+   and academic/personal projects are REAL skill evidence, never penalise the
    tech-stack match because of them. But they are NOT the same thing as
    continuous full-time employment at a single employer, and must not be
    summed with corporate tenure to satisfy a JD's stated years-of-experience
@@ -254,11 +259,11 @@ you penalise skill gaps — they are deal-breakers, not "areas to improve."
    in verdict (e.g. "JD wants 5+ years corporate experience; candidate's
    relevant years are freelance/academic, not full-time employment").
    The "Stated experience level" in candidate constraints (junior/mid/senior)
-   is the candidate's own self-assessment — treat it as authoritative over
+   is the candidate's own self-assessment, treat it as authoritative over
    whatever a raw year-count on the CV timeline might suggest.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 2 — PARSE THE JD INTO REQUIRED vs PREFERRED
+STEP 2, PARSE THE JD INTO REQUIRED vs PREFERRED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Before scoring, mentally split the JD requirements into two buckets:
@@ -279,29 +284,29 @@ Apply different penalty weights:
   - Never dock full points for a missing "nice to have"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 2.5 — GAP LIST RULES (source, dedup, tier)
+STEP 2.5, GAP LIST RULES (source, dedup, tier)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Before writing the `gaps` list, apply all four rules below:
 
-1. SOURCE RESTRICTION — only pull gaps from the JD's actual requirements /
+1. SOURCE RESTRICTION, only pull gaps from the JD's actual requirements /
    qualifications section (whatever it's labeled: "Required", "Minimum
    Qualifications", "What we like you to have", "Core Engineering
    Foundations", etc.). NEVER extract a gap from a responsibilities /
-   "What you'll do" / "day to day" section — those describe the job, not
+   "What you'll do" / "day to day" section, those describe the job, not
    the hiring bar. If a skill only appears in a responsibilities bullet and
    nowhere in the requirements section, it is not a gap.
 
-2. ONE GAP PER UNDERLYING REQUIREMENT — if a single JD bullet lists several
+2. ONE GAP PER UNDERLYING REQUIREMENT, if a single JD bullet lists several
    interchangeable examples (e.g. "Selenium, Playwright, TestCafe, Cypress,
    Karate, RestAssured or similar"), that is ONE requirement, not one per
    tool. If the candidate has none of them, write ONE gap entry for that
    whole bullet (name the category, e.g. "UI/API test automation framework
    experience"). Do not also write separate gap entries for individual tool
-   names mentioned in that same bullet — that double- or triple-counts a
+   names mentioned in that same bullet, that double- or triple-counts a
    single deficiency.
 
-3. TIER TAG FROM THE JD'S OWN HEADING — look at which heading the bullet
+3. TIER TAG FROM THE JD'S OWN HEADING, look at which heading the bullet
    actually sits under in the JD, and prefix the gap string with exactly
    that tier, derived directly from the heading text, not inferred loosely:
      - Heading contains "Required", "Essential", "Must-have", "Minimum
@@ -311,25 +316,25 @@ Before writing the `gaps` list, apply all four rules below:
    Example: "[Essential] UI/API test automation framework experience
    (Selenium/Playwright/Cypress/TestCafe/Karate/RestAssured) not evidenced".
 
-4. CROSS-CHECK AGAINST STRENGTHS — before a skill/technology goes into
+4. CROSS-CHECK AGAINST STRENGTHS, before a skill/technology goes into
    `gaps`, check whether it is already present in `matched_strengths` (or is
    otherwise confirmed in the candidate's Skills/Projects/experience). If it
    is, it must NEVER also appear in `gaps`, no matter how the JD phrases the
    requirement. This matters most for soft/optional phrasing like "you may
    also touch X", "exposure to X", "occasionally work with X", "nice to have
-   X" — this kind of language means the JD is naming an OPTIONAL AREA, not
+   X", this kind of language means the JD is naming an OPTIONAL AREA, not
    claiming the candidate lacks it. Read it as "this role sometimes touches
    X" and then check the candidate's actual profile for X. If the candidate
    already has X, it is a strength (or simply irrelevant), never a gap. Do
-   not default to "mentioned in JD but not the primary skill = gap" — always
+   not default to "mentioned in JD but not the primary skill = gap", always
    verify against the candidate's confirmed skills first.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 3 — EXPLICIT TOOL-NAME MATCHING
+STEP 3, EXPLICIT TOOL-NAME MATCHING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 When the JD explicitly names a specific tool and the candidate uses it daily
-or has demonstrable experience with it — this is a STRONG POSITIVE SIGNAL.
+or has demonstrable experience with it, this is a STRONG POSITIVE SIGNAL.
 Do not group tool-name hits into vague categories like "AI experience".
 
 Examples of named tools that should earn explicit credit when matched:
@@ -343,7 +348,7 @@ Each named-tool hit that is confirmed in the candidate profile should:
   - Contribute +0.1 to +0.2 if preferred/contextual
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 3.5 — CREDIT FOR BUILDING PRODUCTION AGENTIC / LLM SYSTEMS
+STEP 3.5, CREDIT FOR BUILDING PRODUCTION AGENTIC / LLM SYSTEMS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 If the candidate has **built, deployed, and operated** a real production system that demonstrates agentic/LLM engineering patterns (orchestration, structured LLM outputs, parallel/background LLM work, multi-provider abstraction, evaluation/observability, crawling + LLM processing, developer tooling around AI, etc.), give this **heavy positive weight**.
@@ -361,7 +366,7 @@ Even if they didn't use the exact framework name the JD lists (e.g. they used La
 List the concrete system name (e.g. "JobRadar AI production agentic platform") in matched_strengths when it applies.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 4 — SCORE CALIBRATION
+STEP 4, SCORE CALIBRATION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Start at 5 (neutral baseline for a relevant candidate in the right domain).
@@ -376,7 +381,7 @@ Adjust up for:
 Adjust down for:
   - Missing REQUIRED skills (1.5-2 pts each)
   - Missing PREFERRED skills (0.3-0.5 pts each)
-  - Experience level mismatch (if stated) — do not treat freelance/academic
+  - Experience level mismatch (if stated), do not treat freelance/academic
     calendar years as equivalent to the corporate tenure a "Senior"/
     "N+ years professional experience" JD expects (see Step 1.5)
   - Domain exposure gap (if required, not just mentioned)
@@ -387,7 +392,7 @@ Caps:
     itself names a specific programming language or framework as the core
     of the role (e.g. "Backend Rust Developer", "Senior Golang Engineer",
     "React Native Developer") and the candidate has ZERO evidence of that
-    language/framework anywhere in Skills, Projects, or experience — this is
+    language/framework anywhere in Skills, Projects, or experience, this is
     not one requirement among many, it is the primary axis the entire role
     is built on. Do not apply the standard per-item Essential deduction for
     this case. Instead cap the score at ≤ 4, regardless of how strong the
@@ -397,7 +402,7 @@ Caps:
   - Excellent match across required + named tools: 9-10
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 5 — TAILORING TIPS (for the candidate)
+STEP 5, TAILORING TIPS (for the candidate)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 After deciding the score, matched strengths, and gaps, also produce 2-4 short, **highly specific and actionable** "tailoring_tips".
@@ -409,12 +414,12 @@ These are practical instructions the candidate can directly use when customizing
 - A strong hook sentence or angle that aligns their story with the JD's "Agentic AI", "production platforms", "developer tooling", etc.
 
 Examples of good tips:
-- "Lead your cover note and first bullet with the fact that you built and shipped JobRadar — a live production agentic system that crawls jobs, does parallel LLM structured rating with LangChain, and is deployed end-to-end."
+- "Lead your cover note and first bullet with the fact that you built and shipped JobRadar, a live production agentic system that crawls jobs, does parallel LLM structured rating with LangChain, and is deployed end-to-end."
 - "Explicitly name LangGraph + LangSmith + structured outputs when describing your AI work, even if currently only in the skills section."
 
 Never suggest reframing freelance/academic years as if they were corporate
-tenure (e.g. do not say "frame your N years as full professional experience")
-— that is dishonest and is exactly what Step 1.5 exists to catch, not paper over.
+tenure (e.g. do not say "frame your N years as full professional experience"),
+that is dishonest and is exactly what Step 1.5 exists to catch, not paper over.
 
 Make the tips specific to the JD text and the candidate's actual projects. Avoid generic advice.
 """.strip()
@@ -426,14 +431,14 @@ ROAST_SYSTEM_PROMPT = """
 You are a brutally honest, savagely funny tech recruiter doing a comedy
 roast of how badly this candidate's CV does NOT fit this job description.
 
-Be genuinely funny and cutting — think roast battle energy, not HR-speak.
+Be genuinely funny and cutting, think roast battle energy, not HR-speak.
 Reference SPECIFIC details from their CV and the JD to make the burns land.
-Still be accurate about the real gaps — the roast should be funny BECAUSE
+Still be accurate about the real gaps, the roast should be funny BECAUSE
 it's true, not because it's mean for no reason.
 
 Keep it to 4-6 punchy lines. End with one (sarcastic) actionable tip.
 
-Do not hold back. This is for entertainment — the user explicitly asked
+Do not hold back. This is for entertainment, the user explicitly asked
 to be roasted. Do not soften it into generic encouragement.
 """.strip()
 
@@ -444,6 +449,8 @@ to be roasted. Do not soften it into generic encouragement.
 def _build_constraints_block(user: dict) -> str:
     """Candidate stated preferences injected into the rating prompt."""
     experience_level = user.get("experience_level", "mid")
+    nationality = user.get("nationality", "")
+    visa_status = user.get("visa_status", "")
     work_auth = user.get("work_authorization", "")
     avoid_industries = user.get("avoid_industries", [])
     work_mode = user.get("work_mode", {"remote": True, "hybrid": True, "onsite": False})
@@ -453,6 +460,8 @@ def _build_constraints_block(user: dict) -> str:
 
     lines = [
         f"Stated experience level: {experience_level}",
+        f"Nationality: {nationality or 'not specified'}",
+        f"Visa/permit status: {visa_status or 'not specified'}",
         f"Work authorization: {work_auth or 'not specified'}",
         f"Acceptable work modes: {modes_str}",
     ]
@@ -464,7 +473,7 @@ def _build_constraints_block(user: dict) -> str:
 
 def _build_overrides_block(user: dict) -> str:
     """
-    Candidate knowledge overrides — per-user skill memory stored in MongoDB.
+    Candidate knowledge overrides, per-user skill memory stored in MongoDB.
     Key = skill name, value = candidate's own description of their experience.
     Injected into the prompt so the LLM knows about skills not on the CV.
     """
@@ -485,7 +494,7 @@ def _build_overrides_block(user: dict) -> str:
 
 def _build_about_me_block(user: dict) -> str:
     """
-    Free-text career context field — injaced EARLY in the prompt so the LLM
+    Free-text career context field, injaced EARLY in the prompt so the LLM
     weights it alongside CV skills, not as a footnote.
     """
     about_me = user.get("about_me", "").strip()
@@ -497,7 +506,7 @@ def _build_about_me_block(user: dict) -> str:
 def _build_calibration_notes_block(user: dict) -> str:
     """
     Standing rules distilled from ALL of the user's past rating feedback
-    (services/calibration.py) — unlike _retrieve_similar_rated_jobs below,
+    (services/calibration.py), unlike _retrieve_similar_rated_jobs below,
     this applies to EVERY rating, not just embedding-similar past jobs.
     """
     notes = (user.get("calibration_notes") or "").strip()
@@ -612,12 +621,12 @@ async def rate_job_for_user(job: dict, user: dict) -> dict:
 
     structured = cv.get("structured", {})
     cv_text = f"""
-Name: {structured.get('name')}
-Summary: {structured.get('summary')}
-Skills: {', '.join(structured.get('skills', []))}
-Experience: {json.dumps(structured.get('experience', []))}
-Projects: {json.dumps(structured.get('projects', []))}
-Education: {json.dumps(structured.get('education', []))}
+Name: {structured.get("name")}
+Summary: {structured.get("summary")}
+Skills: {", ".join(structured.get("skills", []))}
+Experience: {json.dumps(structured.get("experience", []))}
+Projects: {json.dumps(structured.get("projects", []))}
+Education: {json.dumps(structured.get("education", []))}
 """.strip()
 
     # Build all context blocks
@@ -634,7 +643,7 @@ Education: {json.dumps(structured.get('education', []))}
             "score": 0,
             "matched_strengths": [],
             "gaps": [],
-            "verdict": "JD text too short to rate accurately — open the job URL and paste the full description, or re-crawl after Indeed upgrades this listing.",
+            "verdict": "JD text too short to rate accurately, open the job URL and paste the full description, or re-crawl after Indeed upgrades this listing.",
             "auto_reject": False,
         }
 
@@ -678,7 +687,7 @@ Education: {json.dumps(structured.get('education', []))}
     if similar_block:
         sections += ["", similar_block]
 
-    sections += ["", f"JOB DESCRIPTION:\n{jd_context}"]
+    sections += ["", fence("JOB DESCRIPTION", jd_context)]
 
     human_message_content = "\n".join(sections)
 
@@ -698,7 +707,7 @@ Education: {json.dumps(structured.get('education', []))}
     ):
         """Retry a structured rating call against one LLM. Some providers
         (observed with DeepSeek) intermittently report finish_reason=
-        "tool_calls" but return an empty tool_calls array — a nondeterministic
+        "tool_calls" but return an empty tool_calls array, a nondeterministic
         client/provider parsing glitch, not a prompt or schema problem
         (reproduced ~15-30% of the time, independent of concurrency and of
         the specific job/CV content). Returns the parsed result, or None if
@@ -749,7 +758,7 @@ Education: {json.dumps(structured.get('education', []))}
             print(
                 f"[rating] !!! Structured output parsed as None (attempt "
                 f"{attempt}/{max_attempts}, provider={provider_label} "
-                f"model={model_label}) — model returned no valid tool call. "
+                f"model={model_label}), model returned no valid tool call. "
                 f"tool_calls={raw_tool_calls!r} content={raw_content!r}"
             )
         return None
@@ -781,7 +790,7 @@ Education: {json.dumps(structured.get('education', []))}
 
         # If the (usually cheaper) rating provider keeps failing to return a
         # valid structured response, fall back to the main LLM once before
-        # giving up — trades a bit of cost for not losing the rating outright
+        # giving up, trades a bit of cost for not losing the rating outright
         # to one provider's flakiness.
         if result is None and settings.llm_provider != provider:
             print(
@@ -833,7 +842,7 @@ Education: {json.dumps(structured.get('education', []))}
 # ── Fast path config ──────────────────────────────────────────────────────────
 
 # Max concurrent LLM rating calls. Tune via RATING_CONCURRENCY in .env based
-# on your provider's tokens-per-minute limit — every call now sends the full
+# on your provider's tokens-per-minute limit, every call now sends the full
 # rating prompt (no cheap first pass), so this is what controls burst TPM.
 RATING_CONCURRENCY = settings.rating_concurrency
 
@@ -861,7 +870,7 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 
 
 def _cv_embedding_text(user: dict) -> str:
-    """Text used for CV embedding — structured fields only (never raw_text,
+    """Text used for CV embedding, structured fields only (never raw_text,
     which carries contact details that add no semantic value here)."""
     cv = user.get("cv", {})
     structured = cv.get("structured", {})
@@ -870,7 +879,7 @@ def _cv_embedding_text(user: dict) -> str:
         " ".join(structured.get("skills", [])),
     ]
     for exp in structured.get("experience", []):
-        parts.append(f"{exp.get('title','')} {exp.get('company','')}")
+        parts.append(f"{exp.get('title', '')} {exp.get('company', '')}")
         parts.extend(exp.get("bullets", [])[:2])
     return " ".join(p for p in parts if p)[:8000]
 
@@ -1016,7 +1025,7 @@ async def _retrieve_relevant_jd_context(
     """Retrieve the JD chunks most relevant to query_text, in original order.
 
     Falls back to plain head-truncation if chunking/embedding isn't
-    available (e.g. embeddings provider down) — degrade gracefully instead
+    available (e.g. embeddings provider down), degrade gracefully instead
     of blocking rating.
     """
     fallback = (job.get("full_text") or job.get("snippet", ""))[:char_budget]
@@ -1043,7 +1052,7 @@ async def _retrieve_relevant_jd_context(
         return fallback
 
     # Keep chunks by relevance rank first (a highly relevant chunk that
-    # happens to sit late in the document must not lose to the budget cap —
+    # happens to sit late in the document must not lose to the budget cap,
     # that would just reintroduce the truncation bug this replaces), then
     # sort the kept chunks back into original order so they read coherently.
     kept = []
@@ -1129,7 +1138,7 @@ def _build_similar_jobs_block(similar: list[dict]) -> str:
         return ""
     lines = ["Similar jobs you've already rated (use these to calibrate consistency):"]
     for s in similar:
-        line = f"  - {s['title']}: {s.get('score')}/10 — {s.get('verdict', '')}"
+        line = f"  - {s['title']}: {s.get('score')}/10, {s.get('verdict', '')}"
         if s.get("stars"):
             line += f" (user rated {s['stars']}/5 stars)"
         if s.get("feedback"):
@@ -1147,9 +1156,9 @@ async def _fast_low_score_rating(sim: float = 0.0) -> dict:
         "matched_strengths": [],
         "gaps": [f"Low semantic match (sim={sim:.2f})"],
         "structural_mismatch": False,
-        "verdict": "Low semantic similarity to your profile — not a good fit (pre-filtered to save tokens).",
+        "verdict": "Low semantic similarity to your profile, not a good fit (pre-filtered to save tokens).",
         "auto_reject": False,
-        "rated_by_model": "auto (no LLM — low semantic match)",
+        "rated_by_model": "auto (no LLM, low semantic match)",
     }
 
 
@@ -1159,9 +1168,9 @@ async def _fast_low_score_rating(sim: float = 0.0) -> dict:
 @traceable(name="rate_all_jobs", run_type="chain")
 async def rate_all_jobs_for_user(user: dict, queue_filter: dict | None = None) -> dict:
     """queue_filter overrides which jobs are eligible (defaults to the normal
-    "unrated only" queue). Callers passing a wider filter — e.g. re-rating
+    "unrated only" queue). Callers passing a wider filter, e.g. re-rating
     jobs the user already tracked in their Kanban pipeline, or (admin-only)
-    every job regardless of score — must include the same
+    every job regardless of score, must include the same
     `verdict != RATING_IN_PROGRESS` guard so overlapping runs can't
     double-claim a job; see routes/jobs.py for the scope→filter mapping."""
     db = get_database()
@@ -1209,7 +1218,7 @@ async def rate_all_jobs_for_user(user: dict, queue_filter: dict | None = None) -
     )
     print(f"[rating] Starting bulk rating for {len(jobs)} jobs (prefilter active)...")
 
-    # One embedding for the CV (cheap) — fall back gracefully if it fails
+    # One embedding for the CV (cheap), fall back gracefully if it fails
     cv_embedding = await _get_cv_embedding(user)
     embeddings = None
     if cv_embedding is not None:
@@ -1219,7 +1228,7 @@ async def rate_all_jobs_for_user(user: dict, queue_filter: dict | None = None) -
             embeddings = None
     if embeddings:
         print(
-            "[rating] Embeddings ready — low-similarity jobs will be pre-filtered (no LLM)"
+            "[rating] Embeddings ready, low-similarity jobs will be pre-filtered (no LLM)"
         )
         print(
             f"[rating] EMBEDDING_SIMILARITY_CUTOFF={EMBEDDING_SIMILARITY_CUTOFF} (jobs below this get cheap pre-filter, no LLM call)"
@@ -1238,7 +1247,7 @@ async def rate_all_jobs_for_user(user: dict, queue_filter: dict | None = None) -
             job_id = str(job["_id"])
             job_title = str(job.get("title", "Unknown"))[:50]
 
-            # Atomic claim — prevents duplicate LLM calls if rate-all runs overlap
+            # Atomic claim, prevents duplicate LLM calls if rate-all runs overlap
             claimed = await db.jobs.find_one_and_update(
                 {
                     "_id": ObjectId(job["_id"]),
@@ -1317,7 +1326,7 @@ async def rate_all_jobs_for_user(user: dict, queue_filter: dict | None = None) -
                         )
                         return 1 if is_billable_rating(rating) else 0
 
-            # Full accurate LLM rating — same prompt path as manual "Paste JD".
+            # Full accurate LLM rating, same prompt path as manual "Paste JD".
             # A cheap "fast" pass used to run first and only promoted to the
             # full prompt when its own (cruder) score was >= 7, so a real 8/9
             # match that the fast prompt under-scored as a 5 or 6 got stuck
@@ -1385,10 +1394,10 @@ async def roast_job_fit(job: dict, user: dict) -> dict:
     cv = user.get("cv", {})
     structured = cv.get("structured", {})
     cv_text = f"""
-Name: {structured.get('name')}
-Summary: {structured.get('summary')}
-Skills: {', '.join(structured.get('skills', []))}
-Experience: {json.dumps(structured.get('experience', []))}
+Name: {structured.get("name")}
+Summary: {structured.get("summary")}
+Skills: {", ".join(structured.get("skills", []))}
+Experience: {json.dumps(structured.get("experience", []))}
 """.strip()
 
     jd_context = await _retrieve_relevant_jd_context(
@@ -1462,7 +1471,7 @@ async def generate_job_brief(job: dict, user: dict, rating: dict) -> str:
     education_lines = []
     for edu in structured.get("education", []):
         education_lines.append(
-            f"  {edu.get('degree')} — {edu.get('institution')} "
+            f"  {edu.get('degree')}, {edu.get('institution')} "
             f"({edu.get('start')} - {edu.get('end')})"
         )
     education_text = "\n".join(education_lines) or "  (none listed)"
@@ -1498,34 +1507,34 @@ async def generate_job_brief(job: dict, user: dict, rating: dict) -> str:
 JOB BRIEF
 ==============================
 {attribution}
-ROLE:       {job.get('title', 'Unknown')}
-COMPANY:    {job.get('company', 'Unknown')}
-URL:        {job.get('url', 'N/A')}
-FIT SCORE:  {rating.get('score', 'N/A')}/10
-STRUCTURAL MISMATCH: {rating.get('structural_mismatch', False)}
+ROLE:       {job.get("title", "Unknown")}
+COMPANY:    {job.get("company", "Unknown")}
+URL:        {job.get("url", "N/A")}
+FIT SCORE:  {rating.get("score", "N/A")}/10
+STRUCTURAL MISMATCH: {rating.get("structural_mismatch", False)}
 {jd_warning}
 
 MATCHED STRENGTHS:
-{chr(10).join(f"  • {s}" for s in rating.get('matched_strengths', []))}
+{chr(10).join(f"  • {s}" for s in rating.get("matched_strengths", []))}
 
 GAPS TO ADDRESS:
-{chr(10).join(f"  • {g}" for g in rating.get('gaps', []))}
+{chr(10).join(f"  • {g}" for g in rating.get("gaps", []))}
 
 VERDICT:
-  {rating.get('verdict', '')}
+  {rating.get("verdict", "")}
 
 ACTIONABLE TAILORING TIPS (use these when applying):
-{chr(10).join(f"  • {t}" for t in rating.get('tailoring_tips', [])) or "  (none generated)"}
+{chr(10).join(f"  • {t}" for t in rating.get("tailoring_tips", [])) or "  (none generated)"}
 
 ==============================
 CANDIDATE PROFILE
 ==============================
-Name:     {structured.get('name', '')}
-Summary:  {structured.get('summary', '')}
-Skills:   {', '.join(structured.get('skills', []))}
+Name:     {structured.get("name", "")}
+Summary:  {structured.get("summary", "")}
+Skills:   {", ".join(structured.get("skills", []))}
 
 ABOUT ME:
-  {about_me or '(not set)'}
+  {about_me or "(not set)"}
 
 KNOWLEDGE OVERRIDES:
 {overrides_text}
@@ -1545,7 +1554,7 @@ EDUCATION:
 ==============================
 FULL JOB DESCRIPTION
 ==============================
-{jd_body if jd_body.strip() else '(not available — listing had no description text stored)'}
+{jd_body if jd_body.strip() else "(not available, listing had no description text stored)"}
 ==============================
 """.strip()
 

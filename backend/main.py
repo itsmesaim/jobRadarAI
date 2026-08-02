@@ -1,8 +1,8 @@
 """
-JobRadar AI — application entry point.
+JobRadar AI, application entry point.
 
 Run from inside the backend/ folder:
-    uvicorn main:app --reload
+    uv run uvicorn main:app --reload
 """
 
 from contextlib import asynccontextmanager
@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
     from services.ai_models import seed_default_rating_models
 
     try:
-        # Old index predates the "purpose" field (rating vs cv_parsing) —
+        # Old index predates the "purpose" field (rating vs cv_parsing),
         # drop it so the same provider/model can exist once per purpose.
         await db.rating_models.drop_index("provider_1_model_1")
     except Exception:
@@ -118,27 +118,27 @@ async def lifespan(app: FastAPI):
 
     if is_weak_jwt_secret(settings.jwt_secret):
         print(
-            "[startup] SECURITY: JWT_SECRET is default, empty, or too short — "
+            "[startup] SECURITY: JWT_SECRET is default, empty, or too short, "
             "set a 48+ character random value in .env before production"
         )
     if settings.debug:
         print(
-            "[startup] SECURITY: DEBUG=true — password reset links may print to logs; "
+            "[startup] SECURITY: DEBUG=true, password reset links may print to logs; "
             "set DEBUG=false in production"
         )
     if not admin_secret:
         print(
-            "[startup] SECURITY: ADMIN_SECRET_PATH unset — admin API disabled "
+            "[startup] SECURITY: ADMIN_SECRET_PATH unset, admin API disabled "
             "(set in .env for admin panel)"
         )
 
     if not settings.jooble_api_key:
         print(
-            "[startup] WARNING: JOOBLE_API_KEY unset — Jooble crawler will not fetch jobs"
+            "[startup] WARNING: JOOBLE_API_KEY unset, Jooble crawler will not fetch jobs"
         )
     if not settings.jobsapi_key:
         print(
-            "[startup] WARNING: JOBSAPI_KEY unset — Indeed crawler "
+            "[startup] WARNING: JOBSAPI_KEY unset, Indeed crawler "
             "(jobs-api14 RapidAPI) will not fetch jobs"
         )
     else:
@@ -155,7 +155,7 @@ async def lifespan(app: FastAPI):
     else:
         reason = smtp_missing_reason() or "unknown"
         print(
-            f"[startup] SMTP not configured ({reason}) — "
+            f"[startup] SMTP not configured ({reason}), "
             "emails will not send; reset links print when DEBUG=true"
         )
 
@@ -195,13 +195,13 @@ app.include_router(users.router)
 # Admin routes are mounted under a random secret path for obscurity.
 # Example: /<ADMIN_SECRET_PATH>/users
 # Only the configured admin email can actually use them.
-# The secret MUST come from .env — never hardcode or commit real value.
+# The secret MUST come from .env, never hardcode or commit real value.
 admin_secret = (getattr(settings, "admin_secret_path", "") or "").strip("/")
 if admin_secret:
     app.include_router(admin.router, prefix=f"/{admin_secret}")
 else:
     print(
-        "[startup] WARNING: ADMIN_SECRET_PATH not set in .env — admin routes disabled for security"
+        "[startup] WARNING: ADMIN_SECRET_PATH not set in .env, admin routes disabled for security"
     )
 
 

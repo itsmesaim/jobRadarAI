@@ -1,9 +1,9 @@
 """
 CV routes.
 
-POST /cv/upload   — upload PDF, parse it, store in MongoDB
-GET  /cv/me       — return current user's parsed CV
-DELETE /cv/me     — remove CV (so user can re-upload)
+POST /cv/upload  , upload CV (PDF, DOCX, ODT, TXT, TeX), parse it, store in MongoDB
+GET  /cv/me      , return current user's parsed CV
+DELETE /cv/me    , remove CV (so user can re-upload)
 """
 
 from datetime import datetime, timezone
@@ -18,7 +18,8 @@ from services.limits import check_ai_token_quota, check_and_increment_cv_upload
 
 router = APIRouter(prefix="/cv", tags=["cv"])
 
-MAX_PDF_SIZE = 5 * 1024 * 1024  # 5MB
+MAX_CV_SIZE = 5 * 1024 * 1024  # 5MB
+ALLOWED_EXTENSIONS = {"pdf", "docx", "odt", "txt", "tex"}
 
 
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
@@ -27,18 +28,23 @@ async def upload_cv(
     user=Depends(get_current_user),
 ):
     # ── basic validation ──────────────────────────────────
-    if file.content_type not in ("application/pdf", "application/octet-stream"):
+    # Extension, not content-type, browsers send inconsistent/empty MIME
+    # types for .odt/.tex, so the filename suffix is the reliable signal.
+    extension = (
+        (file.filename or "").rsplit(".", 1)[-1].lower() if file.filename else ""
+    )
+    if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only PDF files are accepted.",
+            detail="Only PDF, Word (.docx), OpenDocument (.odt), .txt, or .tex files are accepted.",
         )
 
-    pdf_bytes = await file.read()
+    file_bytes = await file.read()
 
-    if len(pdf_bytes) > MAX_PDF_SIZE:
+    if len(file_bytes) > MAX_CV_SIZE:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="PDF must be under 5MB.",
+            detail="File must be under 5MB.",
         )
 
     upload_ok, upload_msg = await check_and_increment_cv_upload(user)
@@ -57,7 +63,7 @@ async def upload_cv(
 
     # ── parse ─────────────────────────────────────────────
     try:
-        raw_text, structured = await process_cv(pdf_bytes, user=user)
+        raw_text, structured = await process_cv(file_bytes, extension, user=user)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -95,7 +101,7 @@ async def get_my_cv(user=Depends(get_current_user)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No CV uploaded yet.",
         )
-    # don't return raw_text in list view — it's large
+    # don't return raw_text in list view, it's large
     return {
         "filename": cv.get("filename"),
         "uploaded_at": cv.get("uploaded_at"),

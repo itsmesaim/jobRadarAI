@@ -80,7 +80,7 @@ def _build_feedback_block(entries: list[dict]) -> str:
         if e.get("stars"):
             line += f" — user rated the rating itself {e['stars']}/5 stars"
         if e.get("comment"):
-            line += f" — user said: \"{e['comment']}\""
+            line += f' — user said: "{e["comment"]}"'
         lines.append(line)
     return "\n".join(lines)
 

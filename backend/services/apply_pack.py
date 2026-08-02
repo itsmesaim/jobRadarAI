@@ -1,5 +1,5 @@
 """
-Apply pack — premium CV tailoring output (ATS keywords, XYZ bullets, LaTeX snippet).
+Apply pack, premium CV tailoring output (ATS keywords, XYZ bullets, LaTeX snippet).
 """
 
 from __future__ import annotations
@@ -8,7 +8,6 @@ import json
 from datetime import datetime, timezone
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from config import settings
@@ -21,6 +20,7 @@ from services.cv_latex_boilerplate import (
     suggested_tex_filename,
 )
 from services.rating import _build_constraints_block, generate_job_brief
+from services.prompt_safety import fence
 
 MIN_APPLY_PACK_SCORE = 6
 
@@ -34,6 +34,21 @@ def _attribution_line(user: dict) -> str:
 APPLY_PACK_SYSTEM_PROMPT = """
 You help a candidate tailor their application for ONE specific job using ONLY their MASTER CV.
 
+Work in two passes, both inside this one response:
+
+PASS 1, DRAFT. Build tailored keywords, bullets, and cover opener per the Rules below.
+
+PASS 2, ATS SCREEN & FIX. Re-read your PASS 1 draft as if you were an Applicant Tracking
+System scanning it against the JD, looking to reject it. Find every concrete reason it would
+be rejected or ranked low: an Essential/Required keyword from the JD missing from the draft,
+a bullet with no measurable outcome where one was available in MASTER CV, a cover opener that
+opens with a hedge or cliche, a keyword tier mismatch. For each real reason found, revise the
+draft to fix it (only using MASTER CV facts, never invent to satisfy the ATS). Record each
+reason and its fix as one line in ats_fixes, e.g. "Missing 'Kubernetes' (Essential), added,
+appears in Skills as part of the CI/CD bullet." If the draft would already pass ATS screening
+cleanly, ats_fixes may be a single line saying so, do not invent problems to pad the list.
+Return only the PASS 2 (fixed) content in the other fields, never the unfixed PASS 1 draft.
+
 Rules:
 - MASTER CV is the only source of truth. Never invent skills, tools, metrics, job titles, or projects.
 - Do not add numbers (%, counts, latency, scale) unless they appear verbatim in MASTER CV bullets or summary.
@@ -41,48 +56,59 @@ Rules:
   Split into matched (appear in MASTER CV) vs missing (in JD but not in MASTER CV).
 - Before listing anything as missing, re-read the FULL MASTER CV Experience, Projects, and Skills
   text yourself and confirm the term genuinely does not appear anywhere (including inside longer
-  bullets, e.g. "AWS (EC2, S3)" satisfies "AWS" — do not miss keywords buried in a longer phrase).
+  bullets, e.g. "AWS (EC2, S3)" satisfies "AWS", do not miss keywords buried in a longer phrase).
 - Tier every keyword (Essential vs Desirable / Required vs Preferred) using the JD's OWN section
-  headers exactly as written. Never infer or upgrade a tier from wording alone — if the JD lists a
+  headers exactly as written. Never infer or upgrade a tier from wording alone, if the JD lists a
   skill under "Desirable" or "Nice to have", it is Desirable, even if it sounds important.
 - FALSE EQUIVALENCE CHECK on matched keywords: before listing a keyword as matched, confirm it
   actually satisfies the JD's requirement, not just a similar-sounding one. A CV term that sounds
   related but doesn't cover the JD ask (e.g. "mobile-first responsive web" ≠ "native mobile app
   development"; "LangSmith observability" ≠ "frontend observability tooling like Sentry/Lighthouse")
-  must NOT be listed as matched — put it in missing instead, or if listed as matched, append an
-  inline caveat to the string itself, e.g. "mobile-first development (web only — does not cover
+  must NOT be listed as matched, put it in missing instead, or if listed as matched, append an
+  inline caveat to the string itself, e.g. "mobile-first development (web only, does not cover
   native mobile app development)".
 - Specifically check for named AI/agent protocols or frameworks the JD calls out as core requirements
   (e.g. MCP / Model Context Protocol server experience). If MASTER CV only shows the candidate
-  learning or building toward it (not shipped/production experience), list it as missing — do not
+  learning or building toward it (not shipped/production experience), list it as missing, do not
   treat "currently learning X" as equivalent to having X.
 - Do NOT tell the candidate to add missing keywords unless MASTER CV or skill overrides support them.
 - Google XYZ bullets: rephrase EXISTING experience/project bullets from MASTER CV. Use strict XYZ
   format (Accomplished [X] as measured by [Y], by doing [Z]) ONLY where a real metric for that bullet
   already exists in MASTER CV. Where no real metric exists, use X/Z format (Accomplished [X] by doing
-  [Z], no measured-by clause) — never invent a Y. Use 2-4 bullets. No new roles or achievements.
+  [Z], no measured-by clause), never invent a Y. Use 2-4 bullets. No new roles or achievements.
 - ONE bullet = ONE accomplishment. Each XYZ/X-Z bullet must be a rephrasing of a SINGLE existing
   MASTER CV bullet (one experience entry or one project). Never combine two unrelated MASTER CV
-  bullets into one sentence with an invented "by doing"/"through"/"which enabled" link between them
-  — e.g. do not merge "built LLM features" with "maintained WordPress sites" into one bullet just
+  bullets into one sentence with an invented "by doing"/"through"/"which enabled" link between them,
+  e.g. do not merge "built LLM features" with "maintained WordPress sites" into one bullet just
   because both appear in MASTER CV. If two bullets are both worth including, output them as two
   separate bullets, never stitched into a false causal chain.
 - Apply the SAME rephrasing rule to every bullet in the list. Do not rephrase some bullets into XYZ/
-  X-Z format and leave others as a verbatim copy-paste of the MASTER CV line — pick XYZ or X/Z per
+  X-Z format and leave others as a verbatim copy-paste of the MASTER CV line, pick XYZ or X/Z per
   bullet based on whether it has a metric, but every bullet must be rephrased, none skipped.
-- Cover opener: 3-4 sentences for email or LinkedIn note — specific, grounded in MASTER CV facts.
+- Cover opener: 3-4 sentences for email or LinkedIn note, specific, grounded in MASTER CV facts.
   Structure it by FIT SCORE (given below):
     - Score >= 8: lead with the single strongest technical match, stated as fact.
     - Score 6-7: sentence 1 states the strongest unambiguous match as fact (no "excited", no
       "aligns with"/"aligns directly"); sentence 2 gives one concrete example using the JD's exact
       wording; sentence 3 names the Essential gaps plainly ("I don't have X") with no hedging
-      ("my background doesn't include formal X experience" is hedging — don't write that); sentence
+      ("my background doesn't include formal X experience" is hedging, don't write that); sentence
       4 is a specific close tied to the actual work, not generic ("I look forward to hearing from
       you" / "I'm confident I'd be a great fit" are banned).
   NEVER write "aligns directly with" or "excited by the opportunity" before giving one concrete,
   specific connection first.
-- LaTeX snippet: short \\item bullets for experience (plain LaTeX, no preamble) — hints for the full .tex file.
+- LaTeX snippet: short \\item bullets for experience (plain LaTeX, no preamble), hints for the full .tex file.
 - honest_notes: 1-3 caveats (e.g. structural mismatch, thin JD). No invented positives.
+- PROJECT SELECTION for any bullet drawn from MASTER CV projects (not experience):
+    - Tier every candidate project Production (live/deployed, real or informal users) > Academic
+      (coursework/dissertation, no live users) > Toy (small CRUD/tutorial builds). Prefer Production
+      bullets. Use an Academic project only when it's the single best match for a specific JD
+      requirement. Never lead with a Toy project.
+    - Match project diversity to what the JD actually values, if it asks for range across
+      paradigms/stacks, don't default to bullets from similar CRUD-flavored projects; surface
+      genuinely different technical territory (real-time systems, ML-from-scratch, ops platforms)
+      even if the keyword match is less literal.
+    - If FIT SCORE < 7, lead with the bullet from the single most directly relevant Production
+      project rather than spreading emphasis evenly across several medium-fit ones.
 
 Keep language concrete. Use only project names, companies, and stack from MASTER CV.
 """.strip()
@@ -96,18 +122,18 @@ class ApplyPackContent(BaseModel):
         description=(
             "Important JD keywords/phrases already supported by the CV. If a keyword only "
             "partially satisfies the JD ask, append an inline caveat instead of overstating it "
-            '(e.g. "mobile-first development (web only — not native app dev)").'
+            '(e.g. "mobile-first development (web only, not native app dev)").'
         )
     )
     ats_keywords_missing: list[str] = Field(
-        description="JD keywords not found in CV — gaps only, do not fabricate"
+        description="JD keywords not found in CV, gaps only, do not fabricate"
     )
     xyz_bullets: list[str] = Field(
         description=(
             "2-4 accomplishment bullets tailored to this role. Use Google XYZ format "
             "(Accomplished X as measured by Y, by doing Z) only where MASTER CV has a real "
             "metric for that bullet; otherwise use X/Z format with no invented Y. Each bullet "
-            "must rephrase exactly ONE MASTER CV bullet — never merge two unrelated MASTER CV "
+            "must rephrase exactly ONE MASTER CV bullet, never merge two unrelated MASTER CV "
             "bullets into one sentence with a fabricated causal link. Every bullet in this list "
             "must be rephrased the same way; never leave one as a verbatim copy of MASTER CV."
         )
@@ -124,10 +150,18 @@ class ApplyPackContent(BaseModel):
     honest_notes: list[str] = Field(
         default_factory=list, description="Caveats about fit or JD quality"
     )
+    ats_fixes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "PASS 2 ATS-screen findings: one line per reason the PASS 1 draft would've been "
+            "rejected/ranked low, and how it was fixed. E.g. \"Missing 'Kubernetes' (Essential): "
+            'added, appears in Skills." If nothing needed fixing, a single line saying so.'
+        ),
+    )
 
 
 def _format_master_cv(user: dict) -> str:
-    """Human-readable master CV — source of truth for tailoring (not JobRadar marketing copy)."""
+    """Human-readable master CV, source of truth for tailoring (not JobRadar marketing copy)."""
     cv = user.get("cv", {})
     structured = cv.get("structured", {}) or {}
     overrides = user.get("skill_overrides", {}) or {}
@@ -155,7 +189,7 @@ def _format_master_cv(user: dict) -> str:
         grade = edu.get("grade")
         grade_part = f", {grade}" if grade else ""
         education_lines.append(
-            f"  {edu.get('degree')} — {edu.get('institution')} "
+            f"  {edu.get('degree')}, {edu.get('institution')} "
             f"({edu.get('start')} - {edu.get('end')}{grade_part})"
         )
     education_text = "\n".join(education_lines) or "  (none listed)"
@@ -172,7 +206,7 @@ def _format_master_cv(user: dict) -> str:
     )
 
     return f"""
-MASTER CV — SOURCE OF TRUTH (tailor ONLY from this; do not invent facts)
+MASTER CV, SOURCE OF TRUTH (tailor ONLY from this; do not invent facts)
 {"=" * 42}
 Name:     {structured.get("name", "")}
 Summary:  {structured.get("summary", "")}
@@ -234,7 +268,7 @@ def format_apply_pack(
     notes = content.honest_notes or []
 
     lines = [
-        "APPLY PACK — JobRadar Pro",
+        "APPLY PACK, JobRadar Pro",
         _attribution_line(user),
         "=" * 42,
         f"ROLE:     {job.get('title', 'Unknown')}",
@@ -258,11 +292,11 @@ def format_apply_pack(
     (
         lines.extend(f"  • {k}" for k in missing)
         if missing
-        else lines.append("  (none — strong overlap)")
+        else lines.append("  (none, strong overlap)")
     )
     lines += [
         "",
-        "SUGGESTED XYZ BULLETS (rephrase MASTER CV only — drop any line with facts not in MASTER CV):",
+        "SUGGESTED XYZ BULLETS (rephrase MASTER CV only, drop any line with facts not in MASTER CV):",
     ]
     lines.extend(f"  • {b}" for b in xyz)
     lines += [
@@ -275,6 +309,12 @@ def format_apply_pack(
         "",
     ]
 
+    ats_fixes = content.ats_fixes or []
+    if ats_fixes:
+        lines += ["ATS SCREENING (what would've gotten this rejected, and the fix):"]
+        lines.extend(f"  • {f}" for f in ats_fixes)
+        lines.append("")
+
     if notes:
         lines += ["HONEST NOTES:"]
         lines.extend(f"  • {n}" for n in notes)
@@ -286,11 +326,20 @@ def format_apply_pack(
     return "\n".join(lines)
 
 
-def build_one_shot_instructions(user: dict, job: dict) -> str:
+def build_one_shot_instructions(user: dict, job: dict, rating: dict) -> str:
     filename = suggested_tex_filename(user, job)
+    score = rating.get("score")
+    score_anchor_note = (
+        f"FIT SCORE is {score}/10, below 7, so lead Key Projects with the single most directly "
+        "relevant Production-tier project rather than spreading emphasis evenly across several."
+        if isinstance(score, (int, float)) and score < 7
+        else f"FIT SCORE is {score}/10."
+        if score is not None
+        else ""
+    )
     return f"""
 ══════════════════════════════════════════════════════════════
-ONE-SHOT PROMPT — paste this ENTIRE document into ChatGPT / Claude / Grok
+ONE-SHOT PROMPT, paste this ENTIRE document into ChatGPT / Claude / Grok
 ══════════════════════════════════════════════════════════════
 {_attribution_line(user)}
 
@@ -300,33 +349,33 @@ then a complete compilable CV .tex file.
 STRICT RULES:
 - MASTER CV (below) is the ONLY source of truth. Do not invent skills, tools, metrics, or roles.
 - Do not add numbers (%, counts, scale, latency) unless they appear in MASTER CV bullets or summary.
-- Rephrase and reorder EXISTING experience/project bullets — do not create new jobs or projects.
+- Rephrase and reorder EXISTING experience/project bullets, do not create new jobs or projects.
 - Do NOT write a fit assessment, preamble, commentary, or closing notes ("let me know", "production-ready", etc.).
-- Do NOT omit Education — copy every entry from MASTER CV (degree, institution, dates, grade).
-- The GAPS list and APPLY PACK "JD keywords you lack" were generated by an earlier automated pass —
+- Do NOT omit Education, copy every entry from MASTER CV (degree, institution, dates, grade).
+- The GAPS list and APPLY PACK "JD keywords you lack" were generated by an earlier automated pass,
   do not take them on faith. Before treating anything as a gap, re-read MASTER CV Experience,
   Projects, and Skills yourself; if the term is actually present (including inside a longer bullet,
   e.g. "AWS (EC2, S3)" covers "AWS"), drop it from the gap list instead of repeating the error.
 - When discussing any gap's severity, use the JD's own section headers (Essential/Required vs
-  Desirable/Preferred/Nice-to-have) exactly as written — never infer or upgrade severity from tone.
+  Desirable/Preferred/Nice-to-have) exactly as written, never infer or upgrade severity from tone.
 - If the JD names a specific AI/agent protocol or framework as a core requirement (e.g. MCP / Model
   Context Protocol server experience) and MASTER CV only shows the candidate learning or building
-  toward it rather than shipped/production experience, that IS a real gap — call it out, don't skip it.
+  toward it rather than shipped/production experience, that IS a real gap, call it out, don't skip it.
 - Google XYZ format (Accomplished [X] as measured by [Y], by doing [Z]) applies only to bullets where
   a real metric for that specific accomplishment exists in MASTER CV. Where no real metric exists,
-  write X/Z instead (Accomplished [X] by doing [Z], no measured-by clause) — never invent a Y just to
+  write X/Z instead (Accomplished [X] by doing [Z], no measured-by clause), never invent a Y just to
   fill the format.
 - ONE bullet = ONE accomplishment. Each bullet must rephrase a SINGLE existing MASTER CV bullet. Never
   merge two unrelated MASTER CV bullets into one sentence with an invented "by doing" / "through" link
   between them (e.g. do not connect an LLM-integration bullet to an unrelated WordPress-maintenance
   bullet as if one caused the other). If both are worth including, write two separate bullets.
-- Apply the same rephrasing treatment to every bullet — do not rephrase some into XYZ/X-Z format and
+- Apply the same rephrasing treatment to every bullet, do not rephrase some into XYZ/X-Z format and
   leave others as an unrephrased, verbatim copy of the MASTER CV line.
-- Use LATEX BOILERPLATE (below) as the structural template — keep preamble and packages unchanged.
+- Use LATEX BOILERPLATE (below) as the structural template, keep preamble and packages unchanged.
 
-Use JOB BRIEF / JD only for emphasis and keyword ordering — not to invent experience.
+Use JOB BRIEF / JD only for emphasis and keyword ordering, not to invent experience.
 
-PART 1 — OUTPUT EXACTLY THESE MARKDOWN HEADINGS (no text before ## Professional Summary):
+PART 1, OUTPUT EXACTLY THESE MARKDOWN HEADINGS (no text before ## Professional Summary):
 
 ## Professional Summary
 (max 3 lines, grounded in MASTER CV)
@@ -345,26 +394,64 @@ PART 1 — OUTPUT EXACTLY THESE MARKDOWN HEADINGS (no text before ## Professiona
 ## Cover Note
 (3-4 sentences; start from COVER NOTE OPENER in APPLY PACK section)
 
-PART 2 — AFTER Part 1, output exactly one more heading:
+PART 2, AFTER Part 1, output exactly one more heading:
 
 ## Complete LaTeX CV
 Output ONE fenced ```latex code block with a FULL compilable document:
-- Start from LATEX BOILERPLATE below — same \\documentclass, packages, geometry, section order.
-- Replace Summary, Technical Skills, Professional Experience, Key Projects, and Education
-  using Part 1 content and MASTER CV facts only.
+- Start from LATEX BOILERPLATE below, same \\documentclass, packages, geometry, section order.
+- Replace Summary, Technical Skills, Professional Experience, and Education using Part 1 content
+  and MASTER CV facts only.
+- KEY PROJECTS SELECTION, pick from MASTER CV projects using these rules, in order:
+    1. Tier every candidate project Production (live/deployed, real or informal users) > Academic
+       (coursework/dissertation, no live users) > Toy (small CRUD/tutorial builds). Always prefer
+       Production. Use an Academic project only when it's the single best match for a specific JD
+       requirement. Never lead with a Toy project.
+    2. Never bundle multiple unrelated small projects into one bullet (e.g. "three REST APIs: X, Y,
+       Z" reads as padding regardless of how true it is), give each real bullets, or drop the set
+       in favor of a stronger single project.
+    3. Match project diversity to what the JD actually values. If it explicitly asks for range
+       across paradigms/stacks, do not submit several similar CRUD-flavored variants, surface
+       genuinely different technical territory (real-time/server-authoritative systems, ML-from-
+       scratch, multi-domain ops platforms) even if the keyword match is less literal.
+    4. Cap at 3-4 projects, minimum 3 bullets each. Never include a project with only 1 bullet, if
+       it can't support 3 real bullets from MASTER CV, replace it with a stronger project rather
+       than padding it with filler.
+    5. {score_anchor_note}
 - Tailor bullet order and keyword emphasis for this role ({job.get("title", "")} @ {job.get("company", "")}).
 - Escape LaTeX specials: % → \\%, & → \\&, _ → \\_ (outside \\texttt{{}}).
 - Suggested filename: {filename}
 - Must compile with pdflatex without errors.
 
 If your environment can write files: save as {filename}, run pdflatex twice, and report the .tex and .pdf paths.
-If not (most chat UIs): the ```latex block alone is enough — user pastes into Overleaf and Recompile.
+If not (most chat UIs): the ```latex block alone is enough, user pastes into Overleaf and Recompile.
 No commentary after the code block.
 """.strip()
 
 
-@traceable(name="generate_apply_pack", run_type="chain")
-async def generate_apply_pack(job: dict, user: dict, rating: dict) -> str:
+# Rotating status lines shown to the user while each real generation step runs,
+# keyed by the stage name yielded from generate_apply_pack_stream below.
+STAGE_FLAVOR = {
+    "tailoring": [
+        "Reading your CV against this job...",
+        "Matching ATS keywords...",
+        "Running the draft past an ATS screen...",
+        "Fixing what it would've flagged...",
+    ],
+    "brief": [
+        "Writing your fit brief...",
+        "Weighing strengths against gaps...",
+    ],
+    "packaging": [
+        "Packaging everything up...",
+        "Almost there...",
+    ],
+}
+
+
+async def generate_apply_pack_stream(job: dict, user: dict, rating: dict):
+    """Async generator yielding ("stage", {"stage": key, "messages": [...]}) tuples as
+    each real step starts, then a final ("done", pack_str) with the finished apply pack.
+    Lets the caller show live progress instead of one long blocking wait."""
     if is_incomplete_jd(job.get("full_text", "")):
         raise ValueError(
             "Job description is incomplete. Paste the full JD or re-crawl before generating an apply pack."
@@ -411,8 +498,7 @@ MATCHED STRENGTHS: {rating.get("matched_strengths", [])}
 GAPS: {rating.get("gaps", [])}
 VERDICT: {rating.get("verdict", "")}
 
-JOB DESCRIPTION:
-{jd_text}
+{fence("JOB DESCRIPTION", jd_text)}
 
 CANDIDATE (JSON):
 {_cv_context(user)}
@@ -423,6 +509,7 @@ CANDIDATE (JSON):
         HumanMessage(content=human),
     ]
 
+    yield "stage", {"stage": "tailoring", "messages": STAGE_FLAVOR["tailoring"]}
     raw_result = await structured_llm.ainvoke(messages)
     if isinstance(raw_result, dict):
         parsed: ApplyPackContent | None = raw_result.get("parsed")
@@ -445,11 +532,14 @@ CANDIDATE (JSON):
     tailoring = format_apply_pack(job, rating, parsed, user)
     master_cv = _format_master_cv(user)
     latex_boilerplate = format_boilerplate_section(user, job)
+
+    yield "stage", {"stage": "brief", "messages": STAGE_FLAVOR["brief"]}
     brief = await generate_job_brief(job, user, rating)
 
-    return "\n\n".join(
+    yield "stage", {"stage": "packaging", "messages": STAGE_FLAVOR["packaging"]}
+    pack = "\n\n".join(
         [
-            build_one_shot_instructions(user, job),
+            build_one_shot_instructions(user, job, rating),
             latex_boilerplate,
             master_cv,
             tailoring,
@@ -459,3 +549,4 @@ CANDIDATE (JSON):
             brief,
         ]
     )
+    yield "done", pack

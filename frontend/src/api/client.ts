@@ -12,7 +12,7 @@ export type ApiError = Error & {
 
 const baseURL = import.meta.env.VITE_API_URL;
 
-function buildUrl(path: string, params?: RequestConfig["params"]) {
+export function buildUrl(path: string, params?: RequestConfig["params"]) {
   const url = new URL(path, baseURL.endsWith("/") ? baseURL : `${baseURL}/`);
   if (params) {
     for (const [key, value] of Object.entries(params)) {
@@ -82,5 +82,10 @@ const api = {
     request<T>("PATCH", path, { ...config, data }),
   delete: <T = any>(path: string, config?: RequestConfig) => request<T>("DELETE", path, config),
 };
+
+export function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem("token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 export default api;

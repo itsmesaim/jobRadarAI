@@ -1,4 +1,4 @@
-import api from "./client";
+import api, { buildUrl, authHeaders, type ApiError } from "./client";
 import type {
   Job,
   JobsResponse,
@@ -75,7 +75,7 @@ export const jobsApi = {
   },
 
   // Admin-only: re-rates EVERY job for the account regardless of status or
-  // existing score — use after a rating-prompt fix. Backend rejects this
+  // existing score, use after a rating-prompt fix. Backend rejects this
   // for non-admins.
   rateAllForce: async () => {
     const res = await api.post("/jobs/rate-all?scope=all");
@@ -122,9 +122,57 @@ export const jobsApi = {
     return res.data as { brief: string };
   },
 
-  getApplyPack: async (id: string) => {
-    const res = await api.get(`/jobs/${id}/apply-pack`);
-    return res.data as { pack: string; apply_packs_remaining: number };
+  /** Streams apply-pack generation over SSE, calling onStage as each real step starts. */
+  streamApplyPack: async (
+    id: string,
+    onStage: (event: { stage: string; messages: string[] }) => void,
+  ): Promise<{ pack: string; apply_packs_remaining: number }> => {
+    const res = await fetch(buildUrl(`/jobs/${id}/apply-pack`), { headers: authHeaders() });
+
+    if (!res.ok || !res.body) {
+      let detail = res.statusText;
+      try {
+        const data = await res.json();
+        detail = data?.detail || detail;
+      } catch {
+        /* body wasn't JSON, keep statusText */
+      }
+      const err = new Error(detail) as ApiError;
+      err.response = { status: res.status, data: { detail } };
+      throw err;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result: { pack: string; apply_packs_remaining: number } | null = null;
+    let errorDetail: string | null = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let sepIndex: number;
+      while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
+        const frame = buffer.slice(0, sepIndex);
+        buffer = buffer.slice(sepIndex + 2);
+        const eventMatch = /^event: (.+)$/m.exec(frame);
+        const dataMatch = /^data: (.+)$/m.exec(frame);
+        if (!eventMatch || !dataMatch) continue;
+        const data = JSON.parse(dataMatch[1]);
+        if (eventMatch[1] === "stage") onStage(data);
+        else if (eventMatch[1] === "done") result = data;
+        else if (eventMatch[1] === "error") errorDetail = data.detail;
+      }
+    }
+
+    if (errorDetail) {
+      const err = new Error(errorDetail) as ApiError;
+      err.response = { status: 400, data: { detail: errorDetail } };
+      throw err;
+    }
+    if (!result) throw new Error("Apply pack stream ended unexpectedly");
+    return result;
   },
 
   hide: async (id: string) => {
@@ -203,6 +251,18 @@ export const userApi = {
     return res.data;
   },
 
+  getNotifications: async () => {
+    const res = await api.get("/users/notifications");
+    return res.data as {
+      notifications: { kind: string; message: string; link: string }[];
+      unseen_count: number;
+    };
+  },
+  markNotificationsSeen: async () => {
+    const res = await api.post("/users/notifications/seen");
+    return res.data;
+  },
+
   requestModel: async (requested_model: string, note: string, purpose: ModelPurpose = "rating") => {
     const res = await api.post("/users/rating-model-request", { requested_model, note, purpose });
     return res.data as { message: string; requested_model: string };
@@ -233,7 +293,7 @@ export const userApi = {
   },
 };
 
-// Admin APIs — these must be called with the full prefixed path when adminBasePath is present
+// Admin APIs, these must be called with the full prefixed path when adminBasePath is present
 // e.g. api.get(`${adminBasePath}/users`)
 export const adminApi = {
   listUsers: async (basePath: string, page = 1, limit = 50) => {
@@ -348,7 +408,7 @@ export const adminApi = {
   },
 };
 
-/** @deprecated use jobsApi.fetchUrl — kept as alias for ManualJDModal */
+/** @deprecated use jobsApi.fetchUrl, kept as alias for ManualJDModal */
 export const scrapeApi = {
   fetchJobFromUrl: (url: string) => jobsApi.fetchUrl(url),
 };

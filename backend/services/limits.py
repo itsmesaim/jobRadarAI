@@ -348,8 +348,7 @@ def apply_pack_limit_message(limit: int) -> str:
     if limit <= 0:
         return "Apply pack is a premium feature. Contact us for full access."
     return (
-        f"Free apply pack limit reached ({limit}/day). "
-        "Contact us for premium access."
+        f"Free apply pack limit reached ({limit}/day). Contact us for premium access."
     )
 
 
