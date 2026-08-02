@@ -38,6 +38,16 @@ const REJECTION_QUOTES = [
   "Rejection is redirection.",
   "Keep going, something better is coming.",
   "Even the best get rejected. It's part of the process.",
+  "One rejection is one data point, not a verdict on you.",
+  "You didn't lose the job. It just wasn't the one.",
+  "Every application is reps. Reps build the skill that lands the offer.",
+  "The right fit is still out there, this one just wasn't it.",
+  "Most interviews are rejections. Most careers are still built.",
+  "This one's a no. The next one might not be.",
+  "You showed up. That's the part actually in your control.",
+  "A closed door here doesn't close the ones still ahead.",
+  "Log it, learn from it if there's something to learn, and move on.",
+  "The people getting hired right now got plenty of nos first.",
 ];
 
 function StatusSelect({
@@ -98,7 +108,7 @@ function DraggableKanbanCard({ job }: { job: Job }) {
     <div ref={setNodeRef} className="kanban-card" style={style} {...attributes} {...listeners}>
       <p
         style={{
-          margin: "0 0 var(--space-2)",
+          margin: "0 0 2px",
           fontWeight: 500,
           color: "var(--text)",
           lineHeight: 1.4,
@@ -110,6 +120,20 @@ function DraggableKanbanCard({ job }: { job: Job }) {
       >
         {job.title}
       </p>
+      {job.company && (
+        <p
+          style={{
+            margin: "0 0 var(--space-2)",
+            fontSize: "var(--text-xs)",
+            color: "var(--text-muted)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {job.company}
+        </p>
+      )}
       <div
         style={{
           display: "flex",
@@ -147,7 +171,7 @@ function MobileKanbanCard({
     <div className="kanban-mobile-card">
       <p
         style={{
-          margin: "0 0 var(--space-3)",
+          margin: "0 0 2px",
           fontWeight: 600,
           fontSize: "var(--text-base)",
           color: "var(--text)",
@@ -156,6 +180,17 @@ function MobileKanbanCard({
       >
         {job.title}
       </p>
+      {job.company && (
+        <p
+          style={{
+            margin: "0 0 var(--space-3)",
+            fontSize: "var(--text-sm)",
+            color: "var(--text-muted)",
+          }}
+        >
+          {job.company}
+        </p>
+      )}
       <div
         style={{
           display: "flex",
@@ -497,11 +532,10 @@ export function KanbanPage() {
       >
         <div>
           <h1
+            className="text-display"
             style={{
               fontSize: isMobile ? "var(--text-xl)" : "var(--text-2xl)",
-              fontWeight: 700,
               margin: "0 0 var(--space-1)",
-              color: "var(--text)",
             }}
           >
             Pipeline

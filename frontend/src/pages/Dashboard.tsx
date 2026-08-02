@@ -14,8 +14,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Briefcase,
-  Sparkles,
-  BellRing,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { JobCard } from "../components/JobCard";
@@ -27,8 +25,9 @@ import {
   parseLimitKindFromDetail,
   type LimitKind,
 } from "../components/LimitContactModal";
-import { jobsApi, crawlerApi } from "../api/index";
+import { jobsApi, crawlerApi, cvApi, userApi } from "../api/index";
 import { useAuthStore } from "../hooks/useStores";
+import { getMissingProfileFields } from "../utils/profileCompleteness";
 
 type ScoreFilterId = "6plus" | "7plus" | "8plus" | "below6" | "unrated" | "all";
 type ViewMode = "active" | "all";
@@ -280,8 +279,6 @@ export function Dashboard() {
   const [page, setPage] = useState(1);
   const [showManual, setShowManual] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [reminderDismissed, setReminderDismissed] = useState(false);
-  const [staleReminderDismissed, setStaleReminderDismissed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -290,7 +287,7 @@ export function Dashboard() {
   const openLimitModal = (kind: LimitKind) => setLimitModalKind(kind);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(searchQuery), 400);
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 1000);
     return () => clearTimeout(t);
   }, [searchQuery]);
 
@@ -470,6 +467,26 @@ export function Dashboard() {
     refetchInterval: 45000,
   });
 
+  // 404 (no CV uploaded yet) is a valid, expected state here, don't retry it.
+  const cvQ = useQuery({ queryKey: ["cv"], queryFn: cvApi.get, retry: false });
+  const prefsQ = useQuery({ queryKey: ["preferences"], queryFn: userApi.getPreferences });
+  const prefs = prefsQ.data;
+
+  const missingProfileFields = getMissingProfileFields(cvQ.data, prefs);
+  // Preferences + CV queries haven't resolved yet, don't block the button on a false "missing" read.
+  const profileCheckReady = prefsQ.isSuccess && (cvQ.isSuccess || cvQ.isError);
+  const hasRequiredProfile = !profileCheckReady || missingProfileFields.length === 0;
+
+  const requireCompleteProfile = () => {
+    if (hasRequiredProfile) return true;
+    toast.error(
+      `Complete your profile before searching: ${missingProfileFields.map((f) => f.label).join(", ")}.`,
+      { duration: 6000 },
+    );
+    navigate("/settings");
+    return false;
+  };
+
   const usage = statusQ.data;
   const isFull = !!(
     user?.isAdmin ||
@@ -514,10 +531,6 @@ export function Dashboard() {
   const strongMatchesCount = usage?.strong_matches_count ?? 0;
   const unratedCount = usage?.unrated_count ?? 0;
   const activeAccountCount = usage?.active_count ?? data?.account_total ?? 0;
-  const showReminder = !reminderDismissed && applySoonCount >= 2;
-  const staleFollowupCount = usage?.stale_followup_count ?? 0;
-  const staleFollowupDays = usage?.stale_followup_days ?? 7;
-  const showStaleReminder = !staleReminderDismissed && staleFollowupCount > 0;
   const lastCrawlLabel = formatLastCrawl(usage?.last_crawl_at);
   const firstName = user?.name?.trim().split(/\s+/)[0] || "there";
   const searchUsedPct = isFull ? 0 : Math.round((searchesUsed / Math.max(searchesLimit, 1)) * 100);
@@ -584,7 +597,7 @@ export function Dashboard() {
           <div className="dash-metrics">
             <StatTile
               label={hasActiveFilters ? "Matching filters" : "Active pipeline"}
-              value={hasActiveFilters ? (data?.total ?? "—") : activeAccountCount}
+              value={hasActiveFilters ? (data?.total ?? "-") : activeAccountCount}
               hint={
                 hasActiveFilters
                   ? `of ${activeAccountCount} active in account`
@@ -761,79 +774,6 @@ export function Dashboard() {
         </div>
       )}
 
-      {showReminder && (
-        <div className="dash-reminder">
-          <Sparkles size={18} style={{ color: "var(--warning)", flexShrink: 0 }} />
-          <p className="dash-reminder-text">
-            <strong>{applySoonCount} top matches</strong> scoring 8+/10 are still marked New. Open
-            one and use <em>Copy apply pack for LLM</em> to tailor your CV fast.
-          </p>
-          <div className="dash-reminder-actions">
-            <button
-              onClick={showApplySoon}
-              className="btn btn-secondary"
-              style={{
-                fontSize: "var(--text-sm)",
-                padding: "var(--space-2) var(--space-3)",
-                flexShrink: 0,
-              }}
-            >
-              View them
-            </button>
-            <button
-              onClick={() => setReminderDismissed(true)}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "var(--text-muted)",
-                display: "flex",
-              }}
-            >
-              <X size={15} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {showStaleReminder && (
-        <div className="dash-reminder">
-          <BellRing size={18} style={{ color: "var(--accent)", flexShrink: 0 }} />
-          <p className="dash-reminder-text">
-            <strong>
-              {staleFollowupCount} job{staleFollowupCount === 1 ? "" : "s"}
-            </strong>{" "}
-            {staleFollowupCount === 1 ? "has" : "have"} been Applied, Half-applied, or Saved for
-            over {staleFollowupDays} days with no update. Worth a follow-up email or a status check.
-          </p>
-          <div className="dash-reminder-actions">
-            <button
-              onClick={() => navigate("/kanban")}
-              className="btn btn-secondary"
-              style={{
-                fontSize: "var(--text-sm)",
-                padding: "var(--space-2) var(--space-3)",
-                flexShrink: 0,
-              }}
-            >
-              Review pipeline
-            </button>
-            <button
-              onClick={() => setStaleReminderDismissed(true)}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "var(--text-muted)",
-                display: "flex",
-              }}
-            >
-              <X size={15} />
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Toolbar */}
       <div className="dash-toolbar">
         <button onClick={() => setShowManual(true)} className="btn btn-ghost">
@@ -842,6 +782,7 @@ export function Dashboard() {
 
         <button
           onClick={() => {
+            if (!requireCompleteProfile()) return;
             if (!canSearch) {
               openLimitModal(isTokensLimited ? tokenLimitKind : "search");
               return;
@@ -887,7 +828,7 @@ export function Dashboard() {
         <input
           type="text"
           placeholder="Search title, company, location, or JD keyword..."
-          title="Search looks across all your jobs and ignores the score/status filters below"
+          title="Search narrows within the score/status filters below, set them first, then search"
           value={searchQuery}
           onChange={(e) => {
             setSearchQuery(e.target.value);
@@ -929,7 +870,7 @@ export function Dashboard() {
         </button>
       </div>
 
-      {/* Always-visible filter bar: score chips + Active/All toggle — two rows so mobile never overlaps */}
+      {/* Always-visible filter bar: score chips + Active/All toggle, two rows so mobile never overlaps */}
       <div
         style={{
           marginBottom: "var(--space-4)",
@@ -972,7 +913,7 @@ export function Dashboard() {
           ))}
         </div>
 
-        {/* Row 2: view mode toggle — always on its own line, right-aligned */}
+        {/* Row 2: view mode toggle, always on its own line, right-aligned */}
         <div
           style={{
             display: "flex",
@@ -1044,7 +985,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Expandable filter panel — status + source */}
+      {/* Expandable filter panel, status + source */}
       {showFilters && (
         <div
           className="card"
@@ -1138,6 +1079,11 @@ export function Dashboard() {
           {!hasActiveFilters ? (
             <button
               onClick={() => {
+                if (!requireCompleteProfile()) return;
+                if (!canSearch) {
+                  openLimitModal(isTokensLimited ? tokenLimitKind : "search");
+                  return;
+                }
                 if (!isCrawling) crawlMutation.mutate();
               }}
               disabled={isCrawling}

@@ -30,8 +30,12 @@
 
     --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
     --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    /* Display face for page/section titles, same family (no new font asset to
+       self-host), used at heavier weight + tighter tracking so it still reads
+       as a distinct register from body text. See .text-display in components. */
+    --font-display: "Plus Jakarta Sans", system-ui, sans-serif;
 
-    /* Spacing scale — 4/8px grid. Use these instead of inline magic numbers. */
+    /* Spacing scale, 4/8px grid. Use these instead of inline magic numbers. */
     --space-1: 4px;
     --space-2: 8px;
     --space-3: 12px;
@@ -44,14 +48,15 @@
     --space-10: 56px;
     --space-12: 64px;
 
-    /* Type scale — 12px floor, nothing in the app should render smaller. */
-    --text-xs: 12px;
-    --text-sm: 13px;
-    --text-base: 15px;
-    --text-lg: 17px;
-    --text-xl: 20px;
-    --text-2xl: 24px;
-    --text-3xl: 32px;
+    /* Type scale, 13px floor, nothing in the app should render smaller. */
+    --text-xs: 13px;
+    --text-sm: 14px;
+    --text-base: 16px;
+    --text-lg: 19px;
+    --text-xl: 24px;
+    --text-2xl: 30px;
+    --text-3xl: 42px;
+    --text-4xl: 56px;
 
     --bg-page: #e6eaf0;
     --bg: #f3f5f9;
@@ -63,6 +68,14 @@
     --text: var(--gray-900);
     --text-secondary: var(--gray-600);
     --text-muted: var(--gray-500);
+
+    /* Aliased to the original blue/gray scheme, kept as named tokens since
+       ClearanceStamp/headings/hero reference them, but no longer a separate
+       ink/stamp palette (reverted per feedback: too neon-teal/gold). */
+    --ink-900: var(--gray-900);
+    --stamp-teal: #2563eb;
+    --visa-gold: #7c3aed;
+    --stamp-red: #b91c1c;
 
     --accent: #2563eb;
     --accent-hover: #1d4ed8;
@@ -112,6 +125,11 @@
     --text: var(--gray-900);
     --text-secondary: var(--gray-600);
     --text-muted: var(--gray-500);
+
+    --ink-900: var(--gray-900);
+    --stamp-teal: #5b8def;
+    --visa-gold: #a78bfa;
+    --stamp-red: #f87171;
 
     --accent: #5b8def;
     --accent-hover: #7ba2f2;
@@ -267,13 +285,13 @@
       row-gap: var(--space-1);
     }
 
-    /* Touch targets need to be >= ~40px on mobile — the desktop 7x8px
+    /* Touch targets need to be >= ~40px on mobile, the desktop 7x8px
        padding icon buttons are too small to tap reliably. */
     .job-card-icon-btn {
       padding: 10px;
     }
 
-    /* Status select + 2 icon buttons don't fit one row on narrow phones —
+    /* Status select + 2 icon buttons don't fit one row on narrow phones,
        give the select its own row instead of squeezing everything together. */
     .job-card-footer {
       flex-wrap: wrap;
@@ -382,6 +400,36 @@
     margin-bottom: 6px;
   }
 
+  /* Page/section titles, heavier weight + tighter tracking + a bigger jump
+     off body text gives headings a distinct, catchier register without a
+     second font asset. */
+  .text-display {
+    font-family: var(--font-display) !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.02em !important;
+    color: var(--ink-900) !important;
+  }
+
+  /* Clearance stamp, small "cleared" badge, one circular ring in the ink/
+     stamp accent color with a rotated inner tick, echoing a passport/visa
+     stamp. Signature element for completed profile sections. */
+  .clearance-stamp {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1.5px solid var(--stamp-teal);
+    color: var(--stamp-teal);
+    flex-shrink: 0;
+  }
+
+  .clearance-stamp-pending {
+    border-color: var(--border-strong);
+    color: transparent;
+  }
+
   .badge {
     display: inline-flex;
     align-items: center;
@@ -413,6 +461,93 @@
     .nav-label {
       display: inline;
     }
+  }
+
+  .nav-links {
+    display: flex;
+    gap: var(--space-1);
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .notification-bell-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-pill);
+    background: var(--danger);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .notification-dropdown {
+    position: absolute;
+    top: calc(100% + var(--space-2));
+    right: 0;
+    z-index: 91;
+    width: 340px;
+    max-width: calc(100vw - var(--space-6));
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    padding: var(--space-2);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  @media (max-width: 640px) {
+    /* absolute + right:0 anchors to the bell's OWN position, not the
+       viewport, since the bell isn't the last icon in the row (theme
+       toggle/logout sit right of it), that anchor sits well left of the
+       screen edge and a 340px-wide panel runs off past the left edge.
+       Fixed positioning anchors to the viewport instead, so it can't. */
+    .notification-dropdown {
+      position: fixed;
+      top: 64px;
+      right: var(--space-3);
+      left: var(--space-3);
+      width: auto;
+      max-width: none;
+    }
+  }
+
+  .notification-dropdown-empty {
+    padding: var(--space-4);
+    text-align: center;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin: 0;
+  }
+
+  .notification-dropdown-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: var(--space-3);
+    border-radius: var(--radius-sm);
+    border: none;
+    background: none;
+    color: var(--text);
+    font-size: var(--text-sm);
+    line-height: 1.45;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .notification-dropdown-item:hover {
+    background: var(--bg-hover);
   }
 
   .kanban-page {
@@ -547,10 +682,11 @@
   }
 
   .page-title {
-    font-size: 26px;
-    font-weight: 700;
+    font-family: var(--font-display);
+    font-size: 32px;
+    font-weight: 800;
     margin: 0 0 4px;
-    color: var(--text);
+    color: var(--ink-900);
     letter-spacing: -0.03em;
   }
 
@@ -587,32 +723,6 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
     margin-bottom: 16px;
-  }
-
-  .dash-reminder {
-    display: flex;
-    align-items: center;
-    gap: var(--space-4);
-    background: var(--warning-bg);
-    border: 1px solid var(--warning-border);
-    border-radius: var(--radius);
-    padding: var(--space-4) var(--space-5);
-    margin-bottom: var(--space-5);
-  }
-
-  .dash-reminder-text {
-    font-size: var(--text-base);
-    color: var(--text);
-    margin: 0;
-    flex: 1;
-    line-height: 1.5;
-  }
-
-  .dash-reminder-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex-shrink: 0;
   }
 
   .dash-metric {
@@ -895,10 +1005,8 @@
   }
 
   .settings-title {
-    font-size: var(--text-lg);
-    font-weight: 600;
+    font-size: var(--text-2xl);
     margin: 0;
-    color: var(--text);
   }
 
   .settings-unsaved-pill {
@@ -911,6 +1019,57 @@
     color: var(--warning);
     background: var(--warning-bg);
     border: 1px solid var(--warning-border);
+  }
+
+  .settings-completeness-bar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-5);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+  }
+
+  .settings-completeness-label {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .settings-completeness-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .settings-completeness-chip {
+    padding: 4px 12px;
+    border-radius: var(--radius-pill);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: var(--warning);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .settings-completeness-chip:hover {
+    border-color: var(--warning);
+  }
+
+  .settings-completeness-complete {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--success);
   }
 
   .settings-save-bar {
@@ -980,6 +1139,7 @@
   .settings-sidebar-link {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: var(--space-2);
     padding: 9px 12px;
     border-radius: var(--radius-sm);
@@ -988,11 +1148,39 @@
     font-weight: 500;
     text-decoration: none;
     transition: all 0.15s;
+    background: none;
+    border: none;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .settings-sidebar-link > span {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
   }
 
   .settings-sidebar-link:hover {
     background: var(--bg-secondary);
     color: var(--text);
+  }
+
+  .settings-sidebar-link-active {
+    background: var(--accent-light);
+    color: var(--accent);
+  }
+
+  .settings-sidebar-link-active:hover {
+    background: var(--accent-light);
+    color: var(--accent);
+  }
+
+  /* Hamburger toggle only exists for the mobile dropdown nav, hidden here,
+     shown inside the max-width: 768px block below. */
+  .settings-mobile-nav-toggle {
+    display: none;
   }
 
   .settings-eyebrow {
@@ -1029,7 +1217,7 @@
   }
 
   .settings-group-label {
-    font-size: var(--text-xs);
+    font-size: var(--text-sm);
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -1119,26 +1307,6 @@
       padding-bottom: var(--space-3);
       margin-bottom: var(--space-3);
     }
-
-    .dash-reminder {
-      flex-wrap: wrap;
-      gap: 10px !important;
-      padding: 10px 12px !important;
-      margin-bottom: 12px !important;
-    }
-
-    .dash-reminder-text {
-      font-size: 13px !important;
-      flex: 1 1 100% !important;
-    }
-
-    .dash-reminder-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      width: 100%;
-      justify-content: flex-end;
-    }
   }
 
   @keyframes fresh-pulse {
@@ -1210,6 +1378,13 @@
     }
   }
 
+  /* Fixed bottom tab bar, mobile only. Desktop keeps the top-bar icon
+     links (.nav-links); on mobile they get hidden entirely rather than left
+     as an invisible horizontal-scroll dead zone. */
+  .mobile-bottom-nav {
+    display: none;
+  }
+
   @media (max-width: 640px) {
     .kanban-page {
       padding: 16px 12px 24px;
@@ -1226,6 +1401,46 @@
 
     .nav-brand {
       margin-right: 8px !important;
+    }
+
+    .nav-links {
+      display: none;
+    }
+
+    .mobile-bottom-nav {
+      display: flex;
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 50;
+      background: var(--bg-card);
+      border-top: 1px solid var(--border);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    .mobile-bottom-nav-link {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      padding: var(--space-2) 0;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .mobile-bottom-nav-link-active {
+      color: var(--accent);
+    }
+
+    /* Room for the fixed bottom bar so it never covers page content. */
+    .page-shell,
+    .kanban-page {
+      padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
     }
 
     .kanban-board {
@@ -1262,14 +1477,18 @@
 
     .settings-page {
       grid-template-columns: 1fr;
-      padding: var(--space-4) var(--space-3) var(--space-6);
+      padding: var(--space-4) var(--space-3)
+        calc(64px + var(--space-6) + env(safe-area-inset-bottom, 0px));
     }
 
     .settings-page.has-unsaved {
-      padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: calc(64px + 104px + env(safe-area-inset-bottom, 0px));
     }
 
+    /* Stack above the fixed mobile bottom tab bar instead of overlapping it. */
     .settings-save-bar {
+      bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: var(--space-3);
       flex-direction: column;
       align-items: stretch;
       gap: var(--space-3);
@@ -1303,31 +1522,52 @@
       margin-bottom: var(--space-3);
     }
 
-    .settings-sidebar {
-      position: sticky;
-      top: 60px;
-      z-index: 30;
-      flex-direction: row;
-      overflow-x: auto;
-      scrollbar-width: none;
+    /* Mobile nav: a hamburger toggle showing the current section, opening a
+       full vertical dropdown list, replaces a horizontal scroll-chip bar,
+       which hid tabs off-screen with no visible scrollbar to hint at them. */
+    .settings-mobile-nav-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
       gap: var(--space-2);
-      background: var(--bg-page);
-      margin: 0 calc(-1 * var(--space-3)) var(--space-4);
-      padding: var(--space-2) var(--space-3) var(--space-1);
+      padding: var(--space-3) var(--space-4);
+      margin-bottom: var(--space-3);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text);
+      font-size: var(--text-sm);
+      font-weight: 600;
+      cursor: pointer;
     }
 
-    .settings-sidebar::-webkit-scrollbar {
+    .settings-mobile-nav-toggle > span {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .settings-sidebar {
       display: none;
+      position: relative;
+      top: auto;
+      flex-direction: column;
+      gap: 2px;
+      margin-bottom: var(--space-4);
+      padding: var(--space-2);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      box-shadow: var(--shadow-md);
+    }
+
+    .settings-sidebar-open {
+      display: flex;
     }
 
     .settings-sidebar-link {
-      flex-shrink: 0;
-      white-space: nowrap;
-      padding: var(--space-2) var(--space-3);
-      font-size: var(--text-xs);
-      border-radius: var(--radius-pill);
-      border: 1px solid var(--border);
-      background: var(--bg-card);
+      width: 100%;
     }
 
     .settings-group {
@@ -1524,7 +1764,7 @@
     gap: 8px;
     flex-shrink: 0;
     /* .landing-nav-links carries the margin-left:auto that pushes the right
-       side of the bar over — but it's display:none on mobile until opened,
+       side of the bar over, but it's display:none on mobile until opened,
        so nothing pushes this group right without its own auto margin.
        Without this, the toggle + hamburger sit bunched against the logo on
        mobile instead of at the right edge. */
@@ -1532,7 +1772,7 @@
   }
 
   /* Icon-only buttons in the nav (theme toggle, hamburger) read as clunky
-     boxes with the default .btn-ghost border — drop it here for a plain
+     boxes with the default .btn-ghost border, drop it here for a plain
      icon-button feel, hover state does the affordance instead. */
   .landing-nav-actions .btn-ghost {
     width: 40px;
@@ -1633,11 +1873,12 @@
   }
 
   .landing-hero-title {
-    font-size: clamp(28px, 5.5vw, 44px);
+    font-family: var(--font-display);
+    font-size: clamp(32px, 6.5vw, 56px);
     font-weight: 800;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
     margin: 0 0 24px;
-    color: var(--text);
+    color: var(--ink-900);
     display: flex;
     flex-wrap: wrap;
     gap: 0 0.32em;
@@ -1649,7 +1890,7 @@
   }
 
   .landing-hero-highlight {
-    color: var(--accent);
+    color: var(--visa-gold);
   }
 
   .landing-hero-sub {
@@ -1714,16 +1955,18 @@
   .landing-section-label {
     margin: 0 0 12px;
     font-size: 13px;
-    font-weight: 600;
-    color: var(--accent);
-    letter-spacing: 0.02em;
+    font-weight: 700;
+    color: var(--visa-gold);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
 
   .landing-section-head h2 {
-    font-size: clamp(22px, 4vw, 30px);
-    font-weight: 700;
+    font-family: var(--font-display);
+    font-size: clamp(26px, 4.5vw, 38px);
+    font-weight: 800;
     margin: 0 0 14px;
-    color: var(--text);
+    color: var(--ink-900);
     letter-spacing: -0.02em;
   }
 
@@ -1899,6 +2142,42 @@
   }
 
   .landing-feature-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    margin-bottom: var(--space-5);
+    border-radius: var(--radius);
+    background: var(--accent-light);
+    color: var(--accent);
+  }
+
+  .landing-explainer-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 24px;
+  }
+
+  .landing-explainer-card {
+    padding: 28px;
+  }
+
+  .landing-explainer-card h3 {
+    margin: 0 0 12px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .landing-explainer-card p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  .landing-explainer-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -2094,7 +2373,7 @@
     color: var(--text);
   }
 
-  /* Scroll-reveal — fade + rise once a section enters the viewport (see
+  /* Scroll-reveal, fade + rise once a section enters the viewport (see
      src/components/Reveal.tsx). Reduced-motion users get the end state
      immediately, no animation. */
   .reveal {
@@ -2118,7 +2397,7 @@
     }
   }
 
-  /* Per-child stagger on top of .reveal — each direct child fades in with an
+  /* Per-child stagger on top of .reveal, each direct child fades in with an
      increasing delay once the parent enters the viewport. */
   .landing-stagger > * {
     opacity: 0;
@@ -2163,7 +2442,7 @@
     }
   }
 
-  /* Flow diagram — connected icon-node sequence (src/components/FlowDiagram.tsx) */
+  /* Flow diagram, connected icon-node sequence (src/components/FlowDiagram.tsx) */
   .flow-diagram {
     display: flex;
     flex-wrap: wrap;
@@ -2420,6 +2699,10 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .landing-explainer-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .landing-preview-grid {
       grid-template-columns: 1fr;
     }
@@ -2521,6 +2804,10 @@
 
   @media (max-width: 640px) {
     .landing-feature-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .landing-explainer-grid {
       grid-template-columns: 1fr;
     }
 

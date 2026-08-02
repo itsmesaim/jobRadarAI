@@ -245,6 +245,24 @@ const PREVIEW_JOBS = [
   },
 ];
 
+const EXPLAINER: { icon: React.ElementType; title: string; desc: string }[] = [
+  {
+    icon: Search,
+    title: "It searches for you",
+    desc: "One click crawls Jooble and Indeed for the roles and cities you set, instead of you checking five tabs a day.",
+  },
+  {
+    icon: Sparkles,
+    title: "It scores each job against YOUR CV",
+    desc: "Not a keyword match. The AI reads your actual CV, experience, and preferences, and rates every listing 1 to 10 for fit, with the specific reasons why.",
+  },
+  {
+    icon: Kanban,
+    title: "It tracks where you actually stand",
+    desc: "Saved, Applied, Interviewing, Offer, one board instead of a spreadsheet you stopped updating.",
+  },
+];
+
 const HERO_STATS: { label: string; value: string; tone?: "accent" | "success" }[] = [
   { label: "Boards searched", value: "2", tone: "accent" },
   { label: "Profile inputs", value: "10+" },
@@ -483,6 +501,26 @@ export function LandingPage() {
               ))}
             </div>
           </div>
+        </section>
+
+        <section className="landing-section landing-explainer-section">
+          <div className="landing-section-head">
+            <p className="landing-section-label">In plain terms</p>
+            <h2>What JobRadar actually does</h2>
+            <p>Not a new job board. A layer on top of the ones you already check.</p>
+          </div>
+
+          <Reveal className="landing-explainer-grid landing-stagger">
+            {EXPLAINER.map((item) => (
+              <div key={item.title} className="card landing-explainer-card">
+                <span className="landing-explainer-icon">
+                  <item.icon size={20} strokeWidth={2} />
+                </span>
+                <h3>{item.title}</h3>
+                <p>{item.desc}</p>
+              </div>
+            ))}
+          </Reveal>
         </section>
 
         <section id="preview" className="landing-section">

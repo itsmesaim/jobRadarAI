@@ -4,6 +4,7 @@ import { useAuthStore } from "../hooks/useStores";
 import { clearUserScopedCache } from "../queryClient";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
+import { NotificationBell } from "./NotificationBell";
 
 interface Props {
   onHelpClick?: () => void;
@@ -22,43 +23,60 @@ export function Navbar({ onHelpClick }: Props = {}) {
 
   const isAdmin = !!user?.isAdmin;
   const adminBase = user?.adminBasePath;
+  const bottomNavLinks = isAdmin
+    ? [...links, { to: "/admin", label: "Admin", icon: Shield }]
+    : links;
 
   return (
-    <nav className="nav">
-      <div
-        className="nav-inner"
-        style={{
-          maxWidth: 1200,
-          margin: "0 auto",
-          padding: "0 var(--space-5)",
-          display: "flex",
-          alignItems: "center",
-          height: 60,
-          minWidth: 0,
-        }}
-      >
-        <Link
-          to="/"
-          className="nav-brand"
-          style={{ textDecoration: "none", marginRight: "var(--space-7)", flexShrink: 0 }}
-        >
-          <Logo size={28} wordmarkSize={17} />
-        </Link>
-
+    <>
+      <nav className="nav">
         <div
+          className="nav-inner"
           style={{
+            maxWidth: 1200,
+            margin: "0 auto",
+            padding: "0 var(--space-5)",
             display: "flex",
-            gap: "var(--space-1)",
-            flex: 1,
+            alignItems: "center",
+            height: 60,
             minWidth: 0,
-            overflowX: "auto",
-            scrollbarWidth: "none",
           }}
         >
-          {links.map(({ to, label, icon: Icon }) => {
-            const active = location.pathname === to;
-            return (
-              <Link key={to} to={to} style={{ textDecoration: "none" }}>
+          <Link
+            to="/"
+            className="nav-brand"
+            style={{ textDecoration: "none", marginRight: "var(--space-7)", flexShrink: 0 }}
+          >
+            <Logo size={28} wordmarkSize={17} />
+          </Link>
+
+          <div className="nav-links">
+            {links.map(({ to, label, icon: Icon }) => {
+              const active = location.pathname === to;
+              return (
+                <Link key={to} to={to} style={{ textDecoration: "none" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "var(--space-2)",
+                      padding: "var(--space-2) var(--space-4)",
+                      borderRadius: "var(--radius-sm)",
+                      fontSize: "var(--text-sm)",
+                      fontWeight: 500,
+                      color: active ? "var(--accent)" : "var(--text-secondary)",
+                      background: active ? "var(--accent-light)" : "transparent",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    <Icon size={15} />
+                    <span className="nav-label">{label}</span>
+                  </div>
+                </Link>
+              );
+            })}
+            {isAdmin && (
+              <Link to="/admin" style={{ textDecoration: "none" }}>
                 <div
                   style={{
                     display: "flex",
@@ -68,69 +86,75 @@ export function Navbar({ onHelpClick }: Props = {}) {
                     borderRadius: "var(--radius-sm)",
                     fontSize: "var(--text-sm)",
                     fontWeight: 500,
-                    color: active ? "var(--accent)" : "var(--text-secondary)",
-                    background: active ? "var(--accent-light)" : "transparent",
-                    transition: "all 0.15s",
+                    color:
+                      location.pathname === "/admin" ? "var(--accent)" : "var(--text-secondary)",
+                    background:
+                      location.pathname === "/admin" ? "var(--accent-light)" : "transparent",
                   }}
                 >
-                  <Icon size={15} />
-                  <span className="nav-label">{label}</span>
+                  <Shield size={15} />
+                  <span className="nav-label">Admin</span>
                 </div>
               </Link>
-            );
-          })}
-          {isAdmin && (
-            <Link to="/admin" style={{ textDecoration: "none" }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "var(--space-2)",
-                  padding: "var(--space-2) var(--space-4)",
-                  borderRadius: "var(--radius-sm)",
-                  fontSize: "var(--text-sm)",
-                  fontWeight: 500,
-                  color: location.pathname === "/admin" ? "var(--accent)" : "var(--text-secondary)",
-                  background:
-                    location.pathname === "/admin" ? "var(--accent-light)" : "transparent",
-                }}
-              >
-                <Shield size={15} />
-                <span className="nav-label">Admin</span>
-              </div>
-            </Link>
-          )}
-        </div>
+            )}
+          </div>
 
-        <div
-          style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}
-        >
-          {onHelpClick && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-2)",
+              flexShrink: 0,
+              marginLeft: "auto",
+            }}
+          >
+            {onHelpClick && (
+              <button
+                onClick={onHelpClick}
+                className="btn btn-ghost"
+                style={{ padding: "var(--space-2) var(--space-3)" }}
+                title="How JobRadar works"
+                aria-label="Help"
+              >
+                <HelpCircle size={16} />
+              </button>
+            )}
+            <NotificationBell />
+            <ThemeToggle />
             <button
-              onClick={onHelpClick}
+              onClick={() => {
+                clearUserScopedCache();
+                logout();
+                window.location.href = "/";
+              }}
               className="btn btn-ghost"
               style={{ padding: "var(--space-2) var(--space-3)" }}
-              title="How JobRadar works"
-              aria-label="Help"
+              title="Sign out"
             >
-              <HelpCircle size={16} />
+              <LogOut size={16} />
             </button>
-          )}
-          <ThemeToggle />
-          <button
-            onClick={() => {
-              clearUserScopedCache();
-              logout();
-              window.location.href = "/login";
-            }}
-            className="btn btn-ghost"
-            style={{ padding: "var(--space-2) var(--space-3)" }}
-            title="Sign out"
-          >
-            <LogOut size={16} />
-          </button>
+          </div>
         </div>
-      </div>
-    </nav>
+      </nav>
+
+      {/* Mobile-only: the top bar's icon links get squeezed out of view with no
+        visible scroll affordance on narrow screens, a fixed bottom tab bar
+        keeps every destination always visible instead. */}
+      <nav className="mobile-bottom-nav" aria-label="Primary">
+        {bottomNavLinks.map(({ to, label, icon: Icon }) => {
+          const active = location.pathname === to;
+          return (
+            <Link
+              key={to}
+              to={to}
+              className={`mobile-bottom-nav-link${active ? " mobile-bottom-nav-link-active" : ""}`}
+            >
+              <Icon size={18} />
+              <span>{label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+    </>
   );
 }
