@@ -72,25 +72,59 @@ async def upload_cv(
 
     # ── store in MongoDB ──────────────────────────────────
     db = get_database()
-    await db.users.update_one(
-        {"_id": ObjectId(user["_id"])},
-        {
-            "$set": {
-                "cv": {
-                    "raw_text": raw_text,
-                    "structured": structured,
-                    "uploaded_at": datetime.now(timezone.utc),
-                    "filename": file.filename,
-                }
-            },
-            "$unset": {"cv_embedding": ""},
+    update: dict = {
+        "$set": {
+            "cv": {
+                "raw_text": raw_text,
+                "structured": structured,
+                "uploaded_at": datetime.now(timezone.utc),
+                "filename": file.filename,
+            }
         },
-    )
+        "$unset": {"cv_embedding": ""},
+    }
+
+    # Auto-fill Settings fields that overlap 1:1 with parsed CV data, so the
+    # user isn't manually re-typing what's already on their CV. Always
+    # overwrites with the latest CV's values (per product decision), only
+    # when the CV actually has that field, never wipe a field with nothing.
+    autofilled = _autofill_preferences_from_cv(structured)
+    if autofilled:
+        update["$set"].update(autofilled)
+
+    await db.users.update_one({"_id": ObjectId(user["_id"])}, update)
 
     return {
         "message": "CV uploaded and parsed successfully.",
         "structured": structured,
+        "autofilled_fields": list(autofilled.keys()),
     }
+
+
+def _autofill_preferences_from_cv(structured: dict) -> dict:
+    """Maps parsed CV fields onto the matching Settings/preferences fields.
+    ponytail: takes experience[0] as the most recent role (CVs are conventionally
+    listed most-recent-first); upgrade to parsing start/end dates if that assumption
+    ever proves wrong in practice."""
+    fields: dict = {}
+
+    experience = structured.get("experience") or []
+    if experience and experience[0].get("title"):
+        fields["primary_role"] = experience[0]["title"]
+
+    location = structured.get("location")
+    if location:
+        fields["preferred_locations"] = [location]
+
+    skills = structured.get("skills") or []
+    if skills:
+        fields["key_skills"] = skills
+
+    summary = structured.get("summary")
+    if summary:
+        fields["about_me"] = summary
+
+    return fields
 
 
 @router.get("/me")

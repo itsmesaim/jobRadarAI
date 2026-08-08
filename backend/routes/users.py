@@ -68,9 +68,9 @@ class UserPreferences(BaseModel):
     work_mode: WorkMode = WorkMode()
     about_me: str = ""  # free-text career context, surfaced early in rating prompt
     email_reminders_enabled: bool = True  # daily high-score apply nudges via SMTP
-    reminder_hours: list[
-        int
-    ] = []  # local hours (0-23) to send reminders; [] = app default (see job_reminders.py)
+    reminder_hours: list[int] = (
+        []
+    )  # local hours (0-23) to send reminders; [] = app default (see job_reminders.py)
     timezone: str = "Europe/Dublin"  # IANA tz, drives when auto-crawl/reminders fire
     # "" = app default. Otherwise must match an active entry in the
     # admin-managed AI model catalog (services/ai_models.py), validated in
@@ -285,7 +285,12 @@ async def get_notifications(user=Depends(get_current_user)):
     last_seen = user.get("notifications_last_seen_at")
 
     notifications = []
+    unseen_count = 0
 
+    # The dropdown always lists every currently-live item (still actionable,
+    # e.g. "3 top matches ready to apply to" stays useful even if you've
+    # already seen it), but the badge only counts what's new since last_seen,
+    # so opening the bell actually clears it instead of nagging forever.
     apply_soon_count = await get_apply_soon_count(db, user_id)
     if apply_soon_count > 0:
         notifications.append(
@@ -298,11 +303,20 @@ async def get_notifications(user=Depends(get_current_user)):
                 "link": "/",
             }
         )
+        apply_soon_new = (
+            await get_apply_soon_count(db, user_id, since=last_seen)
+            if last_seen
+            else apply_soon_count
+        )
+        if apply_soon_new > 0:
+            unseen_count += 1
 
     # Named per-job entries, not a bare count, "1 job needs a follow-up" gives
     # nothing to act on. Capped at 5 so a long-neglected pipeline doesn't flood
     # the dropdown; the rest still show up once these are cleared in Kanban.
-    stale_jobs = await get_stale_followup_jobs(db, user_id, limit=5)
+    stale_jobs = await get_stale_followup_jobs(
+        db, user_id, limit=5, last_seen=last_seen
+    )
     for job in stale_jobs:
         status_label = job["status"].replace("_", " ").title()
         notifications.append(
@@ -317,6 +331,8 @@ async def get_notifications(user=Depends(get_current_user)):
                 "link": "/kanban",
             }
         )
+        if job["newly_stale"]:
+            unseen_count += 1
 
     # Only compare against a baseline once one exists, otherwise every model
     # ever added would show up as "new" on a user's very first bell check.
@@ -337,8 +353,9 @@ async def get_notifications(user=Depends(get_current_user)):
                         "link": "/settings",
                     }
                 )
+                unseen_count += 1
 
-    return {"notifications": notifications, "unseen_count": len(notifications)}
+    return {"notifications": notifications, "unseen_count": unseen_count}
 
 
 @router.post("/notifications/seen")

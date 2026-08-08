@@ -413,6 +413,42 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
               {isUnrated ? "Not rated yet, run Search to rate" : ""}
             </p>
           )}
+          {!isUnrated && !isRating && (job.matched_strengths.length > 0 || job.gaps.length > 0) && (
+            <div
+              style={{
+                display: "flex",
+                gap: "var(--space-2)",
+                marginTop: "var(--space-2)",
+                flexWrap: "wrap",
+              }}
+            >
+              {job.matched_strengths.length > 0 && (
+                <span
+                  className="badge"
+                  style={{
+                    background: "var(--success-bg)",
+                    color: "var(--success)",
+                    border: "1px solid var(--success-border)",
+                  }}
+                >
+                  ✓ {job.matched_strengths.length} strength
+                  {job.matched_strengths.length !== 1 ? "s" : ""}
+                </span>
+              )}
+              {job.gaps.length > 0 && (
+                <span
+                  className="badge"
+                  style={{
+                    background: "var(--warning-bg)",
+                    color: "var(--warning)",
+                    border: "1px solid var(--warning-border)",
+                  }}
+                >
+                  △ {job.gaps.length} gap{job.gaps.length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}

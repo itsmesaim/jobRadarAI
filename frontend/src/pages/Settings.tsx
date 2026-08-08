@@ -134,6 +134,13 @@ const SETTINGS_GROUPS: {
   { id: "data", icon: DatabaseZap, label: "Data & privacy" },
 ];
 
+const AUTOFILL_LABELS: Record<string, string> = {
+  primary_role: "your role",
+  preferred_locations: "location",
+  key_skills: "key skills",
+  about_me: "about you",
+};
+
 function SettingsSidebar({
   activeGroup,
   onSelect,
@@ -201,6 +208,7 @@ export function SettingsPage() {
   const [newOverrideSkill, setNewOverrideSkill] = useState("");
   const [newOverrideContext, setNewOverrideContext] = useState("");
   const [addingOverride, setAddingOverride] = useState(false);
+  const [autofilledFields, setAutofilledFields] = useState<string[] | null>(null);
 
   const { data: cv } = useQuery({
     queryKey: ["cv"],
@@ -341,8 +349,12 @@ export function SettingsPage() {
     }
     setUploading(true);
     try {
-      await cvApi.upload(file);
+      const { autofilled_fields } = await cvApi.upload(file);
       queryClient.invalidateQueries({ queryKey: ["cv"] });
+      if (autofilled_fields?.length) {
+        queryClient.invalidateQueries({ queryKey: ["prefs"] });
+        setAutofilledFields(autofilled_fields);
+      }
       toast.success("CV uploaded and parsed");
     } catch (err: any) {
       const detail = err.response?.data?.detail || "Upload failed";
@@ -613,6 +625,23 @@ export function SettingsPage() {
               />
             </Section>
 
+            {autofilledFields && (
+              <div className="settings-autofill-banner">
+                <span>
+                  We filled in {autofilledFields.map((f) => AUTOFILL_LABELS[f] || f).join(", ")}{" "}
+                  from your CV, below and on the <strong>Job search</strong> tab. Review and adjust
+                  before saving.
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setAutofilledFields(null)}
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
             {/* About you */}
             <Section
               title="About you"
@@ -787,12 +816,12 @@ export function SettingsPage() {
 
             {/* Work authorization */}
             <Section
-              title="Work authorization notes"
-              subtitle="Anything not captured above, sponsorship needs, restrictions, or exceptions."
+              title="Visa exceptions & timing"
+              subtitle="Only for legal nuances your visa status above can't capture by itself, not a place to repeat it."
             >
               <input
                 className="input"
-                placeholder="e.g. no sponsorship needed, open to relocation within EU/APAC only"
+                placeholder="e.g. Stamp 1G expires March 2027, need renewal before start date"
                 value={localPrefs.work_authorization}
                 onChange={(e) => update({ work_authorization: e.target.value })}
               />
@@ -816,8 +845,9 @@ export function SettingsPage() {
                     lineHeight: 1.5,
                   }}
                 >
-                  Optional, only needed if nationality and visa status above don't already say
-                  everything relevant.
+                  Most people leave this blank. Use it only for something with an expiry date or a
+                  contract-type restriction (e.g. "full-time only, can't contract") that your visa
+                  status above doesn't already say.
                 </p>
               </div>
             </Section>

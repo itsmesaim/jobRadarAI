@@ -44,9 +44,9 @@ def demo():
     old_truncation_cutoff = 400
     assert len(long_jd) > old_truncation_cutoff, "test JD must exceed old truncation"
     tail_content = "Required skills: python and mongodb"
-    assert tail_content not in long_jd[:old_truncation_cutoff], (
-        "test setup bug: the requirements line must fall past the old cutoff"
-    )
+    assert (
+        tail_content not in long_jd[:old_truncation_cutoff]
+    ), "test setup bug: the requirements line must fall past the old cutoff"
 
     fake = FakeEmbeddings()
     vecs = fake.embed_documents(chunks)
@@ -61,12 +61,12 @@ def demo():
     assert results, "expected at least one retrieved chunk"
 
     retrieved_text = "\n\n".join(r.page_content for r in results)
-    assert len(retrieved_text) < len(long_jd), (
-        "retrieval should be shorter than the full doc"
-    )
-    assert "python" in retrieved_text.lower() and "mongodb" in retrieved_text.lower(), (
-        "retrieval should surface the requirements chunk that naive truncation would have dropped"
-    )
+    assert len(retrieved_text) < len(
+        long_jd
+    ), "retrieval should be shorter than the full doc"
+    assert (
+        "python" in retrieved_text.lower() and "mongodb" in retrieved_text.lower()
+    ), "retrieval should surface the requirements chunk that naive truncation would have dropped"
 
     print(
         "OK — retrieval reaches tail content the old fixed-char truncation would drop"

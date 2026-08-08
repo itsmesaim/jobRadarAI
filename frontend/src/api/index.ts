@@ -122,12 +122,23 @@ export const jobsApi = {
     return res.data as { brief: string };
   },
 
-  /** Streams apply-pack generation over SSE, calling onStage as each real step starts. */
+  /** Streams apply-pack generation over SSE, calling onStage as each real step starts.
+   * A previously generated pack for this job/CV/rating is served back instantly (no
+   * quota/token cost) unless `regenerate` is set. */
   streamApplyPack: async (
     id: string,
     onStage: (event: { stage: string; messages: string[] }) => void,
-  ): Promise<{ pack: string; apply_packs_remaining: number }> => {
-    const res = await fetch(buildUrl(`/jobs/${id}/apply-pack`), { headers: authHeaders() });
+    regenerate = false,
+  ): Promise<{
+    pack: string;
+    apply_packs_remaining: number;
+    ats: { alignment_pct: number; matched: string[]; missing: string[]; fixes: string[] } | null;
+    cached: boolean;
+  }> => {
+    const res = await fetch(
+      buildUrl(`/jobs/${id}/apply-pack${regenerate ? "?regenerate=true" : ""}`),
+      { headers: authHeaders() },
+    );
 
     if (!res.ok || !res.body) {
       let detail = res.statusText;
@@ -145,7 +156,12 @@ export const jobsApi = {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let result: { pack: string; apply_packs_remaining: number } | null = null;
+    let result: {
+      pack: string;
+      apply_packs_remaining: number;
+      ats: { alignment_pct: number; matched: string[]; missing: string[]; fixes: string[] } | null;
+      cached: boolean;
+    } | null = null;
     let errorDetail: string | null = null;
 
     while (true) {

@@ -33,10 +33,7 @@ CV_LATEX_BOILERPLATE = r"""\documentclass[10pt, a4paper]{article}
   {\LARGE \textbf{NAME_PLACEHOLDER}}\\[4pt]
   {{{LOCATION}}} \quad\textbar\quad
   {{{PHONE}}} \quad\textbar\quad
-  \href{mailto:{{{EMAIL}}}}{{{EMAIL}}}\\[2pt]
-  \href{https://linkedin.com/in/saim-kaskar-34a6a4206}{LinkedIn} \quad\textbar\quad
-  \href{https://github.com/itsmesaim}{GitHub} \quad\textbar\quad
-  \href{https://saimjs.com}{saimjs.com} \quad\textbar\quad
+  \href{mailto:{{{EMAIL}}}}{{{EMAIL}}} \quad\textbar\quad
   {{{WORK_AUTH}}}
 \end{center}
 
@@ -49,15 +46,7 @@ CV_LATEX_BOILERPLATE = r"""\documentclass[10pt, a4paper]{article}
 
 \section{Technical Skills}
 
-\begin{itemize}
-  \item \textbf{AI / GenAI / Agentic Tools:} LangChain, LangGraph, LangSmith, Anthropic API, OpenAI SDK, Pydantic structured outputs, provider-agnostic LLM routing, prompt engineering, LLM observability and tracing, RAG pipelines, Pinecone, MCP, async Python (asyncio), Cursor, Claude Code
-  \item \textbf{Python \& Data Science:} FastAPI, pandas, numpy, scikit-learn, Plotly, Seaborn, Jupyter Notebook, NLTK, spaCy, TF-IDF, Vector Space Models, ML model training and evaluation
-  \item \textbf{Backend:} FastAPI (Python), Spring Boot (Java), Node.js, Express.js, REST APIs, JWT authentication, OpenAPI / Swagger, WebSockets / Socket.IO
-  \item \textbf{Frontend:} React.js, Next.js, TypeScript, JavaScript (ES6+), Tailwind CSS, shadcn/ui, React Query, Zustand, Angular, HTML5, CSS3
-  \item \textbf{Cloud \& DevOps:} AWS (EC2, S3), Azure, Docker, Docker Compose, CI/CD pipelines, VPS, Nginx, SSL, pm2, Linux, Git / GitHub
-  \item \textbf{Databases:} MongoDB, MySQL, PostgreSQL, SQLite, Pinecone (vector), SQL
-  \item \textbf{Testing \& Quality:} Jest, React Testing Library, unit testing, black-box testing
-\end{itemize}
+{{{SKILLS_PLACEHOLDER}}}
 
 \section{Professional Experience}
 
@@ -114,12 +103,12 @@ def suggested_tex_filename(user: dict, job: dict) -> str:
 
 
 def _work_auth_line(user: dict) -> str:
+    visa = (user.get("visa_status") or "").strip()
+    if visa:
+        return _latex_escape(visa)
     auth = (user.get("work_authorization") or "").strip()
     if auth:
-        return f"Eligible to work in Ireland ({auth})"
-    about = (user.get("about_me") or "").lower()
-    if "stamp 1g" in about:
-        return "Eligible to work in Ireland (Stamp 1G)"
+        return _latex_escape(auth)
     return "Work authorization: see profile"
 
 
@@ -128,12 +117,21 @@ def personalize_boilerplate(user: dict) -> str:
     structured = (user.get("cv") or {}).get("structured") or {}
     name = structured.get("name") or user.get("name") or "Your Name"
     email = structured.get("email") or "email@example.com"
-    phone = structured.get("phone") or "+353 ..."
-    location = structured.get("location") or "Dublin, Ireland"
+    phone = structured.get("phone") or "Phone not set"
+    location = structured.get("location") or "Location not set"
     summary = (structured.get("summary") or "").strip()
     if not summary:
         summary = "% Replace with tailored summary from MASTER CV"
     summary = _latex_escape(summary)
+
+    skills = structured.get("skills", [])
+    skills = (
+        "\\begin{itemize}\n  \\item "
+        + ", ".join(_latex_escape(s) for s in skills)
+        + "\n\\end{itemize}"
+        if skills
+        else "% Add skills from MASTER CV"
+    )
 
     exp_lines = []
     for exp in structured.get("experience", []):
@@ -192,6 +190,7 @@ def personalize_boilerplate(user: dict) -> str:
         "{{{EMAIL}}}": email,
         "{{{WORK_AUTH}}}": _work_auth_line(user),
         "{{{SUMMARY_PLACEHOLDER}}}": summary.replace("%", "\\%"),
+        "{{{SKILLS_PLACEHOLDER}}}": skills,
         "{{{EXPERIENCE_PLACEHOLDER}}}": experience,
         "{{{PROJECTS_PLACEHOLDER}}}": projects,
         "{{{EDUCATION_PLACEHOLDER}}}": education,

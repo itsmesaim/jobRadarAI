@@ -12,7 +12,7 @@ import {
   CalendarClock,
   Cpu,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { ScoreBadge } from "./ScoreBadge";
@@ -68,11 +68,25 @@ function cleanTitle(job: Job): string {
 }
 
 export function JobDetailModal({ job, onClose }: Props) {
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   const queryClient = useQueryClient();
   const [copiedBrief, setCopiedBrief] = useState(false);
   const [copiedPack, setCopiedPack] = useState(false);
   const [packLoading, setPackLoading] = useState(false);
   const [packStageText, setPackStageText] = useState<string | null>(null);
+  const [packAts, setPackAts] = useState<{
+    alignment_pct: number;
+    matched: string[];
+    missing: string[];
+    fixes: string[];
+  } | null>(null);
   const [showApplyPackLimit, setShowApplyPackLimit] = useState(false);
   const [reRating, setReRating] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
@@ -187,12 +201,13 @@ export function JobDetailModal({ job, onClose }: Props) {
     }
   };
 
-  const handleApplyPack = async () => {
+  const handleApplyPack = async (regenerate = false) => {
     if (!canApplyPack) {
       setShowApplyPackLimit(true);
       return;
     }
     setPackLoading(true);
+    setPackAts(null);
     let messages = ["Your CV is in the oven..."];
     let idx = 0;
     setPackStageText(messages[0]);
@@ -201,14 +216,21 @@ export function JobDetailModal({ job, onClose }: Props) {
       setPackStageText(messages[idx]);
     }, 2500);
     try {
-      const { pack } = await jobsApi.streamApplyPack(job.id, (event) => {
-        messages = event.messages.length ? event.messages : messages;
-        idx = 0;
-        setPackStageText(messages[0]);
-      });
+      const { pack, ats, cached } = await jobsApi.streamApplyPack(
+        job.id,
+        (event) => {
+          messages = event.messages.length ? event.messages : messages;
+          idx = 0;
+          setPackStageText(messages[0]);
+        },
+        regenerate,
+      );
       await navigator.clipboard.writeText(pack);
+      setPackAts(ats);
       setCopiedPack(true);
-      toast.success("Apply pack copied");
+      toast.success(
+        cached ? "Apply pack copied (already had one for this CV/rating)" : "Apply pack copied",
+      );
       queryClient.invalidateQueries({ queryKey: ["crawl-status"] });
       setTimeout(() => setCopiedPack(false), 2000);
     } catch (err: unknown) {
@@ -577,7 +599,7 @@ export function JobDetailModal({ job, onClose }: Props) {
             <>
               <button
                 type="button"
-                onClick={handleApplyPack}
+                onClick={() => handleApplyPack()}
                 disabled={packLoading}
                 className="btn btn-primary job-modal-apply-pack"
               >
@@ -597,6 +619,43 @@ export function JobDetailModal({ job, onClose }: Props) {
               <p className="job-modal-pack-hint" title={packHint}>
                 {packHint}
               </p>
+              {packAts && (
+                <div className="job-modal-ats-panel">
+                  <p className="job-modal-ats-score">
+                    ATS alignment: <strong>{packAts.alignment_pct}%</strong>
+                  </p>
+                  {packAts.fixes.length > 0 && (
+                    <div className="job-modal-ats-list">
+                      <span className="job-modal-ats-list-label">Fixed:</span>
+                      <ul>
+                        {packAts.fixes.map((fix, i) => (
+                          <li key={i}>{fix}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {packAts.missing.length > 0 && (
+                    <div className="job-modal-ats-list">
+                      <span className="job-modal-ats-list-label">Still missing:</span>
+                      <ul>
+                        {packAts.missing.map((kw, i) => (
+                          <li key={i}>{kw}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+              {packAts && (
+                <button
+                  type="button"
+                  onClick={() => handleApplyPack(true)}
+                  disabled={packLoading}
+                  className="btn btn-ghost btn-sm"
+                >
+                  Regenerate (uses a new apply pack)
+                </button>
+              )}
             </>
           )}
 

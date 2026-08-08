@@ -38,6 +38,7 @@ from services.limits import (
     check_ai_token_quota,
     check_and_increment_apply_pack,
     check_and_increment_rating,
+    get_remaining_apply_packs,
     get_remaining_ratings,
     get_user_usage,
     rating_limit_message,
@@ -791,7 +792,9 @@ async def get_job_brief(job_id: str, user=Depends(get_current_user)):
 
 
 @router.get("/{job_id}/apply-pack")
-async def get_job_apply_pack(job_id: str, user=Depends(get_current_user)):
+async def get_job_apply_pack(
+    job_id: str, regenerate: bool = False, user=Depends(get_current_user)
+):
     db = get_database()
     user_id = str(user["_id"])
 
@@ -837,28 +840,85 @@ async def get_job_apply_pack(job_id: str, user=Depends(get_current_user)):
             detail="Job description is incomplete. Paste the full JD before using Apply pack.",
         )
 
+    def _sse(event: str, data: dict) -> bytes:
+        return f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
+
+    # Re-clicking "Copy apply pack" for the same job/CV/rating is free, serve
+    # the cached pack instead of burning quota + tokens on an identical
+    # generation. Cache invalidates itself whenever the rating or CV changes
+    # (both already stamped with their own timestamps elsewhere), or the user
+    # explicitly asks for a fresh one via ?regenerate=true.
+    cv_uploaded_at = (user.get("cv") or {}).get("uploaded_at")
+    cached = (job.get("apply_pack_cache") or {}).get(user_id)
+    if (
+        cached
+        and not regenerate
+        and cached.get("rated_at") == rating.get("rated_at")
+        and cached.get("cv_uploaded_at") == cv_uploaded_at
+    ):
+        remaining = await get_remaining_apply_packs(user)
+
+        async def cached_stream():
+            yield _sse(
+                "done",
+                {
+                    "pack": cached["pack"],
+                    "ats": cached["ats"],
+                    "apply_packs_remaining": remaining,
+                    "cached": True,
+                },
+            )
+
+        return StreamingResponse(cached_stream(), media_type="text/event-stream")
+
     allowed, message, remaining = await check_and_increment_apply_pack(user)
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message
         )
 
-    def _sse(event: str, data: dict) -> bytes:
-        return f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
-
     async def event_stream():
         try:
-            pack = None
+            result = None
             async for kind, payload in generate_apply_pack_stream(job, user, rating):
                 if kind == "stage":
                     yield _sse("stage", payload)
                 elif kind == "done":
-                    pack = payload
-            yield _sse("done", {"pack": pack, "apply_packs_remaining": remaining})
+                    result = payload
+            if result:
+                # Only cache on an actually-completed generation, a client
+                # disconnect mid-stream never reaches this line, so a broken/
+                # partial attempt is never served back as if it were cached.
+                await db.jobs.update_one(
+                    {"_id": ObjectId(job_id)},
+                    {
+                        "$set": {
+                            f"apply_pack_cache.{user_id}": {
+                                "pack": result["pack"],
+                                "ats": result["ats"],
+                                "rated_at": rating.get("rated_at"),
+                                "cv_uploaded_at": cv_uploaded_at,
+                            }
+                        }
+                    },
+                )
+            yield _sse(
+                "done",
+                {
+                    "pack": result["pack"] if result else None,
+                    "ats": result["ats"] if result else None,
+                    "apply_packs_remaining": remaining,
+                    "cached": False,
+                },
+            )
         except ValueError as exc:
             await refund_apply_pack(user_id)
             yield _sse("error", {"detail": str(exc)})
-        except Exception:
+        except Exception as exc:
+            import traceback
+
+            print(f"[apply_pack] !!! generation failed for job={job_id}: {exc}")
+            traceback.print_exc()
             await refund_apply_pack(user_id)
             yield _sse("error", {"detail": "Failed to generate apply pack. Try again."})
 

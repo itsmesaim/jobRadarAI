@@ -25,20 +25,23 @@ MANUAL_DAILY_LIMIT = 20
 STALE_FOLLOWUP_STATUSES = ["APPLIED", "HALF_APPLIED", "SAVED"]
 
 
-async def get_apply_soon_count(db, user_id: str) -> int:
+async def get_apply_soon_count(db, user_id: str, since: datetime | None = None) -> int:
     """Jobs scoring 8+/10, still New, surfaced on the Dashboard reminder
-    banner and the notification bell (routes/users.py)."""
+    banner and the notification bell (routes/users.py). With `since`, only
+    counts jobs rated after that time, used to tell "newly qualified" apart
+    from "still qualifies from before" for the bell's unseen badge."""
     hidden_key = f"hidden_{user_id}"
     rating_key = f"ratings.{user_id}.score"
     status_key = f"status_{user_id}"
-    return await db.jobs.count_documents(
-        {
-            "crawled_by": user_id,
-            hidden_key: {"$ne": True},
-            rating_key: {"$gte": 8},
-            "$or": [{status_key: {"$exists": False}}, {status_key: "NEW"}],
-        }
-    )
+    query = {
+        "crawled_by": user_id,
+        hidden_key: {"$ne": True},
+        rating_key: {"$gte": 8},
+        "$or": [{status_key: {"$exists": False}}, {status_key: "NEW"}],
+    }
+    if since:
+        query[f"ratings.{user_id}.rated_at"] = {"$gt": since}
+    return await db.jobs.count_documents(query)
 
 
 def _stale_followup_query(user_id: str, stale_cutoff: datetime) -> dict:
@@ -68,10 +71,15 @@ async def get_stale_followup_count(db, user_id: str) -> int:
     return await db.jobs.count_documents(_stale_followup_query(user_id, stale_cutoff))
 
 
-async def get_stale_followup_jobs(db, user_id: str, limit: int = 5) -> list[dict]:
+async def get_stale_followup_jobs(
+    db, user_id: str, limit: int = 5, last_seen: datetime | None = None
+) -> list[dict]:
     """Same jobs as get_stale_followup_count, but named, title/company/days
     stale, for the notification bell, which needs specifics rather than a
-    bare count (a user can't act on "1 job" without knowing which one)."""
+    bare count (a user can't act on "1 job" without knowing which one).
+    Each job also gets `newly_stale`: whether it crossed the stale threshold
+    after `last_seen`, used by the bell to only badge genuinely new items
+    while still listing every currently-stale job."""
     now = datetime.now(timezone.utc)
     stale_cutoff = now - timedelta(days=settings.stale_followup_days)
     status_key = f"status_{user_id}"
@@ -86,6 +94,7 @@ async def get_stale_followup_jobs(db, user_id: str, limit: int = 5) -> list[dict
         if last_update.tzinfo is None:
             last_update = last_update.replace(tzinfo=timezone.utc)
         days_stale = (now - last_update).days
+        stale_since = last_update + timedelta(days=settings.stale_followup_days)
         jobs.append(
             {
                 "id": str(job["_id"]),
@@ -93,6 +102,7 @@ async def get_stale_followup_jobs(db, user_id: str, limit: int = 5) -> list[dict
                 "company": job.get("company", ""),
                 "status": job.get(status_key, "SAVED"),
                 "days_stale": days_stale,
+                "newly_stale": last_seen is None or stale_since > last_seen,
             }
         )
     return jobs
