@@ -289,22 +289,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
               )}
             </div>
 
-            <h3
-              style={{
-                fontSize: "var(--text-base)",
-                fontWeight: 600,
-                color: "var(--text)",
-                lineHeight: 1.4,
-                margin: "0 0 var(--space-1)",
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-                minHeight: 40,
-              }}
-            >
-              {title}
-            </h3>
+            <h3 className="job-card-title">{title}</h3>
 
             {(company || location) && (
               <div

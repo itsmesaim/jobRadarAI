@@ -174,9 +174,9 @@ function MobileKanbanCard({
         style={{
           margin: "0 0 2px",
           fontWeight: 600,
-          fontSize: "var(--text-base)",
+          fontSize: "var(--text-sm)",
           color: "var(--text)",
-          lineHeight: 1.45,
+          lineHeight: 1.4,
         }}
       >
         {job.title}
@@ -184,8 +184,8 @@ function MobileKanbanCard({
       {job.company && (
         <p
           style={{
-            margin: "0 0 var(--space-3)",
-            fontSize: "var(--text-sm)",
+            margin: "0 0 var(--space-2)",
+            fontSize: "var(--text-xs)",
             color: "var(--text-muted)",
           }}
         >
@@ -523,16 +523,7 @@ export function KanbanPage() {
 
   return (
     <div className="kanban-page">
-      <div
-        style={{
-          marginBottom: "var(--space-4)",
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: "var(--space-3)",
-          flexWrap: "wrap",
-        }}
-      >
+      <div className="kanban-page-header">
         <div>
           <h1
             className="text-display"

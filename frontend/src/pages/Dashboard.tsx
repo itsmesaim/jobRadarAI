@@ -578,7 +578,7 @@ export function Dashboard() {
   };
 
   return (
-    <div className="page-shell">
+    <div className="page-shell dash-page">
       <div className="dash-hero">
         <div className="dash-header">
           <p className="dash-greeting">

@@ -226,6 +226,19 @@
     box-sizing: border-box;
   }
 
+  .job-card-title {
+    font-size: var(--text-base);
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.4;
+    margin: 0 0 var(--space-1);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    min-height: 40px;
+  }
+
   .job-card-header-row {
     display: flex;
     gap: var(--space-4);
@@ -554,6 +567,15 @@
     max-width: 100%;
     overflow: hidden;
     padding: 20px 16px 24px;
+  }
+
+  .kanban-page-header {
+    margin-bottom: var(--space-4);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
   }
 
   .kanban-board-scroll {
@@ -1592,7 +1614,48 @@
 
   @media (max-width: 640px) {
     .kanban-page {
-      padding: 16px 12px 24px;
+      --text-sm: 13px;
+      --text-base: 14px;
+      --text-lg: 16px;
+      --text-xl: 18px;
+      --text-2xl: 20px;
+      padding: 12px 12px 24px;
+    }
+
+    .kanban-page h1 {
+      font-size: 18px;
+    }
+
+    .kanban-page-header {
+      margin-bottom: var(--space-3);
+    }
+
+    .kanban-page .btn {
+      font-size: var(--text-sm);
+      padding: 7px 12px;
+    }
+
+    .kanban-page .input {
+      font-size: var(--text-sm);
+      padding: 8px 12px;
+    }
+
+    .kanban-mobile-tabs {
+      gap: 4px;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+
+    .kanban-mobile-tab {
+      padding: 6px 10px;
+    }
+
+    .kanban-mobile-list {
+      gap: 8px;
+    }
+
+    .kanban-mobile-card {
+      padding: 12px 14px;
     }
 
     .page-shell {
@@ -1677,7 +1740,77 @@
 
     .jobs-grid {
       grid-template-columns: 1fr;
-      gap: 12px;
+      gap: 10px;
+    }
+
+    .dash-page {
+      --text-sm: 13px;
+      --text-base: 14px;
+      --text-lg: 16px;
+      --text-xl: 18px;
+      --text-2xl: 20px;
+    }
+
+    .dash-page .page-title {
+      font-size: 18px;
+    }
+
+    .dash-page .page-subtitle {
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .dash-page .btn {
+      font-size: var(--text-sm);
+      padding: 7px 12px;
+    }
+
+    .dash-page .input {
+      font-size: var(--text-sm);
+      padding: 8px 12px;
+    }
+
+    .dash-page .label {
+      font-size: var(--text-xs);
+    }
+
+    .dash-hero {
+      margin-bottom: 12px;
+    }
+
+    .dash-metric-value {
+      font-size: 16px;
+    }
+
+    .dash-usage-value {
+      font-size: 13px;
+    }
+
+    .job-card {
+      padding: 12px 14px;
+    }
+
+    .job-card-title {
+      min-height: 0;
+      font-size: var(--text-sm);
+    }
+
+    .job-card-header-row {
+      gap: var(--space-2);
+      margin-bottom: var(--space-2);
+    }
+
+    .dash-empty {
+      padding: 32px 16px 40px;
+    }
+
+    .dash-empty-title {
+      font-size: 16px;
+    }
+
+    .dash-empty-icon {
+      width: 40px;
+      height: 40px;
     }
 
     .settings-page {
