@@ -5,6 +5,7 @@ We use bcrypt directly rather than passlib to avoid the well-known
 passlib/bcrypt version-detection warning. One less abstraction.
 """
 
+import random
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -30,12 +31,18 @@ def verify_password(password: str, hashed: str) -> bool:
 # ── JWT ──────────────────────────────────────────────────
 def create_access_token(subject: str, token_version: int = 1) -> str:
     now = datetime.now(timezone.utc)
+    # Jitter spreads out token expiry so tokens issued around the same time
+    # (e.g. a batch of signups) don't all expire at once and stampede /auth/login.
+    jitter_seconds = random.choice([10, 20, 40])
     payload = {
         "sub": subject,  # we store the user's Mongo _id here
         "typ": "access",
         "tv": int(token_version),
         "iat": now,
-        "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
+        "exp": now
+        + timedelta(
+            minutes=settings.access_token_expire_minutes, seconds=jitter_seconds
+        ),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 

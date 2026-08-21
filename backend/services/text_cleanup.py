@@ -1,7 +1,7 @@
 """
 Tidies user-written free text (about_me, rating feedback) before it's stored,
 so downstream LLM calls (rating, calibration) get clean prose instead of
-typos/fragments. Falls back to the raw text on any LLM failure — a save must
+typos/fragments. Falls back to the raw text on any LLM failure - a save must
 never fail because cleanup did.
 """
 
@@ -15,7 +15,7 @@ SYSTEM_PROMPT = """
 Rewrite the user's text into clear, well-formed sentences for the given purpose.
 
 Rules:
-- Preserve all factual content and intent — never invent or add anything.
+- Preserve all factual content and intent - never invent or add anything.
 - Fix grammar, spelling, and awkward phrasing only.
 - Return ONLY the rewritten text, no preamble, no quotes, no markdown.
 """.strip()

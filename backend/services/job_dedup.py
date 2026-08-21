@@ -1,4 +1,4 @@
-"""Shared job deduplication helpers — per-user URL and content fingerprints."""
+"""Shared job deduplication helpers - per-user URL and content fingerprints."""
 
 from __future__ import annotations
 

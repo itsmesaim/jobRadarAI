@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { ReactNode } from "react";
+import type { ComponentPropsWithoutRef } from "react";
 
 function useScrollReveal<T extends HTMLElement>(delay: number) {
   const ref = useRef<T>(null);
@@ -37,14 +37,11 @@ export function Reveal({
   children,
   className = "",
   delay = 0,
-}: {
-  children: ReactNode;
-  className?: string;
-  delay?: number;
-}) {
+  ...rest
+}: ComponentPropsWithoutRef<"div"> & { delay?: number }) {
   const ref = useScrollReveal<HTMLDivElement>(delay);
   return (
-    <div ref={ref} className={`reveal ${className}`}>
+    <div ref={ref} className={`reveal ${className}`} {...rest}>
       {children}
     </div>
   );

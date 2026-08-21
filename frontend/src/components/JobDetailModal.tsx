@@ -5,6 +5,7 @@ import {
   MapPin,
   Check,
   Clock,
+  Download,
   Loader,
   Sparkles,
   ClipboardCopy,
@@ -12,7 +13,7 @@ import {
   CalendarClock,
   Cpu,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { ScoreBadge } from "./ScoreBadge";
@@ -22,6 +23,27 @@ import { LimitContactModal } from "./LimitContactModal";
 import type { Job } from "../types";
 
 const MIN_APPLY_PACK_SCORE = 6;
+
+// Rotates under the button while draft/ATS/revision run (often minutes).
+const PACK_WAIT_LINES = [
+  "WIRE: Better days are coming. This pack is one of them. Hang on.",
+  "Tolstoy: “The two most powerful warriors are patience and time.”",
+  "FACT: Honey never spoils. Neither did your CV. We're just tailoring it.",
+  "DISPATCH: Octopuses have three hearts. This pack has three passes. You're on them.",
+  "Edison: “Everything comes to him who hustles while he waits.” That's you.",
+  "FACT: A banana is a berry. A strawberry isn't. We're still writing bullets.",
+  "NOTE: Oxford is older than the Aztec Empire. This wait is not.",
+  "Rousseau: “Patience is bitter, but its fruit is sweet.” PDF incoming.",
+  "FACT: The shortest war lasted 38 minutes. You're already past that.",
+  "WIRE: A day on Venus is longer than its year. This wait is not.",
+  "FACT: Wombats poop cubes. We output PDFs. Both take a minute.",
+  "DISPATCH: There's a jellyfish that can reverse aging. Your cover letter cannot. Yet.",
+  "NOTE: Cleopatra lived closer to the Moon landing than to the pyramids. Perspective.",
+  "WIRE: A flock of flamingos is a flamboyance. A flock of bullets is a CV.",
+  "FACT: Shakespeare coined “swagger.” Your summary is getting some.",
+  "Better days are called Saturday, Sunday, and “apply pack ready.” Almost.",
+  "You can close this. Come back in a few minutes. It keeps cooking in the background.",
+];
 
 function timeAgo(dateStr?: string): string {
   if (!dateStr) return "";
@@ -55,17 +77,26 @@ interface Props {
 function extractCompany(job: Job): string {
   // @ts-ignore
   if (job.company) return job.company;
-  const parts = job.title.split("—");
+  const parts = job.title.split("\u2014");
   return parts.length > 1 ? parts[1].trim() : "";
 }
 
 function cleanTitle(job: Job): string {
   const company = extractCompany(job);
-  if (company && job.title.includes("—")) {
-    return job.title.split("—")[0].trim();
+  if (company && job.title.includes("\u2014")) {
+    return job.title.split("\u2014")[0].trim();
   }
   return job.title;
 }
+
+const HINT_COUNT_KEY = "jobradar_job_detail_hint_count";
+const HINT_ONBOARDING_SHOWS = 3;
+const HINT_REPEAT_EVERY = 5;
+const HINTS = [
+  "Download apply pack builds a ready CV + cover letter PDF. Copy apply pack instead if you'd rather hand the raw info to your own ChatGPT/Claude and build it yourself.",
+  'Be specific in the rating note, e.g. "don\'t penalize freelance experience", it becomes a standing rule the AI applies to similar jobs, not just this one.',
+  "Already applied to this one? Move it to Applied in Kanban so your pipeline stays accurate and follow-up reminders make sense.",
+];
 
 export function JobDetailModal({ job, onClose }: Props) {
   useEffect(() => {
@@ -76,17 +107,39 @@ export function JobDetailModal({ job, onClose }: Props) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
+  // One small self-dismissing hint toast per open, not a persistent on-screen banner,
+  // and not two toasts stacking on top of each other. Shows every time for the first
+  // few opens, then periodically after that so it doesn't go silent for returning users.
+  useEffect(() => {
+    const count = Number(localStorage.getItem(HINT_COUNT_KEY) || "0");
+    localStorage.setItem(HINT_COUNT_KEY, String(count + 1));
+    const shouldShow = count < HINT_ONBOARDING_SHOWS || count % HINT_REPEAT_EVERY === 0;
+    if (!shouldShow) return;
+    const hint = HINTS[count % HINTS.length];
+    const t1 = setTimeout(() => {
+      toast(hint, { duration: 6000, icon: "💡" });
+    }, 1000);
+    return () => clearTimeout(t1);
+  }, []);
+
   const queryClient = useQueryClient();
   const [copiedBrief, setCopiedBrief] = useState(false);
-  const [copiedPack, setCopiedPack] = useState(false);
+  const [packReady, setPackReady] = useState(false);
   const [packLoading, setPackLoading] = useState(false);
   const [packStageText, setPackStageText] = useState<string | null>(null);
+  const packBusyRef = useRef(false);
   const [packAts, setPackAts] = useState<{
     alignment_pct: number;
     matched: string[];
     missing: string[];
     fixes: string[];
   } | null>(null);
+  const [cvDownloading, setCvDownloading] = useState(false);
+  const [coverDownloading, setCoverDownloading] = useState(false);
+  const [cvOverflow, setCvOverflow] = useState(false);
+  const [packError, setPackError] = useState<string | null>(null);
+  const [packNote, setPackNote] = useState("");
+  const [atsExpanded, setAtsExpanded] = useState(false);
   const [showApplyPackLimit, setShowApplyPackLimit] = useState(false);
   const [reRating, setReRating] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
@@ -117,6 +170,18 @@ export function JobDetailModal({ job, onClose }: Props) {
     staleTime: 30_000,
   });
 
+  const { data: jobDetail } = useQuery({
+    queryKey: ["job-detail", job.id],
+    queryFn: () => jobsApi.get(job.id),
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (!jobDetail?.apply_pack_ready) return;
+    setPackReady(true);
+    if (jobDetail.apply_pack_ats) setPackAts(jobDetail.apply_pack_ats);
+  }, [jobDetail?.apply_pack_ready, jobDetail?.apply_pack_ats]);
+
   const isPro = !!(
     usage &&
     (usage.is_admin ||
@@ -141,7 +206,7 @@ export function JobDetailModal({ job, onClose }: Props) {
       const { brief } = await jobsApi.getBrief(job.id);
       await navigator.clipboard.writeText(brief);
       setCopiedBrief(true);
-      toast.success("Fit summary copied");
+      toast.success("Apply pack copied, paste into ChatGPT/Claude/Grok");
       setTimeout(() => setCopiedBrief(false), 2000);
     } catch (err: unknown) {
       const ax = err as { response?: { status?: number; data?: { detail?: string } } };
@@ -149,7 +214,7 @@ export function JobDetailModal({ job, onClose }: Props) {
       if (ax.response?.status === 409 && detail) {
         toast(detail, { duration: 8000, icon: "ℹ️" });
       } else {
-        toast.error(detail || "Could not copy fit summary");
+        toast.error(detail || "Could not copy apply pack");
       }
     }
   };
@@ -201,52 +266,114 @@ export function JobDetailModal({ job, onClose }: Props) {
     }
   };
 
-  const handleApplyPack = async (regenerate = false) => {
-    if (!canApplyPack) {
+  const handleApplyPack = async (
+    regenerate = false,
+    part: "all" | "cv" | "cover" = "all",
+    note = "",
+  ) => {
+    if (packBusyRef.current) return;
+    const joining = !!(job.apply_pack_in_progress || jobDetail?.apply_pack_in_progress);
+    if (!joining && part === "all" && !canApplyPack) {
       setShowApplyPackLimit(true);
       return;
     }
+    packBusyRef.current = true;
     setPackLoading(true);
-    setPackAts(null);
-    let messages = ["Your CV is in the oven..."];
-    let idx = 0;
-    setPackStageText(messages[0]);
+    if (part === "all") {
+      setPackAts(null);
+      setPackReady(false);
+    }
+    setPackError(null);
+    setCvOverflow(false);
+    queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    queryClient.invalidateQueries({ queryKey: ["job-detail", job.id] });
+    let idx = Math.floor(Math.random() * PACK_WAIT_LINES.length);
+    setPackStageText(PACK_WAIT_LINES[idx]);
     const rotate = setInterval(() => {
-      idx = (idx + 1) % messages.length;
-      setPackStageText(messages[idx]);
-    }, 2500);
+      idx = (idx + 1) % PACK_WAIT_LINES.length;
+      setPackStageText(PACK_WAIT_LINES[idx]);
+    }, 18000);
     try {
-      const { pack, ats, cached } = await jobsApi.streamApplyPack(
+      const { ats, cached } = await jobsApi.streamApplyPack(
         job.id,
-        (event) => {
-          messages = event.messages.length ? event.messages : messages;
-          idx = 0;
-          setPackStageText(messages[0]);
+        () => {
+          /* ticker is local; SSE stages used to overwrite it with one stuck line */
         },
         regenerate,
+        part,
+        note,
       );
-      await navigator.clipboard.writeText(pack);
       setPackAts(ats);
-      setCopiedPack(true);
+      setPackReady(true);
       toast.success(
-        cached ? "Apply pack copied (already had one for this CV/rating)" : "Apply pack copied",
+        cached ? "Apply pack ready (already had one for this CV/rating)" : "Apply pack ready",
       );
       queryClient.invalidateQueries({ queryKey: ["crawl-status"] });
-      setTimeout(() => setCopiedPack(false), 2000);
+      queryClient.invalidateQueries({ queryKey: ["job-detail", job.id] });
     } catch (err: unknown) {
-      const ax = err as { response?: { status?: number; data?: { detail?: string } } };
-      const detail = ax.response?.data?.detail;
+      const ax = err as {
+        response?: { status?: number; data?: { detail?: string } };
+        message?: string;
+      };
+      const detail =
+        ax.response?.data?.detail ||
+        (err instanceof Error ? err.message : "") ||
+        "Could not generate apply pack";
+      setPackError(detail);
       if (ax.response?.status === 429) {
-        setShowApplyPackLimit(true);
-      } else if (ax.response?.status === 409 && detail) {
+        const inflight = detail.toLowerCase().includes("already generating");
+        if (inflight) {
+          toast("Still building this pack, try again in a few seconds.", { icon: "⏳" });
+        } else {
+          setShowApplyPackLimit(true);
+        }
+      } else if (ax.response?.status === 409) {
         toast(detail, { duration: 8000, icon: "ℹ️" });
       } else {
-        toast.error(detail || "Could not generate apply pack");
+        toast.error(detail);
       }
     } finally {
       clearInterval(rotate);
+      packBusyRef.current = false;
       setPackLoading(false);
       setPackStageText(null);
+    }
+  };
+
+  useEffect(() => {
+    if (packReady || packBusyRef.current) return;
+    if (!job.apply_pack_in_progress && !jobDetail?.apply_pack_in_progress) return;
+    void handleApplyPack();
+    // Reattach to the in-flight generate if they closed the modal and came back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job.apply_pack_in_progress, jobDetail?.apply_pack_in_progress, packReady]);
+
+  const handleDownloadCv = async () => {
+    setCvDownloading(true);
+    try {
+      const { overflow } = await jobsApi.downloadApplyPackCv(job.id);
+      setCvOverflow(overflow);
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { detail?: string } } };
+      const detail = ax.response?.data?.detail || "Could not download CV";
+      setPackError(detail);
+      toast.error(detail);
+    } finally {
+      setCvDownloading(false);
+    }
+  };
+
+  const handleDownloadCoverLetter = async () => {
+    setCoverDownloading(true);
+    try {
+      await jobsApi.downloadApplyPackCoverLetter(job.id);
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { detail?: string } } };
+      const detail = ax.response?.data?.detail || "Could not download cover letter";
+      setPackError(detail);
+      toast.error(detail);
+    } finally {
+      setCoverDownloading(false);
     }
   };
 
@@ -399,6 +526,25 @@ export function JobDetailModal({ job, onClose }: Props) {
             >
               <span className="score-badge-spinner" style={{ width: 13, height: 13 }} />
               AI is rating this job against your CV right now, check back in a moment.
+            </p>
+          )}
+          {jobDetail?.past_rejection_reason && (
+            <p
+              style={{
+                display: "flex",
+                gap: "var(--space-2)",
+                fontSize: "var(--text-sm)",
+                color: "var(--text-secondary)",
+                margin: "0 0 var(--space-4)",
+                padding: "var(--space-3) var(--space-4)",
+                background: "var(--danger-bg)",
+                borderRadius: "var(--radius)",
+                border: "1px solid var(--danger-border)",
+              }}
+            >
+              You were rejected at {company || "this company"} before
+              {jobDetail.past_rejection_title ? ` (${jobDetail.past_rejection_title})` : ""}: "
+              {jobDetail.past_rejection_reason}"
             </p>
           )}
           {rating.verdict && rating.verdict !== "Not rated yet" && (
@@ -597,64 +743,180 @@ export function JobDetailModal({ job, onClose }: Props) {
         <div className="job-modal-footer">
           {(rating.score ?? 0) >= MIN_APPLY_PACK_SCORE && (
             <>
-              <button
-                type="button"
-                onClick={() => handleApplyPack()}
-                disabled={packLoading}
-                className="btn btn-primary job-modal-apply-pack"
-              >
-                {packLoading ? (
-                  <Loader size={15} className="animate-spin" />
-                ) : copiedPack ? (
-                  <Check size={15} />
-                ) : (
-                  <Sparkles size={15} />
-                )}
-                {packLoading
-                  ? packStageText || "Building your apply pack…"
-                  : copiedPack
-                    ? "Copied, paste into ChatGPT / Claude"
-                    : "Copy apply pack for LLM"}
-              </button>
-              <p className="job-modal-pack-hint" title={packHint}>
-                {packHint}
-              </p>
-              {packAts && (
-                <div className="job-modal-ats-panel">
-                  <p className="job-modal-ats-score">
-                    ATS alignment: <strong>{packAts.alignment_pct}%</strong>
-                  </p>
-                  {packAts.fixes.length > 0 && (
-                    <div className="job-modal-ats-list">
-                      <span className="job-modal-ats-list-label">Fixed:</span>
-                      <ul>
-                        {packAts.fixes.map((fix, i) => (
-                          <li key={i}>{fix}</li>
-                        ))}
-                      </ul>
-                    </div>
+              {!packReady && (
+                <button
+                  type="button"
+                  onClick={() => handleApplyPack()}
+                  disabled={packLoading}
+                  aria-busy={packLoading}
+                  className="btn btn-primary job-modal-apply-pack"
+                >
+                  {packLoading ? (
+                    <Loader size={15} className="animate-spin" />
+                  ) : (
+                    <Sparkles size={15} />
                   )}
-                  {packAts.missing.length > 0 && (
-                    <div className="job-modal-ats-list">
-                      <span className="job-modal-ats-list-label">Still missing:</span>
-                      <ul>
-                        {packAts.missing.map((kw, i) => (
-                          <li key={i}>{kw}</li>
-                        ))}
-                      </ul>
-                    </div>
+                  {packLoading ? "CV is on the way…" : "Build CV + cover letter"}
+                </button>
+              )}
+              {packReady && (
+                <details className="job-modal-dl">
+                  <summary className="btn btn-primary job-modal-apply-pack">
+                    <Download size={15} />
+                    Download files
+                  </summary>
+                  <div className="job-modal-dl-menu">
+                    <button
+                      type="button"
+                      onClick={handleDownloadCv}
+                      disabled={cvDownloading}
+                      className="btn btn-secondary job-modal-dl-item"
+                    >
+                      {cvDownloading ? (
+                        <Loader size={13} className="animate-spin" />
+                      ) : (
+                        <Download size={13} />
+                      )}
+                      Tailored CV (PDF)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadCoverLetter}
+                      disabled={coverDownloading}
+                      className="btn btn-secondary job-modal-dl-item"
+                    >
+                      {coverDownloading ? (
+                        <Loader size={13} className="animate-spin" />
+                      ) : (
+                        <Download size={13} />
+                      )}
+                      Cover letter (PDF)
+                    </button>
+                  </div>
+                </details>
+              )}
+              <p
+                className={`job-modal-pack-hint${packLoading ? " is-waiting" : ""}`}
+                title={packLoading ? packStageText || "" : packHint}
+              >
+                {packLoading
+                  ? packStageText || "Your CV is in the oven…"
+                  : packReady
+                    ? cvOverflow
+                      ? "Ready. CV ran to 2 pages, trim a project if you want one page."
+                      : "Ready. Open the menu to download the CV or cover letter."
+                    : packHint}
+              </p>
+              {packError && (
+                <p className="job-modal-pack-error" role="alert">
+                  {packError}
+                  {!packLoading && (
+                    <>
+                      {" "}
+                      <button
+                        type="button"
+                        className="job-modal-pack-retry"
+                        onClick={() => handleApplyPack(packReady)}
+                      >
+                        Try again
+                      </button>
+                    </>
+                  )}
+                </p>
+              )}
+              {packReady && packAts && (
+                <div className="job-modal-ats-panel" style={{ transition: "opacity 0.2s" }}>
+                  <button
+                    type="button"
+                    onClick={() => setAtsExpanded((v) => !v)}
+                    className="job-modal-ats-score"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "var(--space-1)",
+                      width: "100%",
+                    }}
+                  >
+                    ATS alignment: <strong>{packAts.alignment_pct}%</strong>
+                    <span
+                      style={{
+                        marginLeft: "auto",
+                        color: "var(--text-muted)",
+                        fontSize: "var(--text-xs)",
+                      }}
+                    >
+                      {atsExpanded ? "Hide details" : "Show details"}
+                    </span>
+                  </button>
+                  {atsExpanded && (
+                    <>
+                      {packAts.fixes.length > 0 && (
+                        <div className="job-modal-ats-list">
+                          <span className="job-modal-ats-list-label">Fixed:</span>
+                          <ul>
+                            {packAts.fixes.map((fix, i) => (
+                              <li key={i}>{fix}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {packAts.missing.length > 0 && (
+                        <div className="job-modal-ats-list">
+                          <span className="job-modal-ats-list-label">Still missing:</span>
+                          <ul>
+                            {packAts.missing.map((kw, i) => (
+                              <li key={i}>{kw}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
-              {packAts && (
-                <button
-                  type="button"
-                  onClick={() => handleApplyPack(true)}
-                  disabled={packLoading}
-                  className="btn btn-ghost btn-sm"
-                >
-                  Regenerate (uses a new apply pack)
-                </button>
+              {packReady && (
+                <div className="job-modal-rebuild">
+                  <textarea
+                    className="input"
+                    rows={2}
+                    maxLength={400}
+                    placeholder="Optional: what to change. e.g. lead with the shop project, mention AWS as learning, shorter close"
+                    value={packNote}
+                    onChange={(e) => setPackNote(e.target.value)}
+                    disabled={packLoading}
+                    style={{ fontSize: "var(--text-xs)", lineHeight: 1.45, resize: "vertical" }}
+                  />
+                  <div className="job-modal-rebuild-btns">
+                    <button
+                      type="button"
+                      onClick={() => handleApplyPack(true, "cv", packNote)}
+                      disabled={packLoading}
+                      className="btn btn-ghost btn-sm"
+                    >
+                      Rebuild CV
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyPack(true, "cover", packNote)}
+                      disabled={packLoading}
+                      className="btn btn-ghost btn-sm"
+                    >
+                      Rebuild letter
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyPack(true, "all", packNote)}
+                      disabled={packLoading}
+                      className="btn btn-ghost btn-sm"
+                    >
+                      Rebuild both
+                    </button>
+                  </div>
+                </div>
               )}
             </>
           )}
@@ -685,7 +947,7 @@ export function JobDetailModal({ job, onClose }: Props) {
                 type="button"
                 onClick={handleCopyBrief}
                 className="btn btn-ghost job-modal-action-btn"
-                title="Copy fit score, gaps, and job context for your LLM"
+                title="Copy job + CV context, paste into ChatGPT/Claude/Grok to build your own CV"
               >
                 {copiedBrief ? (
                   <>
@@ -693,7 +955,7 @@ export function JobDetailModal({ job, onClose }: Props) {
                   </>
                 ) : (
                   <>
-                    <ClipboardCopy size={14} /> Copy fit summary
+                    <ClipboardCopy size={14} /> Copy apply pack
                   </>
                 )}
               </button>

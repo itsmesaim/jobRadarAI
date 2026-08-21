@@ -99,7 +99,7 @@ export function LoginPage() {
               <label className="label">Full name</label>
               <input
                 className="input"
-                placeholder="Saim Kaskar"
+                placeholder="Your name"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 style={errors.name ? { borderColor: "var(--danger)" } : {}}
@@ -123,7 +123,7 @@ export function LoginPage() {
             <input
               className="input"
               type="email"
-              placeholder="saim@example.com"
+              placeholder="you@example.com"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               style={errors.email ? { borderColor: "var(--danger)" } : {}}

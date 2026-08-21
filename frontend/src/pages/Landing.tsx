@@ -5,6 +5,7 @@ import {
   Building2,
   Briefcase,
   Check,
+  ClipboardCopy,
   Clock,
   Database,
   Download,
@@ -16,7 +17,8 @@ import {
   Lock,
   MapPin,
   Menu,
-  Radar,
+  Plus,
+  RefreshCw,
   Scale,
   ScanSearch,
   Search,
@@ -35,6 +37,7 @@ import { ScoreBadge } from "../components/ScoreBadge";
 import { StatTile } from "../components/StatTile";
 import { Reveal } from "../components/Reveal";
 import { FlowDiagram, type FlowStep } from "../components/FlowDiagram";
+import { RadarSweep } from "../components/RadarSweep";
 
 const FEATURES = [
   {
@@ -64,12 +67,12 @@ const FEATURES = [
   },
   {
     title: "Apply packs",
-    desc: "Get a tailored summary and talking points per role so you're not blasting the same generic application everywhere.",
+    desc: "Download a tailored CV PDF and cover letter from your real CV for jobs that score well. Rebuild the letter without touching the CV. You pick which projects lead.",
     Icon: Briefcase,
   },
   {
-    title: "EU-hosted by default, your choice always",
-    desc: "CV parsing and job rating default to Mistral AI, hosted in the EU. No CV or job data leaves the EU unless you opt into a different provider yourself. Every rating shows exactly which model scored it.",
+    title: "You pick the AI, we host the app",
+    desc: "The app lives in the EU. Rating, apply-pack, and CV parse each use a model you pick in Settings. Every rating shows which model scored it. Switching a provider is a confirmed choice.",
     Icon: Shield,
   },
 ];
@@ -86,13 +89,14 @@ const WITH = [
   "Every job scored against your full profile: CV, preferences, and about-you notes",
   "Rate a rating wrong and it calibrates similar jobs immediately, recurring corrections become a standing rule",
   "A Kanban board that shows where each application actually stands",
+  "A tailored CV and cover letter PDF for the jobs that actually fit",
 ];
 
 const STACK = [
   "React 18 + TypeScript + Vite",
   "FastAPI + Motor (MongoDB)",
-  "LangChain (split main + rating LLM)",
-  "Mistral AI by default (EU-hosted), switch to OpenAI or DeepSeek per model in Settings",
+  "LangChain (rating, apply-pack, and CV parse as separate model picks)",
+  "Pick rating, apply-pack, and CV-parse models independently in Settings.",
   "FAISS RAG for JD context + rating calibration",
   "TanStack Query + Zustand",
   "Jooble · JobsAPI (Indeed)",
@@ -129,6 +133,12 @@ const SEARCH_FLOW: FlowStep[] = [
     desc: "Drag through Saved, Applied, Interview, Offer.",
     tone: "accent",
   },
+  {
+    icon: Download,
+    label: "Apply pack",
+    desc: "CV + cover letter PDF from your CV. Rebuild one piece if needed.",
+    tone: "purple",
+  },
 ];
 
 const DATA_FLOW: FlowStep[] = [
@@ -147,7 +157,7 @@ const DATA_FLOW: FlowStep[] = [
   {
     icon: ScanSearch,
     label: "AI parses & rates",
-    desc: "Mistral (EU) by default, or OpenAI/DeepSeek if you opt in per model.",
+    desc: "The model you picked in Settings parses and rates. Confirmed if you leave the EU default.",
     tone: "success",
   },
   {
@@ -183,30 +193,34 @@ const GDPR_RIGHTS: { icon: React.ElementType; title: string; desc: string }[] = 
   {
     icon: Scale,
     title: "Consent, not defaults",
-    desc: "Switching your CV-parsing or rating model to a non-EU provider requires explicit confirmation first.",
+    desc: "Switching to a provider outside the EU default requires explicit confirmation first.",
   },
 ];
 
 const HOW_IT_WORKS = [
   {
     title: "Set up your profile",
-    body: "Upload your CV, write a short about-me, and fill in job search prefs: target role, locations, experience level, work mode, salary, and skills. Five extra minutes here makes the ratings much better.",
+    body: "Upload a CV, add about-me and search prefs. Extra minutes here make the scores sharper.",
   },
   {
     title: "Search your markets",
-    body: "JobRadar runs searches on Jooble and Indeed using those prefs, or paste in a job description directly. Each location is searched separately and repeat listings are cut.",
+    body: "One search on Jooble and Indeed, or paste a JD. Each city is its own search. Duplicates are cut.",
   },
   {
     title: "AI scores every listing",
-    body: "Every job gets scored against your full profile, not just keywords on a PDF. You get a fit score, strengths, gaps, and tips for that application.",
+    body: "1-10 against your full profile, not keywords on a PDF. Strengths, gaps, and tips per job.",
   },
   {
     title: "Rate the rating",
-    body: "Disagree with a score? Leave a star rating and a note right on the job. The next similar listing gets rated with that feedback in mind.",
+    body: "Wrong score? Star and a note on the job. Similar listings pick that up next time.",
   },
   {
     title: "Track on Kanban",
-    body: "Move jobs through Saved, Applied, Interview, and Offer as you go. No more losing track in your inbox.",
+    body: "Drag Saved, Applied, Interview, Offer. One board instead of a lost inbox.",
+  },
+  {
+    title: "Download the application",
+    body: "For jobs that fit, get a CV and cover letter PDF from your real CV. Rebuild the letter without touching the CV.",
   },
 ];
 
@@ -228,7 +242,8 @@ const PREVIEW_JOBS = [
     company: "Vercel",
     location: "Remote · EU",
     score: 8,
-    summary: "Solid overlap on Next.js and API design. Mention your FastAPI side projects.",
+    summary:
+      "Solid overlap on Next.js and API design. Lead with the production work you marked as flagship.",
     status: "SAVED",
     borderColor: "var(--accent)",
   },
@@ -236,7 +251,7 @@ const PREVIEW_JOBS = [
     source: "Manual",
     title: "Software Engineer",
     company: "Stripe",
-    location: "Dublin",
+    location: "Remote",
     score: 7,
     summary:
       "Pasted this one in directly. Good backend fit. Light on distributed systems, so mention any exposure in your cover letter.",
@@ -281,6 +296,7 @@ function PreviewJobCard({
   summary,
   status,
   borderColor,
+  onClick,
 }: {
   source: string;
   title: string;
@@ -290,9 +306,18 @@ function PreviewJobCard({
   summary: string;
   status: string;
   borderColor: string;
+  onClick?: () => void;
 }) {
   return (
-    <div className="card job-card" style={{ borderLeft: `3px solid ${borderColor}`, minHeight: 0 }}>
+    <div
+      className="card card-hover job-card"
+      onClick={onClick}
+      style={{
+        borderLeft: `3px solid ${borderColor}`,
+        minHeight: 0,
+        cursor: onClick ? "pointer" : undefined,
+      }}
+    >
       <div className="job-card-header-row">
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="job-card-meta-row">
@@ -396,10 +421,244 @@ function PreviewJobCard({
   );
 }
 
+const DEMO_STRENGTHS = [
+  "5+ years of production React and TypeScript, matches the core stack directly.",
+  "Shipped and maintained CI/CD pipelines end to end, exactly what this listing asks for.",
+];
+const DEMO_GAPS = ["No hands-on GraphQL experience yet, this role lists it as required."];
+const DEMO_VERDICT =
+  "Strong overall fit. Your frontend and DevOps background covers most of this listing, the GraphQL gap is worth addressing in your cover letter.";
+
+function DemoJobDetailModal({
+  job,
+  onClose,
+}: {
+  job: (typeof PREVIEW_JOBS)[number];
+  onClose: () => void;
+}) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 200,
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="card job-detail-modal"
+        style={{ width: "100%", maxWidth: 680, maxHeight: "88dvh", overflow: "auto" }}
+      >
+        <div className="job-modal-header">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span
+              style={{
+                fontSize: "var(--text-xs)",
+                fontWeight: 600,
+                letterSpacing: "0.05em",
+                textTransform: "uppercase",
+                color: "var(--accent)",
+              }}
+            >
+              Demo preview, not a real job
+            </span>
+            <h2 className="job-modal-title">{job.title}</h2>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "var(--space-3)",
+                fontSize: "var(--text-sm)",
+                color: "var(--text-secondary)",
+              }}
+            >
+              <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+                <Building2 size={13} /> {job.company}
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+                <MapPin size={13} /> {job.location}
+              </span>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+            <ScoreBadge score={job.score} size="lg" />
+            <button
+              onClick={onClose}
+              className="btn btn-ghost"
+              style={{ padding: "var(--space-2)" }}
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        <div style={{ padding: "0 var(--space-6) var(--space-6)" }}>
+          <p
+            style={{
+              fontSize: "var(--text-base)",
+              color: "var(--text-secondary)",
+              lineHeight: 1.65,
+              margin: "0 0 var(--space-5)",
+              padding: "var(--space-3) var(--space-4)",
+              background: "var(--bg-secondary)",
+              borderRadius: "var(--radius)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            {DEMO_VERDICT}
+          </p>
+
+          <div style={{ marginBottom: "var(--space-5)" }}>
+            <p
+              style={{
+                fontSize: "var(--text-xs)",
+                fontWeight: 600,
+                color: "var(--success)",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                marginBottom: "var(--space-3)",
+              }}
+            >
+              Strengths
+            </p>
+            {DEMO_STRENGTHS.map((s) => (
+              <div
+                key={s}
+                style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}
+              >
+                <span style={{ color: "var(--success)", fontWeight: 700, flexShrink: 0 }}>+</span>
+                <span
+                  style={{
+                    fontSize: "var(--text-base)",
+                    color: "var(--text-secondary)",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {s}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginBottom: "var(--space-6)" }}>
+            <p
+              style={{
+                fontSize: "var(--text-xs)",
+                fontWeight: 600,
+                color: "#f97316",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                marginBottom: "var(--space-3)",
+              }}
+            >
+              Gaps
+            </p>
+            {DEMO_GAPS.map((g) => (
+              <div
+                key={g}
+                style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}
+              >
+                <span style={{ color: "#f97316", fontWeight: 700, flexShrink: 0 }}>−</span>
+                <span
+                  style={{
+                    fontSize: "var(--text-base)",
+                    color: "var(--text-secondary)",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {g}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <p
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-2)",
+              fontSize: "var(--text-sm)",
+              color: "var(--text-secondary)",
+              background: "var(--accent-light)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              padding: "var(--space-3) var(--space-4)",
+              margin: "0 0 var(--space-5)",
+            }}
+          >
+            <Sparkles size={14} style={{ flexShrink: 0, color: "var(--accent)" }} />
+            Download apply pack builds a ready CV + cover letter PDF from this fit analysis. Copy
+            apply pack instead if you'd rather hand the raw info to your own ChatGPT/Claude and
+            build it yourself.
+          </p>
+
+          <div className="job-modal-footer">
+            <Link
+              to="/login"
+              className="btn btn-primary job-modal-apply-pack"
+              title="Generates a tailored CV + cover letter PDF from your real CV and this job"
+            >
+              <Download size={15} />
+              Download apply pack
+            </Link>
+
+            <div className="job-modal-footer-actions">
+              <Link
+                to="/login"
+                className="btn btn-ghost job-modal-action-btn"
+                title="Opens the original job listing in a new tab"
+              >
+                <ExternalLink size={14} /> View posting
+              </Link>
+              <Link
+                to="/login"
+                className="btn btn-ghost job-modal-action-btn"
+                title="Re-checks this job against your current CV and preferences"
+              >
+                <RefreshCw size={14} /> Re-rate
+              </Link>
+              <Link
+                to="/login"
+                className="btn btn-ghost job-modal-action-btn"
+                title="Copies job + CV context, paste into ChatGPT/Claude/Grok to build your own CV"
+              >
+                <ClipboardCopy size={14} /> Copy apply pack
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PREVIEW_TILT_RESTING = { x: 6, y: -4 };
+
 export function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [demoJob, setDemoJob] = useState<(typeof PREVIEW_JOBS)[number] | null>(null);
+  const [previewTilt, setPreviewTilt] = useState(PREVIEW_TILT_RESTING);
   const year = new Date().getFullYear();
   const navRef = useRef<HTMLDivElement>(null);
+
+  const reducedMotion =
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const handlePreviewMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (reducedMotion) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / rect.width - 0.5;
+    const py = (e.clientY - rect.top) / rect.height - 0.5;
+    setPreviewTilt({ x: py * -14, y: px * 14 });
+  };
+  const handlePreviewLeave = () => setPreviewTilt(PREVIEW_TILT_RESTING);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -462,11 +721,6 @@ export function LandingPage() {
       <main className="landing-main">
         <section className="landing-hero">
           <div className="landing-hero-copy">
-            <p className="landing-eyebrow">
-              <Radar size={14} strokeWidth={2.5} />
-              Job search that knows your full profile
-            </p>
-
             <h1 className="landing-hero-title">
               {heroWords.map((word, i) => (
                 <span
@@ -480,9 +734,9 @@ export function LandingPage() {
             </h1>
 
             <p className="landing-hero-sub">
-              Upload your CV, tell us which markets and roles you're targeting, and JobRadar
-              searches the boards, scores every listing against your full profile, and keeps your
-              pipeline on a Kanban board. The more you fill in Settings, the sharper the scores get.
+              Upload your CV, tell us which markets and roles you want, and JobRadar searches the
+              boards, scores every listing against your profile, and keeps the pipeline on a Kanban.
+              For jobs that fit, download a tailored CV and cover letter PDF.
             </p>
 
             <div className="landing-hero-actions">
@@ -500,6 +754,10 @@ export function LandingPage() {
                 <StatTile key={stat.label} label={stat.label} value={stat.value} tone={stat.tone} />
               ))}
             </div>
+          </div>
+
+          <div className="landing-hero-radar-wrap">
+            <RadarSweep />
           </div>
         </section>
 
@@ -533,8 +791,17 @@ export function LandingPage() {
             </p>
           </div>
 
-          <div className="landing-preview-wrap">
-            <div className="landing-preview-browser card">
+          <Reveal
+            className="landing-preview-wrap"
+            onMouseMove={handlePreviewMove}
+            onMouseLeave={handlePreviewLeave}
+          >
+            <div
+              className="landing-preview-browser card"
+              style={{
+                transform: `rotateX(${previewTilt.x}deg) rotateY(${previewTilt.y}deg)`,
+              }}
+            >
               <div className="landing-preview-bar">
                 <span />
                 <span />
@@ -554,19 +821,38 @@ export function LandingPage() {
                 <p className="landing-preview-greet-name">Saim.</p>
 
                 <div className="dash-metrics landing-preview-metrics">
-                  <StatTile label="Total jobs" value={47} />
-                  <StatTile label="Strong matches" value={12} tone="success" />
-                  <StatTile label="Applied" value={8} tone="accent" />
-                  <StatTile label="Unrated" value={5} tone="warning" />
+                  <StatTile label="Active pipeline" value={47} hint="12 total saved" />
+                  <StatTile
+                    label="Strong matches"
+                    value={12}
+                    tone="success"
+                    hint="Score 7+ · tap to filter"
+                  />
+                  <StatTile
+                    label="Apply soon"
+                    value={4}
+                    tone="warning"
+                    highlight
+                    hint="8+ still New · tap to view"
+                  />
+                  <StatTile
+                    label="Needs rating"
+                    value={5}
+                    tone="accent"
+                    hint="Waiting for AI · tap to filter"
+                  />
                 </div>
 
                 <div className="landing-preview-toolbar">
-                  <button type="button" className="btn btn-primary" style={{ fontSize: 12 }}>
+                  <Link to="/login" className="btn btn-ghost" style={{ fontSize: 12 }}>
+                    <Plus size={14} /> Paste JD
+                  </Link>
+                  <Link to="/login" className="btn btn-primary" style={{ fontSize: 12 }}>
                     <Search size={14} /> Search jobs
-                  </button>
-                  <button type="button" className="btn btn-secondary" style={{ fontSize: 12 }}>
-                    <Sparkles size={14} /> Rate all
-                  </button>
+                  </Link>
+                  <Link to="/login" className="btn btn-secondary" style={{ fontSize: 12 }}>
+                    <Sparkles size={14} /> Rate now
+                  </Link>
                   <span className="landing-preview-filter">6+</span>
                   <span className="landing-preview-filter is-active">7+</span>
                   <span className="landing-preview-filter">8+</span>
@@ -574,7 +860,7 @@ export function LandingPage() {
 
                 <div className="landing-preview-grid">
                   {PREVIEW_JOBS.map((job) => (
-                    <PreviewJobCard key={job.title} {...job} />
+                    <PreviewJobCard key={job.title} {...job} onClick={() => setDemoJob(job)} />
                   ))}
                 </div>
               </div>
@@ -583,7 +869,7 @@ export function LandingPage() {
               Mockup only. Sign in, set up your profile in Settings, then run real searches for live
               ratings tuned to your roles and markets.
             </p>
-          </div>
+          </Reveal>
         </section>
 
         <section id="features" className="landing-section">
@@ -616,7 +902,6 @@ export function LandingPage() {
           </div>
 
           <Reveal className="landing-steps landing-stagger">
-            <div className="landing-steps-line" aria-hidden />
             {HOW_IT_WORKS.map((step, i) => (
               <div key={step.title} className="landing-step">
                 <div className="landing-step-num">{i + 1}</div>
@@ -661,12 +946,10 @@ export function LandingPage() {
               <p className="landing-section-label">Tech stack</p>
               <h2>How it's built</h2>
               <p>
-                React frontend on TanStack Query, FastAPI backend, MongoDB for storage, and
-                LangChain with two LLMs: one for CV parsing, a faster one for bulk job ratings
-                against your CV and saved preferences. Both default to Mistral AI, so your CV and
-                job data are processed inside the EU end to end, with OpenAI and DeepSeek available
-                per model if you switch. FAISS retrieval picks the most relevant JD context and
-                pulls in your past feedback on similar jobs.
+                React frontend on TanStack Query, FastAPI backend, MongoDB in the EU. LangChain
+                splits three jobs: bulk rating, apply-pack CVs, and CV parsing. You pick each from
+                the list in Settings (local or hosted). FAISS retrieval picks the relevant JD
+                context and pulls in your past feedback on similar jobs.
               </p>
               <ul className="landing-stack-list">
                 {STACK.map((item) => (
@@ -729,8 +1012,8 @@ export function LandingPage() {
           <div className="card landing-cta-card">
             <h2>Ready to stop scrolling?</h2>
             <p>
-              Sign up, fill in your CV and job prefs, and run your first multi-board search in a few
-              minutes.
+              Sign up, upload a CV, set markets and roles, and run a search. Score listings, then
+              download a tailored CV and letter for the ones that fit.
             </p>
             <div className="landing-hero-actions">
               <Link to="/login" className="btn btn-primary landing-cta-btn">
@@ -761,6 +1044,7 @@ export function LandingPage() {
               <a href="#privacy">Privacy & GDPR</a>
               <Link to="/privacy">Privacy Policy</Link>
               <Link to="/terms">Terms of Service</Link>
+              <Link to="/cookies">Cookie Policy</Link>
               <Link to="/login">Log in</Link>
             </nav>
 
@@ -768,6 +1052,8 @@ export function LandingPage() {
           </div>
         </div>
       </footer>
+
+      {demoJob && <DemoJobDetailModal job={demoJob} onClose={() => setDemoJob(null)} />}
     </div>
   );
 }

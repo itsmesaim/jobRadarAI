@@ -39,6 +39,16 @@ export interface Job {
   salary_text?: string;
   salary_min?: number;
   salary_max?: number;
+  past_rejection_reason?: string; // only present on GET /jobs/{id}, not list responses
+  past_rejection_title?: string;
+  apply_pack_ready?: boolean;
+  apply_pack_in_progress?: boolean;
+  apply_pack_ats?: {
+    alignment_pct: number;
+    matched: string[];
+    missing: string[];
+    fixes: string[];
+  } | null;
 }
 
 export type JobStatus =
@@ -80,12 +90,17 @@ export interface UserPreferences {
   avoid_industries: string[];
   work_mode: WorkMode;
   about_me: string;
+  about_me_from_cv: string;
+  showcase_projects: string[];
   email_reminders_enabled: boolean;
   reminder_hours: number[];
   timezone: string;
   rating_provider: string;
   rating_model: string;
   rating_model_request?: { model: string; note: string; requested_at: string } | null;
+  apply_pack_provider: string;
+  apply_pack_model: string;
+  apply_pack_model_request?: { model: string; note: string; requested_at: string } | null;
   cv_parsing_provider: string;
   cv_parsing_model: string;
   cv_parsing_model_request?: { model: string; note: string; requested_at: string } | null;
@@ -94,7 +109,7 @@ export interface UserPreferences {
   calibration_notes_source_count: number;
 }
 
-export type ModelPurpose = "rating" | "cv_parsing";
+export type ModelPurpose = "rating" | "apply_pack" | "cv_parsing";
 
 export interface AiModelCatalogEntry {
   id: string;

@@ -84,6 +84,9 @@ interface AdminUser {
   rating_provider?: string;
   rating_model?: string;
   rating_model_request?: { model: string; note: string; requested_at: string } | null;
+  apply_pack_provider?: string;
+  apply_pack_model?: string;
+  apply_pack_model_request?: { model: string; note: string; requested_at: string } | null;
   cv_parsing_provider?: string;
   cv_parsing_model?: string;
   cv_parsing_model_request?: { model: string; note: string; requested_at: string } | null;
@@ -97,7 +100,7 @@ function formatTokens(n?: number) {
 }
 
 function formatUsd(n?: number, enabled = true) {
-  if (!enabled) return "—";
+  if (!enabled) return "-";
   return `$${(n ?? 0).toFixed(4)}`;
 }
 
@@ -133,7 +136,7 @@ type AccessLevel = "free" | "limited" | "full" | "temp_12h" | "temp_1d";
 
 interface EditForm {
   access_level: AccessLevel;
-  // "" represents a field the user has cleared while typing a new value —
+  // "" represents a field the user has cleared while typing a new value -
   // it must NOT be coerced to 0 immediately, or the input becomes
   // impossible to clear (every keystroke re-adds a leading "0").
   search_limit: number | "";
@@ -690,6 +693,7 @@ function UserDetailModal({
   user,
   basePath,
   ratingModels,
+  applyPackModels,
   cvParsingModels,
   onClose,
   onChanged,
@@ -697,6 +701,7 @@ function UserDetailModal({
   user: AdminUser;
   basePath: string;
   ratingModels: AiModelCatalogEntry[];
+  applyPackModels: AiModelCatalogEntry[];
   cvParsingModels: AiModelCatalogEntry[];
   onClose: () => void;
   onChanged: () => void;
@@ -705,6 +710,7 @@ function UserDetailModal({
   const [form, setForm] = useState<EditForm>(() => buildFormFromUser(user));
   const [busy, setBusy] = useState(false);
   const [showSetRatingModel, setShowSetRatingModel] = useState(false);
+  const [showSetApplyPackModel, setShowSetApplyPackModel] = useState(false);
   const [showSetCvParsingModel, setShowSetCvParsingModel] = useState(false);
 
   useEffect(() => {
@@ -768,6 +774,20 @@ function UserDetailModal({
       onChanged();
     } catch {
       toast.error("Failed to set rating model");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSetApplyPackModel = async (provider: string, model: string) => {
+    setBusy(true);
+    try {
+      await adminApi.setModel(basePath, user.id, { provider, model, purpose: "apply_pack" });
+      toast.success(`Set ${user.email}'s apply-pack model to ${provider}/${model}`);
+      setShowSetApplyPackModel(false);
+      onChanged();
+    } catch {
+      toast.error("Failed to set apply-pack model");
     } finally {
       setBusy(false);
     }
@@ -1060,7 +1080,7 @@ function UserDetailModal({
           >
             Current: {user.rating_provider || "default"}
             {user.rating_model ? ` / ${user.rating_model}` : ""}. Overrides the curated Settings
-            picker (mistral/openai/deepseek) with any provider/model.
+            picker with any provider/model you have keys for.
           </p>
           {user.rating_model_request && (
             <p
@@ -1081,6 +1101,51 @@ function UserDetailModal({
             className="btn btn-secondary"
           >
             Set rating model
+          </button>
+        </div>
+
+        <div
+          style={{
+            marginTop: "var(--space-5)",
+            paddingTop: 18,
+            borderTop: "1px solid var(--border)",
+          }}
+        >
+          <p className="label" style={{ marginBottom: "var(--space-3)" }}>
+            Custom apply-pack / tailored CV model
+          </p>
+          <p
+            style={{
+              fontSize: "var(--text-sm)",
+              color: "var(--text-muted)",
+              marginBottom: "var(--space-3)",
+            }}
+          >
+            Current: {user.apply_pack_provider || "default"}
+            {user.apply_pack_model ? ` / ${user.apply_pack_model}` : ""}. Separate from rating, so
+            bulk scoring can stay cheap.
+          </p>
+          {user.apply_pack_model_request && (
+            <p
+              style={{
+                fontSize: "var(--text-sm)",
+                color: "var(--accent)",
+                marginBottom: "var(--space-3)",
+              }}
+            >
+              Requested: <strong>{user.apply_pack_model_request.model}</strong>
+              {user.apply_pack_model_request.note
+                ? `: "${user.apply_pack_model_request.note}"`
+                : ""}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowSetApplyPackModel(true)}
+            disabled={busy}
+            className="btn btn-secondary"
+          >
+            Set apply-pack model
           </button>
         </div>
 
@@ -1139,6 +1204,20 @@ function UserDetailModal({
             busy={busy}
             onSubmit={handleSetRatingModel}
             onCancel={() => setShowSetRatingModel(false)}
+          />
+        )}
+
+        {showSetApplyPackModel && (
+          <SetRatingModelModal
+            title="Set apply-pack model"
+            userEmail={user.email}
+            defaultProvider={user.apply_pack_provider || ""}
+            defaultModel={user.apply_pack_model || user.apply_pack_model_request?.model || ""}
+            pendingNote={user.apply_pack_model_request?.note}
+            models={applyPackModels}
+            busy={busy}
+            onSubmit={handleSetApplyPackModel}
+            onCancel={() => setShowSetApplyPackModel(false)}
           />
         )}
 
@@ -1351,14 +1430,18 @@ function ForceRerateAllPanel() {
 function AiModelsPanel({
   basePath,
   ratingModels,
+  applyPackModels,
   cvParsingModels,
   onRatingChanged,
+  onApplyPackChanged,
   onCvParsingChanged,
 }: {
   basePath: string;
   ratingModels: AiModelCatalogEntry[];
+  applyPackModels: AiModelCatalogEntry[];
   cvParsingModels: AiModelCatalogEntry[];
   onRatingChanged: () => void;
+  onApplyPackChanged: () => void;
   onCvParsingChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -1369,8 +1452,18 @@ function AiModelsPanel({
   const [costMultiplier, setCostMultiplier] = useState("1.0");
   const [saving, setSaving] = useState(false);
 
-  const models = purpose === "rating" ? ratingModels : cvParsingModels;
-  const onChanged = purpose === "rating" ? onRatingChanged : onCvParsingChanged;
+  const models =
+    purpose === "rating"
+      ? ratingModels
+      : purpose === "apply_pack"
+        ? applyPackModels
+        : cvParsingModels;
+  const onChanged =
+    purpose === "rating"
+      ? onRatingChanged
+      : purpose === "apply_pack"
+        ? onApplyPackChanged
+        : onCvParsingChanged;
 
   const handleAdd = async () => {
     if (!provider.trim() || !model.trim()) return toast.error("Provider and model are required");
@@ -1476,7 +1569,7 @@ function AiModelsPanel({
       {open && (
         <div style={{ borderTop: "1px solid var(--border)", padding: "20px" }}>
           <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-4)" }}>
-            {(["rating", "cv_parsing"] as ModelPurpose[]).map((p) => (
+            {(["rating", "apply_pack", "cv_parsing"] as ModelPurpose[]).map((p) => (
               <button
                 key={p}
                 type="button"
@@ -1490,7 +1583,7 @@ function AiModelsPanel({
                   fontWeight: purpose === p ? 600 : 400,
                 }}
               >
-                {p === "rating" ? "Rating" : "CV parsing"}
+                {p === "rating" ? "Rating" : p === "apply_pack" ? "Apply pack / CV" : "CV parsing"}
               </button>
             ))}
           </div>
@@ -1580,13 +1673,13 @@ function AiModelsPanel({
           >
             <input
               className="input"
-              placeholder="Provider (e.g. deepseek)"
+              placeholder="Provider"
               value={provider}
               onChange={(e) => setProvider(e.target.value)}
             />
             <input
               className="input"
-              placeholder="Model (e.g. deepseek-reasoner)"
+              placeholder="Model id"
               value={model}
               onChange={(e) => setModel(e.target.value)}
             />
@@ -1736,7 +1829,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
 
       {open && (
         <div style={{ borderTop: "1px solid var(--border)" }}>
-          {/* Step 1 — User */}
+          {/* Step 1 - User */}
           <div style={{ padding: "20px 20px 0" }}>
             <div
               style={{
@@ -1785,7 +1878,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
             </select>
           </div>
 
-          {/* Step 2 — Filter cards */}
+          {/* Step 2 - Filter cards */}
           <div style={{ padding: "20px 20px 0" }}>
             <div
               style={{
@@ -1892,7 +1985,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
             </div>
           </div>
 
-          {/* Step 3 — Options for selected filter */}
+          {/* Step 3 - Options for selected filter */}
           <div style={{ padding: "20px 20px 0" }}>
             <div
               style={{
@@ -2085,7 +2178,7 @@ function JobCleanupPanel({ users, basePath }: { users: AdminUser[]; basePath: st
             )}
           </div>
 
-          {/* Step 4 — Preview + confirm */}
+          {/* Step 4 - Preview + confirm */}
           <div style={{ padding: "20px" }}>
             <div
               style={{
@@ -2227,6 +2320,7 @@ export function AdminPage() {
   const isMobile = useIsMobile();
   const [aiSummary, setAiSummary] = useState<PlatformAiSummary | null>(null);
   const [ratingModels, setRatingModels] = useState<AiModelCatalogEntry[]>([]);
+  const [applyPackModels, setApplyPackModels] = useState<AiModelCatalogEntry[]>([]);
   const [cvParsingModels, setCvParsingModels] = useState<AiModelCatalogEntry[]>([]);
 
   const loadRatingModels = async () => {
@@ -2234,6 +2328,16 @@ export function AdminPage() {
     try {
       const data = await adminApi.listAiModels(basePath, "rating");
       setRatingModels(data.models || []);
+    } catch {
+      /* non-fatal */
+    }
+  };
+
+  const loadApplyPackModels = async () => {
+    if (!basePath) return;
+    try {
+      const data = await adminApi.listAiModels(basePath, "apply_pack");
+      setApplyPackModels(data.models || []);
     } catch {
       /* non-fatal */
     }
@@ -2276,6 +2380,7 @@ export function AdminPage() {
     loadUsers();
     loadAiSummary();
     loadRatingModels();
+    loadApplyPackModels();
     loadCvParsingModels();
   }, [basePath]);
 
@@ -2599,7 +2704,7 @@ export function AdminPage() {
                           maxWidth: 200,
                         }}
                       >
-                        {u.admin_notes || "—"}
+                        {u.admin_notes || "-"}
                       </td>
                       <td style={{ padding: "14px 16px", textAlign: "right" }}>
                         <button
@@ -2628,6 +2733,7 @@ export function AdminPage() {
           user={selectedUser}
           basePath={basePath}
           ratingModels={ratingModels}
+          applyPackModels={applyPackModels}
           cvParsingModels={cvParsingModels}
           onClose={() => setSelectedUserId(null)}
           onChanged={handleChanged}
@@ -2639,8 +2745,10 @@ export function AdminPage() {
       <AiModelsPanel
         basePath={basePath}
         ratingModels={ratingModels}
+        applyPackModels={applyPackModels}
         cvParsingModels={cvParsingModels}
         onRatingChanged={loadRatingModels}
+        onApplyPackChanged={loadApplyPackModels}
         onCvParsingChanged={loadCvParsingModels}
       />
 

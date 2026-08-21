@@ -324,7 +324,7 @@ async def get_platform_ai_summary() -> dict:
         "providers": {
             "main_llm": settings.llm_provider,
             "rating_llm": settings.rating_provider or settings.llm_provider,
-            "rating_model": settings.rating_model or settings.openai_model or "—",
+            "rating_model": settings.rating_model or settings.openai_model or "-",
         },
         "cost_rates_per_1k": {
             "prompt": settings.ai_cost_per_1k_prompt_tokens,
@@ -357,7 +357,7 @@ async def get_platform_ai_summary() -> dict:
                 if _cost_rates_configured()
                 else "Set AI_COST_PER_1K_* in .env to enable cost estimates. "
             )
-            + "Ollama is free (local). Provider balance is not fetched — "
+            + "Ollama is free (local). Provider balance is not fetched - "
             "set AI_MONTHLY_BUDGET_USD to track remaining budget manually."
         ),
     }

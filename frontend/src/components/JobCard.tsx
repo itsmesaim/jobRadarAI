@@ -3,6 +3,7 @@ import { ExternalLink, Building2, MapPin, EyeOff, Maximize2, Clock } from "lucid
 import toast from "react-hot-toast";
 import { ScoreBadge } from "./ScoreBadge";
 import { JobDetailModal } from "./JobDetailModal";
+import { RejectReasonModal } from "./RejectReasonModal";
 import { jobsApi } from "../api/index";
 import type { Job, JobStatus, Props } from "../types";
 
@@ -90,20 +91,21 @@ const REJECTION_QUOTES = [
 function extractCompany(job: Job): string {
   // @ts-ignore
   if (job.company) return job.company;
-  const parts = job.title.split("—");
+  const parts = job.title.split("\u2014");
   return parts.length > 1 ? parts[1].trim() : "";
 }
 
 function cleanTitle(job: Job): string {
   const company = extractCompany(job);
-  if (company && job.title.includes("—")) {
-    return job.title.split("—")[0].trim();
+  if (company && job.title.includes("\u2014")) {
+    return job.title.split("\u2014")[0].trim();
   }
   return job.title;
 }
 
 export function JobCard({ job, onStatusChange, onHidden }: Props) {
   const [showModal, setShowModal] = useState(false);
+  const [showRejectPrompt, setShowRejectPrompt] = useState(false);
 
   const [currentStatus, setCurrentStatus] = useState<JobStatus>(job.status);
 
@@ -131,6 +133,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
       if (status === "REJECTED") {
         const quote = REJECTION_QUOTES[Math.floor(Math.random() * REJECTION_QUOTES.length)];
         toast(quote, { icon: "💪", duration: 4500 });
+        setShowRejectPrompt(true);
       } else if (status === "OFFER") {
         toast.success("Congrats on the offer! 🎉", { duration: 4000 });
       } else {
@@ -260,6 +263,18 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                   Strong match
                 </span>
               )}
+              {job.apply_pack_in_progress && (
+                <span
+                  className="badge"
+                  style={{
+                    background: "var(--accent-light)",
+                    color: "var(--accent)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  CV on the way
+                </span>
+              )}
               {job.auto_reject && (
                 <span
                   className="badge"
@@ -376,7 +391,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
           </div>
         </div>
 
-        {/* Verdict — clamped at 2 lines, ellipsis not mid-word cut */}
+        {/* Verdict - clamped at 2 lines, ellipsis not mid-word cut */}
         <div style={{ flex: 1, minHeight: 0, marginBottom: "var(--space-3)" }}>
           {isRating ? (
             <p
@@ -491,6 +506,21 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
       </div>
 
       {showModal && <JobDetailModal job={job} onClose={() => setShowModal(false)} />}
+      {showRejectPrompt && (
+        <RejectReasonModal
+          jobTitle={title}
+          onSubmit={async (reason) => {
+            setShowRejectPrompt(false);
+            if (reason) {
+              try {
+                await jobsApi.updateStatus(job.id, "REJECTED", reason);
+              } catch {
+                // Optional note, not worth surfacing an error for.
+              }
+            }
+          }}
+        />
+      )}
     </>
   );
 }

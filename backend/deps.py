@@ -20,7 +20,7 @@ from database import get_database
 
 bearer_scheme = HTTPBearer(auto_error=True)
 
-# Only write last_active_at at most this often — every route depends on
+# Only write last_active_at at most this often - every route depends on
 # get_current_user, so unthrottled writes would hit Mongo on every request.
 _ACTIVITY_UPDATE_INTERVAL = timedelta(hours=1)
 

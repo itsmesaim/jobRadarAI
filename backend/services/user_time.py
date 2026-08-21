@@ -2,7 +2,7 @@
 
 Every user can set their own `timezone` preference (Settings). Auto-crawl/
 reminders (scheduler.py) already use this to decide "is it 5am for this
-user right now?" — freemium quota resets (limits.py) need the same local-day
+user right now?" - freemium quota resets (limits.py) need the same local-day
 concept, otherwise a user near a UTC day boundary sees two quota resets
 within their own single calendar day.
 """
@@ -10,7 +10,7 @@ within their own single calendar day.
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-DEFAULT_TIMEZONE = "Europe/Dublin"
+DEFAULT_TIMEZONE = "UTC"
 
 
 def user_local_time(user: dict, now_utc: datetime) -> datetime:

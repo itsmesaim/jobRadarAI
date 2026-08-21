@@ -1,7 +1,7 @@
 """
 Manual check for the RAG retrieval helpers in services/vectorstore.py.
 
-No live LLM/embedding provider needed — uses a deterministic fake Embeddings
+No live LLM/embedding provider needed - uses a deterministic fake Embeddings
 so this runs offline. Run with: python test_rag.py
 """
 
@@ -69,7 +69,7 @@ def demo():
     ), "retrieval should surface the requirements chunk that naive truncation would have dropped"
 
     print(
-        "OK — retrieval reaches tail content the old fixed-char truncation would drop"
+        "OK - retrieval reaches tail content the old fixed-char truncation would drop"
     )
 
 

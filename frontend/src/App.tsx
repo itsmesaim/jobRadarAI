@@ -5,6 +5,7 @@ import { Toaster } from "react-hot-toast";
 import { LandingPage } from "./pages/Landing";
 import { PrivacyPage } from "./pages/Privacy";
 import { TermsPage } from "./pages/Terms";
+import { CookiesPage } from "./pages/Cookies";
 import { LoginPage } from "./pages/Login";
 import { ForgotPasswordPage } from "./pages/ForgotPassword";
 import { ResetPasswordPage } from "./pages/ResetPassword";
@@ -73,6 +74,7 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/terms" element={<TermsPage />} />
+          <Route path="/cookies" element={<CookiesPage />} />
           <Route path="/" element={<Home />} />
           <Route
             path="/kanban"

@@ -4,7 +4,7 @@ interface Props {
   loading?: boolean;
 }
 
-const TEXT_XS = 12; // floor — nothing in the app renders smaller than this
+const TEXT_XS = 12; // floor - nothing in the app renders smaller than this
 
 export function ScoreBadge({ score, size = "sm", loading = false }: Props) {
   const dims = { sm: 12, md: 14, lg: 22 }[size];
@@ -48,7 +48,7 @@ export function ScoreBadge({ score, size = "sm", loading = false }: Props) {
           display: "inline-block",
         }}
       >
-        —
+        -
       </span>
     );
   }

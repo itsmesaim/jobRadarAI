@@ -143,7 +143,7 @@ Open this link to choose a new password (valid for {minutes} minutes):
 
 If you did not request this, you can ignore this email.
 
-— JobRadar
+- JobRadar
 """
     body = f"""
 <p style="margin:0 0 12px;font-size:15px;">Hi,</p>
@@ -157,11 +157,11 @@ If you did not request this, you can ignore this email.
   <a href="{_escape(reset_url)}" style="color:#2563eb;word-break:break-all;">{_escape(reset_url)}</a>
 </p>
 <p style="margin:18px 0 0;font-size:13px;color:#71717a;">
-  If you didn't request this, ignore this email — your password won't change.
+  If you didn't request this, ignore this email - your password won't change.
 </p>
 """
     html_doc = _email_shell(
-        preheader=f"Reset your JobRadar password — link expires in {minutes} minutes",
+        preheader=f"Reset your JobRadar password - link expires in {minutes} minutes",
         body_html=body,
     )
 
@@ -185,7 +185,11 @@ def send_model_request_admin_email(
     if not smtp_configured():
         raise RuntimeError("SMTP is not configured")
 
-    purpose_label = "rating" if purpose == "rating" else "CV-parsing"
+    purpose_label = {
+        "rating": "rating",
+        "apply_pack": "apply pack / tailored CV",
+        "cv_parsing": "CV-parsing",
+    }.get(purpose, purpose)
     admin_url = f"{settings.frontend_url.rstrip('/')}/{(settings.admin_secret_path or '').strip('/')}"
     note_line = f"\nNote: {note}" if note else ""
     text = f"""Hi,
@@ -197,7 +201,7 @@ Requested model: {requested_model}{note_line}
 Grant it (or decline) from the admin panel:
 {admin_url}
 
-— JobRadar
+- JobRadar
 """
     note_html = (
         f'<p style="margin:10px 0 0;font-size:14px;color:#3f3f46;"><strong>Note:</strong> {_escape(note)}</p>'
@@ -220,7 +224,7 @@ Grant it (or decline) from the admin panel:
     )
 
     msg = EmailMessage()
-    msg["Subject"] = f"JobRadar — model request: {requested_model}"
+    msg["Subject"] = f"JobRadar - model request: {requested_model}"
     _apply_mail_headers(msg, to_email=to_email)
     msg.set_content(text)
     msg.add_alternative(html_doc, subtype="html")
@@ -234,26 +238,26 @@ def send_model_granted_email(
     if not smtp_configured():
         raise RuntimeError("SMTP is not configured")
 
-    use_line = (
-        "Your jobs will be rated with this model from now on."
-        if purpose == "rating"
-        else "Your CV will be parsed with this model from now on."
-    )
+    use_line = {
+        "rating": "Your jobs will be rated with this model from now on.",
+        "apply_pack": "Your tailored CV and cover letters will be built with this model from now on.",
+        "cv_parsing": "Your CV will be parsed with this model from now on.",
+    }.get(purpose, "This model is now active on your account.")
     text = f"""Hi {user_name},
 
-Good news — the AI model you requested is now active on your JobRadar account:
+Good news - the AI model you requested is now active on your JobRadar account:
 
 Provider: {provider}
 Model: {model}
 
 {use_line}
 
-— JobRadar
+- JobRadar
 """
     body = f"""
 <p style="margin:0 0 12px;font-size:16px;font-weight:600;">Hi {_escape(user_name)},</p>
 <p style="margin:0 0 18px;font-size:15px;color:#3f3f46;">
-  Good news — the AI model you requested is now active on your account.
+  Good news - the AI model you requested is now active on your account.
 </p>
 <p style="margin:0;font-size:15px;"><strong>Provider:</strong> {_escape(provider)}</p>
 <p style="margin:4px 0 0;font-size:15px;"><strong>Model:</strong> {_escape(model)}</p>
@@ -282,7 +286,7 @@ def _job_card_html(job: dict, index: int) -> str:
     url = (job.get("url") or "").strip()
     verdict = _escape((job.get("verdict") or "")[:180])
     strength = _escape((job.get("top_strength") or "")[:120])
-    score_label = f"{score}/10" if score is not None else "—"
+    score_label = f"{score}/10" if score is not None else "-"
     score_bg = _score_color(score)
     loc_line = (
         f'<div style="font-size:13px;color:#71717a;margin-top:4px;">📍 {location}</div>'
@@ -363,7 +367,7 @@ def send_apply_reminder_email(
         title = job.get("title") or "Untitled role"
         url = job.get("url") or ""
         loc_part = f" · {location}" if location else ""
-        lines.append(f"{i}. [{score}/10] {title} — {company}{loc_part}")
+        lines.append(f"{i}. [{score}/10] {title} - {company}{loc_part}")
         strength = (job.get("top_strength") or "").strip()
         if strength:
             lines.append(f"   Fit: {strength[:160]}")
@@ -386,7 +390,7 @@ def send_apply_reminder_email(
             "Turn off these reminders in Settings:",
             settings_url,
             "",
-            "— JobRadar",
+            "- JobRadar",
         ]
     )
 
@@ -411,7 +415,7 @@ def send_apply_reminder_email(
   <a href="{_escape(settings_url)}" style="color:#71717a;">Turn off email reminders</a>
 </p>
 """
-    preheader = f"{total_count} roles scoring {min_score}+/10 — {top_title}"
+    preheader = f"{total_count} roles scoring {min_score}+/10 - {top_title}"
     if shown < total_count:
         subject = (
             f"Apply soon: {shown} top matches (+{more} more) scoring {min_score}+/10"

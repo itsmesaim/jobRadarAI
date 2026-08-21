@@ -9,7 +9,7 @@ export interface FlowStep {
 }
 
 /** A connected sequence of icon nodes (CV upload → redaction → AI provider →
- * storage, etc.) — horizontal on desktop, a vertical timeline on mobile.
+ * storage, etc.) - horizontal on desktop, a vertical timeline on mobile.
  * Each node animates in with a stagger once scrolled into view. */
 export function FlowDiagram({ steps }: { steps: FlowStep[] }) {
   return (

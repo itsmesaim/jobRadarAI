@@ -136,6 +136,8 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
 .envrc
 .venv
 env/
@@ -201,3 +203,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Tectonic PDF engine + TeX cache (install on the VPS)
+bin/
+.tectonic_cache/

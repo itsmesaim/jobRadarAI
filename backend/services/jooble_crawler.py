@@ -1,7 +1,7 @@
 """
 Jooble crawler service.
 POST-based API, returns structured job data covering Ireland directly.
-Free tier: 500 requests total (not per day) — use deliberately.
+Free tier: 500 requests total (not per day) - use deliberately.
 
 Docs: https://jooble.org/api/about
 """
@@ -15,15 +15,16 @@ from bson import ObjectId
 
 from config import settings
 from database import get_database
+from services.cv_parser import flatten_skills, search_skills_from_cv
 from services.job_dedup import content_fingerprint, hash_url, job_exists_for_user
 
 JOOBLE_BASE = "https://jooble.org/api"
 MAX_JOB_AGE_DAYS = 21
 
-# Jooble's own index lags behind the source site — a listing can be "updated"
+# Jooble's own index lags behind the source site - a listing can be "updated"
 # recently in Jooble while the actual posting was pulled. Since expired
 # postings on most boards redirect (200 OK) to a generic page instead of
-# 404ing, an HTTP 200 alone doesn't mean the job is still live — check the
+# 404ing, an HTTP 200 alone doesn't mean the job is still live - check the
 # scraped page for the phrases boards use on that fallback page.
 _DEAD_LISTING_MARKERS = (
     "no longer available",
@@ -41,25 +42,17 @@ _DEAD_LISTING_MARKERS = (
 
 
 def _build_search_terms(user: dict) -> list[str]:
-    primary_role = user.get("primary_role", "Full Stack Developer")
-    secondary_roles = user.get("secondary_roles", [])
-    roles = [primary_role] + secondary_roles
+    roles = [
+        r.strip()
+        for r in [user.get("primary_role"), *(user.get("secondary_roles") or [])]
+        if r and str(r).strip()
+    ]
 
     key_skills = user.get("key_skills", [])
     if not key_skills:
         cv = user.get("cv", {})
         structured = cv.get("structured", {})
-        all_skills = structured.get("skills", [])
-        skip = {
-            "HTML5",
-            "CSS3",
-            "Git / GitHub",
-            "Postman",
-            "Agile / Scrum",
-            "Performance Optimisation",
-            "Technical Documentation",
-        }
-        key_skills = [s for s in all_skills if s not in skip][:5]
+        key_skills = search_skills_from_cv(structured.get("skills", []))
 
     terms = []
     for role in roles:
@@ -69,6 +62,8 @@ def _build_search_terms(user: dict) -> list[str]:
                 terms.append(f"{role} {skill}")
             if len(key_skills) >= 2:
                 terms.append(f"{key_skills[0]} {key_skills[1]} {role}")
+    if not roles:
+        terms.extend(key_skills[:5])
 
     seen = set()
     unique = []
@@ -94,7 +89,9 @@ async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) 
         user = fresh_user
 
     search_terms = _build_search_terms(user)
-    locations = user.get("preferred_locations", ["Dublin Ireland"])
+    locations = [
+        loc for loc in (user.get("preferred_locations") or []) if str(loc).strip()
+    ]
 
     # normalize "remote" to empty string (Jooble = worldwide when blank)
     def _jooble_location(loc: str) -> str:
@@ -138,7 +135,7 @@ async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) 
                     print(f"[jooble] Error for '{term}' @ '{raw_location}': {e}")
                     continue
 
-                # Jooble doesn't sort by date — newest first so the
+                # Jooble doesn't sort by date - newest first so the
                 # per-cycle stored cap doesn't fill up with stale postings.
                 jobs = sorted(
                     data.get("jobs", []),
@@ -167,7 +164,7 @@ async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) 
 
                     url_hash = hash_url(url)
 
-                    # date filter — skip older than 21 days
+                    # date filter - skip older than 21 days
                     updated_str = job.get("updated", "")
                     if updated_str:
                         try:
@@ -190,7 +187,7 @@ async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) 
                         continue
 
                     # Expired listings on most boards redirect (200 OK) to a
-                    # generic page instead of 404ing — catch that here so a
+                    # generic page instead of 404ing - catch that here so a
                     # dead posting doesn't get stored and shown as live.
                     if any(
                         marker in full_text.lower() for marker in _DEAD_LISTING_MARKERS
@@ -254,7 +251,7 @@ def _is_relevant_job(
     if not key_skills:
         cv = user.get("cv", {})
         structured = cv.get("structured", {})
-        all_skills = structured.get("skills", [])
+        all_skills = flatten_skills(structured.get("skills", []))
         skip = {"HTML5", "CSS3", "Git / GitHub", "Postman", "Agile / Scrum"}
         key_skills = [s for s in all_skills if s not in skip][:5]
 

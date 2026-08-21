@@ -1,6 +1,6 @@
 import { Check } from "lucide-react";
 
-/** Small "cleared" badge — filled ring + check once a section's required
+/** Small "cleared" badge - filled ring + check once a section's required
  * fields are complete, empty ring while pending. Signature element for
  * completed profile sections (Settings tabs, search-readiness, etc). */
 export function ClearanceStamp({ complete }: { complete: boolean }) {

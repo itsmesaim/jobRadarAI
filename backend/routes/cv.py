@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from database import get_database
 from deps import get_current_user
-from services.cv_parser import process_cv
+from services.cv_parser import process_cv, search_skills_from_cv
 from services.limits import check_ai_token_quota, check_and_increment_cv_upload
 
 router = APIRouter(prefix="/cv", tags=["cv"])
@@ -88,7 +88,7 @@ async def upload_cv(
     # user isn't manually re-typing what's already on their CV. Always
     # overwrites with the latest CV's values (per product decision), only
     # when the CV actually has that field, never wipe a field with nothing.
-    autofilled = _autofill_preferences_from_cv(structured)
+    autofilled = _autofill_preferences_from_cv(structured, user)
     if autofilled:
         update["$set"].update(autofilled)
 
@@ -101,12 +101,12 @@ async def upload_cv(
     }
 
 
-def _autofill_preferences_from_cv(structured: dict) -> dict:
-    """Maps parsed CV fields onto the matching Settings/preferences fields.
-    ponytail: takes experience[0] as the most recent role (CVs are conventionally
-    listed most-recent-first); upgrade to parsing start/end dates if that assumption
-    ever proves wrong in practice."""
+def _autofill_preferences_from_cv(structured: dict, user: dict | None = None) -> dict:
+    """Maps parsed CV fields onto Settings. Never overwrites the user's own
+    about_me. Key skills for search stay a short list, the full dump lives on
+    the CV and is already used for rating."""
     fields: dict = {}
+    user = user or {}
 
     experience = structured.get("experience") or []
     if experience and experience[0].get("title"):
@@ -116,13 +116,14 @@ def _autofill_preferences_from_cv(structured: dict) -> dict:
     if location:
         fields["preferred_locations"] = [location]
 
-    skills = structured.get("skills") or []
-    if skills:
-        fields["key_skills"] = skills
+    search = search_skills_from_cv(structured.get("skills") or [])
+    existing = user.get("key_skills") or []
+    if search and (not existing or len(existing) > 15):
+        fields["key_skills"] = search
 
-    summary = structured.get("summary")
+    summary = (structured.get("summary") or "").strip()
     if summary:
-        fields["about_me"] = summary
+        fields["about_me_from_cv"] = summary
 
     return fields
 

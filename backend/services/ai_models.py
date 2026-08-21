@@ -1,12 +1,11 @@
 """
-Admin-managed AI model catalog — covers both jobs the app lets a user pick a
-model for: "rating" (bulk job rating + apply packs) and "cv_parsing" (CV
-upload → structured JSON). One doc per (provider, model, purpose); the same
-provider/model can appear under both purposes as two separate rows if it's
-offered for both.
+Admin-managed AI model catalog - one picker per job: "rating" (bulk job
+scores), "apply_pack" (tailored CV + cover letter), "cv_parsing" (upload →
+structured JSON). One doc per (provider, model, purpose); the same
+provider/model can appear under more than one purpose as separate rows.
 
-Admin adds/edits/disables models from the Admin panel — no code change or
-deploy needed — and Settings' pickers list whatever's active for that
+Admin adds/edits/disables models from the Admin panel - no code change or
+deploy needed - and Settings' pickers list whatever's active for that
 purpose. Users can freely switch between any active entry for a purpose,
 including off an admin-granted custom model, since picking any catalog entry
 overwrites the model field too (self-service revert, no special case).
@@ -16,90 +15,33 @@ from datetime import datetime, timezone
 
 from bson import ObjectId
 
-from config import settings
+from services.llm import normalize_provider
 from database import get_database
 
-Purpose = str  # "rating" | "cv_parsing"
-
-# Seeded once on first startup — the models already in production, kept
-# as-is (they work fine, budget-friendly); admin adds more from here on.
-_DEFAULT_MODELS: dict[Purpose, list[dict]] = {
-    "rating": [
-        {
-            "provider": "mistral",
-            "model": settings.rating_model or settings.mistral_model,
-            "label": "Mistral (default, GDPR-aware)",
-            "cost_multiplier": 1.0,
-            "is_default": True,
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4o-mini",
-            "label": "OpenAI",
-            "cost_multiplier": 1.0,
-        },
-        {
-            "provider": "deepseek",
-            "model": settings.deepseek_model,
-            "label": "DeepSeek",
-            "cost_multiplier": 1.0,
-        },
-    ],
-    "cv_parsing": [
-        {
-            "provider": settings.llm_provider,
-            "model": (
-                settings.mistral_model
-                if settings.llm_provider == "mistral"
-                else settings.openai_model
-            ),
-            "label": (
-                "Mistral (default, GDPR-aware)"
-                if settings.llm_provider == "mistral"
-                else "OpenAI"
-            ),
-            "cost_multiplier": 1.0,
-            "is_default": True,
-        },
-    ],
+Purpose = str  # "rating" | "apply_pack" | "cv_parsing"
+PURPOSES: tuple[Purpose, ...] = ("rating", "apply_pack", "cv_parsing")
+PURPOSE_USER_FIELDS = {
+    "rating": ("rating_provider", "rating_model", "rating_model_request"),
+    "apply_pack": (
+        "apply_pack_provider",
+        "apply_pack_model",
+        "apply_pack_model_request",
+    ),
+    "cv_parsing": (
+        "cv_parsing_provider",
+        "cv_parsing_model",
+        "cv_parsing_model_request",
+    ),
 }
 
 
 async def seed_default_rating_models(db) -> None:
-    # Migration: docs created before `purpose` existed default to "rating"
-    # (the only purpose the catalog originally covered) — run this before the
-    # per-purpose emptiness check below so it doesn't see stale un-tagged docs.
+    """No model names are inserted here. Admin adds every catalog row.
+    Only tags old docs that predate `purpose` / `is_default`."""
     await db.rating_models.update_many(
         {"purpose": {"$exists": False}}, {"$set": {"purpose": "rating"}}
     )
-
-    # Seed per purpose, not just "collection is totally empty" — an existing
-    # install already has `rating` entries, but cv_parsing was added later
-    # and needs its own defaults seeded once.
-    now = datetime.now(timezone.utc)
-    for purpose, models in _DEFAULT_MODELS.items():
-        if await db.rating_models.count_documents({"purpose": purpose}) > 0:
-            continue
-        docs = [
-            {
-                "is_default": False,
-                **m,
-                "purpose": purpose,
-                "active": True,
-                "created_at": now,
-            }
-            for m in models
-            if m["model"]
-        ]
-        if docs:
-            await db.rating_models.insert_many(docs)
-            print(f"[startup] Seeded {len(docs)} default {purpose} model(s)")
-
-    # Backfill: a purpose with no entry flagged default (e.g. catalogs from
-    # before is_default existed, or the newly-added cv_parsing purpose on an
-    # existing install) needs one, so "App default" always resolves to
-    # something real.
-    for purpose in ("rating", "cv_parsing"):
+    for purpose in PURPOSES:
         if (
             await db.rating_models.count_documents(
                 {"purpose": purpose, "is_default": True}
@@ -107,15 +49,11 @@ async def seed_default_rating_models(db) -> None:
             == 0
         ):
             fallback = await db.rating_models.find_one(
-                {"purpose": purpose, "provider": "mistral", "active": True}
-            ) or await db.rating_models.find_one({"purpose": purpose, "active": True})
+                {"purpose": purpose, "active": True}
+            )
             if fallback:
                 await db.rating_models.update_one(
                     {"_id": fallback["_id"]}, {"$set": {"is_default": True}}
-                )
-                print(
-                    f"[startup] Backfilled is_default onto {fallback['provider']}/"
-                    f"{fallback['model']} for purpose={purpose}"
                 )
 
 
@@ -142,11 +80,17 @@ async def list_models(purpose: Purpose, active_only: bool = False) -> list[dict]
         .sort([("provider", 1), ("label", 1)])
         .to_list(length=200)
     )
+    if active_only:
+        from services.llm import provider_api_key
+
+        docs = [
+            d for d in docs if provider_api_key(normalize_provider(d.get("provider")))
+        ]
     return [_serialize(d) for d in docs]
 
 
 async def get_default_model(purpose: Purpose) -> dict | None:
-    """The model "App default" resolves to for this purpose — admin-settable,
+    """The model "App default" resolves to for this purpose - admin-settable,
     one entry per purpose (see update_model's is_default handling)."""
     db = get_database()
     doc = await db.rating_models.find_one(
@@ -157,7 +101,10 @@ async def get_default_model(purpose: Purpose) -> dict | None:
 
 async def get_model(provider: str, model: str, purpose: Purpose) -> dict | None:
     db = get_database()
+    p = normalize_provider(provider)
     doc = await db.rating_models.find_one(
+        {"provider": p, "model": model, "purpose": purpose}
+    ) or await db.rating_models.find_one(
         {"provider": provider, "model": model, "purpose": purpose}
     )
     return _serialize(doc) if doc else None
@@ -167,8 +114,9 @@ async def get_default_model_for_provider(provider: str, purpose: Purpose) -> str
     """Fallback for legacy user docs that only ever stored a provider,
     from before Settings let users pick a specific model."""
     db = get_database()
+    p = normalize_provider(provider) or provider
     doc = await db.rating_models.find_one(
-        {"provider": provider, "purpose": purpose, "active": True}
+        {"provider": p, "purpose": purpose, "active": True}
     )
     return doc["model"] if doc else None
 
@@ -193,7 +141,7 @@ async def create_model(
 ) -> dict:
     db = get_database()
     doc = {
-        "provider": provider,
+        "provider": normalize_provider(provider) or provider,
         "model": model,
         "label": label or model,
         "purpose": purpose,

@@ -22,12 +22,12 @@ The code respects these common env var names from your .env:
   - DEEPSEEK_API_KEY / DEEPSEEK_MODEL
   - RATING_PROVIDER / RATING_MODEL
 
-Per-user rating provider selection (Settings page) is layered on top of this —
+Per-user rating provider selection (Settings page) is layered on top of this -
 see services/ai_models.py (admin-managed catalog) and get_rating_llm()'s
 provider/model params.
 
 Embeddings (for fast pre-filter) always use OpenAI, regardless of LLM_PROVIDER
-or RATING_PROVIDER — they're a cheap, working cosine-prefilter step, not
+or RATING_PROVIDER - they're a cheap, working cosine-prefilter step, not
 worth switching when the main/rating providers change.
 """
 
@@ -38,13 +38,58 @@ from langchain_core.embeddings import Embeddings
 
 from config import settings
 
+# Admin/Settings may type grok/claude; the factory keys are xai/anthropic.
+_PROVIDER_ALIASES = {"grok": "xai", "claude": "anthropic"}
+
+
+def normalize_provider(provider: str | None) -> str:
+    p = (provider or "").strip().lower()
+    return _PROVIDER_ALIASES.get(p, p)
+
+
+def provider_api_key(provider: str | None) -> str:
+    """Env key for an OpenAI-compatible provider. Empty means that provider
+    cannot be constructed (ollama needs none and returns a sentinel)."""
+    p = normalize_provider(provider)
+    if p == "ollama":
+        return "local"
+    if p == "openai":
+        return (settings.openai_api_key or "").strip()
+    if p == "mistral":
+        return (settings.mistral_api_key or "").strip()
+    if p == "deepseek":
+        return (settings.deepseek_api_key or "").strip()
+    if p == "xai":
+        return (settings.grok_api_key or "").strip() or (
+            settings.xai_api_key or ""
+        ).strip()
+    if p == "anthropic":
+        return (settings.anthropic_api_key or "").strip()
+    return ""
+
+
+def _require_key(provider: str, key: str) -> str:
+    if key:
+        return key
+    env_name = {
+        "openai": "OPENAI_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY",
+        "xai": "GROK_API_KEY or XAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+    }.get(provider, "the matching API key")
+    raise ValueError(
+        f"No API key configured for provider {provider!r} ({env_name} is empty). "
+        "Pick another model in Settings or set the key in backend/.env."
+    )
+
 
 def _make_llm(provider: str, model: str, **extra) -> BaseChatModel:
     """Internal factory so we can create different LLMs for different tasks.
 
     Model names must come from your .env. No hardcoded defaults.
     """
-    p = (provider or settings.llm_provider).lower()
+    p = normalize_provider(provider or settings.llm_provider)
 
     if p == "ollama":
         from langchain_ollama import ChatOllama
@@ -68,11 +113,13 @@ def _make_llm(provider: str, model: str, **extra) -> BaseChatModel:
 
         # Allow using GROK_API_KEY when pointing OpenAI client at xAI endpoint
         base_url = extra.pop("base_url", None) or settings.openai_base_url
-        api_key = (settings.openai_api_key or "").strip()
+        api_key = provider_api_key("openai")
         if base_url and "x.ai" in base_url and not api_key:
-            api_key = (settings.grok_api_key or "").strip() or (
-                settings.xai_api_key or ""
-            ).strip()
+            api_key = provider_api_key("xai")
+        api_key = _require_key(
+            "openai" if not (base_url and "x.ai" in (base_url or "")) else "xai",
+            api_key,
+        )
 
         params = {
             "api_key": api_key,
@@ -86,11 +133,7 @@ def _make_llm(provider: str, model: str, **extra) -> BaseChatModel:
 
     if p == "xai":
         # Support both XAI_API_KEY and GROK_API_KEY (user's preferred name)
-        resolved_key = (
-            (settings.grok_api_key or "").strip()
-            or (settings.xai_api_key or "").strip()
-            or None
-        )
+        resolved_key = _require_key("xai", provider_api_key("xai"))
         resolved_model = model or settings.grok_model or settings.xai_model
         if not resolved_model:
             raise ValueError("No XAI_MODEL or GROK_MODEL set in .env for xai provider.")
@@ -125,7 +168,7 @@ def _make_llm(provider: str, model: str, **extra) -> BaseChatModel:
             raise ValueError("No MISTRAL_MODEL set in .env for mistral provider.")
 
         params = {
-            "api_key": settings.mistral_api_key,
+            "api_key": _require_key("mistral", provider_api_key("mistral")),
             "model": resolved_model,
             "base_url": "https://api.mistral.ai/v1",
             "temperature": 0.1,
@@ -141,7 +184,7 @@ def _make_llm(provider: str, model: str, **extra) -> BaseChatModel:
             raise ValueError("No DEEPSEEK_MODEL set in .env for deepseek provider.")
 
         params = {
-            "api_key": settings.deepseek_api_key,
+            "api_key": _require_key("deepseek", provider_api_key("deepseek")),
             "model": resolved_model,
             "base_url": "https://api.deepseek.com",
             "temperature": 0.1,
@@ -149,8 +192,22 @@ def _make_llm(provider: str, model: str, **extra) -> BaseChatModel:
         }
         return ChatOpenAI(**params)
 
+    if p == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+
+        resolved_model = model or settings.anthropic_model
+        if not resolved_model:
+            raise ValueError("No ANTHROPIC_MODEL set in .env for anthropic provider.")
+        return ChatAnthropic(
+            api_key=_require_key("anthropic", provider_api_key("anthropic")),
+            model=resolved_model,
+            temperature=0.1,
+            **extra,
+        )
+
     raise ValueError(
-        f"Unknown LLM provider: {p!r}. Use 'ollama', 'openai', 'xai', 'mistral', or 'deepseek'."
+        f"Unknown LLM provider: {p!r}. Use 'ollama', 'xai' (or grok), "
+        "'anthropic' (or claude), 'mistral', 'openai', or 'deepseek'."
     )
 
 
@@ -158,11 +215,11 @@ def structured_output_kwargs(provider: str | None) -> dict:
     """Extra kwargs for `llm.with_structured_output(..., method="function_calling")`.
 
     DeepSeek's thinking-mode models reject a forced tool_choice ("Thinking
-    mode does not support this tool_choice") — only tool_choice="auto" is
+    mode does not support this tool_choice") - only tool_choice="auto" is
     accepted. Every other provider keeps LangChain's default forced
     tool_choice, which is more reliable at actually returning the tool call.
     """
-    if (provider or settings.llm_provider).lower() == "deepseek":
+    if normalize_provider(provider or settings.llm_provider) == "deepseek":
         return {"tool_choice": "auto"}
     return {}
 
@@ -175,11 +232,11 @@ def get_llm(provider: str | None = None, model: str | None = None) -> BaseChatMo
     Pass a user's `cv_parsing_provider`/`cv_parsing_model` (see
     services/ai_models.py for the admin-managed catalog) to parse their CV
     with their chosen provider. Called with no args, falls back to the
-    app-wide default from LLM_PROVIDER in .env — unchanged behavior for
+    app-wide default from LLM_PROVIDER in .env - unchanged behavior for
     users who haven't picked one. Cached per (provider, model) pair since
     the catalog stays small.
     """
-    return _make_llm(provider or settings.llm_provider, model or "")
+    return _make_llm(normalize_provider(provider or settings.llm_provider), model or "")
 
 
 @lru_cache(maxsize=32)
@@ -192,13 +249,28 @@ def get_rating_llm(
     Pass a user's `rating_provider`/`rating_model` (see services/ai_models.py
     for the admin-managed catalog they're picked from) to rate with their chosen
     provider. Called with no args, falls back to the app-wide default from
-    RATING_PROVIDER/RATING_MODEL in .env — unchanged behavior for users who
+    RATING_PROVIDER/RATING_MODEL in .env - unchanged behavior for users who
     haven't picked a provider. Cached per (provider, model) pair since the
     catalog stays small.
     """
-    resolved_provider = provider or settings.rating_provider or settings.llm_provider
+    resolved_provider = normalize_provider(
+        provider or settings.rating_provider or settings.llm_provider
+    )
     resolved_model = model or settings.rating_model or ""
-    # Bulk rating fires many calls back-to-back — bump retries so a
+    fallback_provider = normalize_provider(
+        settings.rating_provider or settings.llm_provider
+    )
+    if (
+        not provider_api_key(resolved_provider)
+        and resolved_provider != fallback_provider
+    ):
+        print(
+            f"[rating] No API key for provider={resolved_provider}, "
+            f"falling back to {fallback_provider}"
+        )
+        resolved_provider = fallback_provider
+        resolved_model = settings.rating_model or ""
+    # Bulk rating fires many calls back-to-back - bump retries so a
     # transient 429 (tokens-per-minute) backs off and retries instead of
     # failing the job outright. The SDK honors the provider's Retry-After.
     llm = _make_llm(resolved_provider, resolved_model, temperature=0.0, max_retries=5)
@@ -214,7 +286,7 @@ def get_rating_llm(
 
 @lru_cache(maxsize=1)
 def get_embeddings() -> Embeddings:
-    """Always OpenAI — see module docstring. Independent of LLM_PROVIDER/RATING_PROVIDER."""
+    """Always OpenAI - see module docstring. Independent of LLM_PROVIDER/RATING_PROVIDER."""
     embed_key = (settings.openai_api_key or "").strip()
     if not embed_key:
         raise ValueError(

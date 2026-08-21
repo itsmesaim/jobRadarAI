@@ -50,7 +50,7 @@ const CV_UPLOAD_MESSAGES = [
 
 const DEFAULT_PREFS: UserPreferences = {
   preferred_locations: [],
-  primary_role: "Full Stack Developer",
+  primary_role: "",
   secondary_roles: [],
   job_types: {
     full_time: true,
@@ -68,11 +68,15 @@ const DEFAULT_PREFS: UserPreferences = {
   avoid_industries: [],
   work_mode: { remote: true, hybrid: true, onsite: false },
   about_me: "",
+  about_me_from_cv: "",
+  showcase_projects: [],
   email_reminders_enabled: true,
   reminder_hours: [],
-  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Dublin",
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   rating_provider: "",
   rating_model: "",
+  apply_pack_provider: "",
+  apply_pack_model: "",
   cv_parsing_provider: "",
   cv_parsing_model: "",
   calibration_notes: "",
@@ -138,7 +142,7 @@ const AUTOFILL_LABELS: Record<string, string> = {
   primary_role: "your role",
   preferred_locations: "location",
   key_skills: "key skills",
-  about_me: "about you",
+  about_me_from_cv: "CV summary",
 };
 
 function SettingsSidebar({
@@ -197,6 +201,7 @@ export function SettingsPage() {
   const [activeGroup, setActiveGroup] = useState(SETTINGS_GROUPS[0].id);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [newLocation, setNewLocation] = useState("");
+  const [newShowcase, setNewShowcase] = useState("");
   const [newSkill, setNewSkill] = useState("");
   const [newRole, setNewRole] = useState("");
   const [newIndustry, setNewIndustry] = useState("");
@@ -349,13 +354,16 @@ export function SettingsPage() {
     }
     setUploading(true);
     try {
-      const { autofilled_fields } = await cvApi.upload(file);
+      const { autofilled_fields, structured } = await cvApi.upload(file);
       queryClient.invalidateQueries({ queryKey: ["cv"] });
       if (autofilled_fields?.length) {
         queryClient.invalidateQueries({ queryKey: ["prefs"] });
         setAutofilledFields(autofilled_fields);
       }
       toast.success("CV uploaded and parsed");
+      for (const warning of structured?.parse_warnings ?? []) {
+        toast(warning, { icon: "⚠️", duration: 8000 });
+      }
     } catch (err: any) {
       const detail = err.response?.data?.detail || "Upload failed";
       if (detail.toLowerCase().includes("limit")) {
@@ -375,6 +383,25 @@ export function SettingsPage() {
       preferred_locations: [...localPrefs.preferred_locations, newLocation.trim()],
     });
     setNewLocation("");
+  };
+
+  const addShowcase = (name: string) => {
+    const n = name.trim();
+    if (!n) return;
+    if (localPrefs.showcase_projects.includes(n)) return;
+    if (localPrefs.showcase_projects.length >= 12) return;
+    update({ showcase_projects: [...localPrefs.showcase_projects, n] });
+    setNewShowcase("");
+  };
+
+  const toggleShowcase = (name: string) => {
+    if (localPrefs.showcase_projects.includes(name)) {
+      update({
+        showcase_projects: localPrefs.showcase_projects.filter((x) => x !== name),
+      });
+      return;
+    }
+    addShowcase(name);
   };
 
   const addSkill = () => {
@@ -642,17 +669,130 @@ export function SettingsPage() {
               </div>
             )}
 
-            {/* About you */}
             <Section
-              title="About you"
-              subtitle="Career context fed directly to the rating engine. Pivot goals, constraints, priorities, injected before the JD so the LLM factors it into strengths, not just gaps."
+              title="Flagship work"
+              subtitle="Click in the order you want them on the tailored CV. 1 is first. Click again to drop it. Save after you pick."
+            >
+              <div className="settings-pick-why">
+                <p>
+                  <strong>Why this exists.</strong> Your CV has many projects and jobs. The AI does
+                  not know which ones you want to be known for. Click in order (1, 2, 3). Click
+                  again to remove. Save when done.
+                </p>
+                <ul>
+                  <li>
+                    <strong>For rating:</strong> scores and tailoring tips weight these first. A job
+                    that matches your flagship work ranks higher than one that only matches a side
+                    project.
+                  </li>
+                  <li>
+                    <strong>For the tailored CV and letter:</strong> Key Projects and the cover
+                    letter lead with #1, then #2, then #3. Without this, the model often puts a
+                    school or keyword-match project on top.
+                  </li>
+                </ul>
+              </div>
+              {!cv?.structured ? (
+                <p className="settings-pick-empty">
+                  Upload a CV above and we will list your projects and jobs here.
+                </p>
+              ) : (
+                <>
+                  {(cv.structured.projects || []).length > 0 && (
+                    <div className="settings-pick-group">
+                      <p className="settings-pick-heading">Projects on your CV</p>
+                      <ul className="settings-pick-list">
+                        {(cv.structured.projects || []).map((p) => {
+                          const name = (p.name || "").trim();
+                          if (!name) return null;
+                          const order = localPrefs.showcase_projects.indexOf(name);
+                          const meta = [p.description, (p.tech || []).slice(0, 4).join(", ")]
+                            .filter(Boolean)
+                            .join(" · ");
+                          return (
+                            <li key={name}>
+                              <ShowcaseRow
+                                name={name}
+                                meta={meta}
+                                order={order}
+                                onToggle={() => toggleShowcase(name)}
+                              />
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                  {(cv.structured.experience || []).length > 0 && (
+                    <div className="settings-pick-group">
+                      <p className="settings-pick-heading">Jobs on your CV</p>
+                      <ul className="settings-pick-list">
+                        {(cv.structured.experience || []).map((e, i) => {
+                          const name = [e.title, e.company].filter(Boolean).join(" @ ");
+                          if (!name) return null;
+                          const order = localPrefs.showcase_projects.indexOf(name);
+                          const meta = [e.start, e.end].filter(Boolean).join(" - ");
+                          return (
+                            <li key={`${name}-${i}`}>
+                              <ShowcaseRow
+                                name={name}
+                                meta={meta}
+                                order={order}
+                                onToggle={() => toggleShowcase(name)}
+                              />
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                  {!cv.structured.projects?.length && !cv.structured.experience?.length && (
+                    <p className="settings-pick-empty">
+                      This CV did not parse any projects or jobs. Type a name below, or re-upload.
+                    </p>
+                  )}
+                </>
+              )}
+              {localPrefs.showcase_projects.length > 0 && (
+                <ol className="settings-pick-order">
+                  {localPrefs.showcase_projects.map((p, i) => (
+                    <li key={p}>
+                      {i + 1}. {p}
+                    </li>
+                  ))}
+                </ol>
+              )}
+              <TagInput
+                value={newShowcase}
+                onChange={setNewShowcase}
+                onAdd={() => addShowcase(newShowcase)}
+                placeholder="Not on the list? Type it and press Enter"
+              />
+            </Section>
+
+            <Section
+              title="Your notes"
+              subtitle="What you want the rater to know that is not obvious from the CV. Re-uploading a CV never overwrites this."
             >
               <textarea
                 className="input"
                 placeholder="e.g. Looking to move from backend into AI engineering. Built production LangChain apps but PyTorch isn't on my CV, comfortable learning on the job. Not interested in pure enterprise Java roles."
                 value={localPrefs.about_me}
                 onChange={(e) => update({ about_me: e.target.value })}
-                rows={8}
+                rows={6}
+                style={{ resize: "vertical", lineHeight: 1.6 }}
+              />
+            </Section>
+            <Section
+              title="From your CV"
+              subtitle="Parsed from the latest upload. Updates when you re-upload. Used for rating alongside your notes."
+            >
+              <textarea
+                className="input"
+                placeholder="Upload a CV and the professional summary lands here."
+                value={localPrefs.about_me_from_cv}
+                onChange={(e) => update({ about_me_from_cv: e.target.value })}
+                rows={5}
                 style={{ resize: "vertical", lineHeight: 1.6 }}
               />
             </Section>
@@ -661,13 +801,28 @@ export function SettingsPage() {
 
         {activeGroup === "ai-models" && (
           <SectionGroup id="ai-models" icon={Brain} label="AI models">
+            <p className="settings-pick-why">
+              Split by job so you can cut cost. Rating hits hundreds of listings. Apply pack runs a
+              few times a day. CV parse runs once per upload. Pick from the list. Switching one
+              purpose does not change the others.
+            </p>
             <AiModelPicker
               purpose="rating"
               title="Rating model"
-              subtitle="Which AI rates your jobs and generates apply packs. All models available to you right now, pick any of them any time."
+              subtitle="Scores crawled jobs. Hundreds of calls. Prefer a cheap or local model."
               providerField="rating_provider"
               modelField="rating_model"
               requestField="rating_model_request"
+              localPrefs={localPrefs}
+              setLocalPrefs={setLocalPrefs}
+            />
+            <AiModelPicker
+              purpose="apply_pack"
+              title="Apply pack / tailored CV"
+              subtitle="Writes the tailored CV and cover letter. A few calls. A stronger model is fine here."
+              providerField="apply_pack_provider"
+              modelField="apply_pack_model"
+              requestField="apply_pack_model_request"
               localPrefs={localPrefs}
               setLocalPrefs={setLocalPrefs}
             />
@@ -1031,7 +1186,10 @@ export function SettingsPage() {
             </Section>
 
             {/* Key skills */}
-            <Section title="Key skills" subtitle="Used to generate personalised search queries.">
+            <Section
+              title="Key skills"
+              subtitle="Search queries only, keep this to about 8 short names (Python, FastAPI, React). The full skill list on your CV is already used for rating. Re-upload replaces a huge dump with a short list."
+            >
               <div
                 style={{
                   display: "flex",
@@ -1651,9 +1809,9 @@ function AiModelPicker({
   purpose: ModelPurpose;
   title: string;
   subtitle: string;
-  providerField: "rating_provider" | "cv_parsing_provider";
-  modelField: "rating_model" | "cv_parsing_model";
-  requestField: "rating_model_request" | "cv_parsing_model_request";
+  providerField: "rating_provider" | "apply_pack_provider" | "cv_parsing_provider";
+  modelField: "rating_model" | "apply_pack_model" | "cv_parsing_model";
+  requestField: "rating_model_request" | "apply_pack_model_request" | "cv_parsing_model_request";
   localPrefs: UserPreferences;
   setLocalPrefs: React.Dispatch<React.SetStateAction<UserPreferences>>;
 }) {
@@ -2558,6 +2716,36 @@ function ModelPill({
       <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", marginTop: 2 }}>
         {hint}
       </div>
+    </button>
+  );
+}
+
+function ShowcaseRow({
+  name,
+  meta,
+  order,
+  onToggle,
+}: {
+  name: string;
+  meta: string;
+  order: number;
+  onToggle: () => void;
+}) {
+  const on = order >= 0;
+  return (
+    <button
+      type="button"
+      className={`settings-pick-row${on ? " is-on" : ""}`}
+      onClick={onToggle}
+      aria-pressed={on}
+    >
+      <span className="settings-pick-num" aria-hidden>
+        {on ? order + 1 : ""}
+      </span>
+      <span>
+        <span className="settings-pick-name">{name}</span>
+        {meta ? <span className="settings-pick-meta">{meta}</span> : null}
+      </span>
     </button>
   );
 }

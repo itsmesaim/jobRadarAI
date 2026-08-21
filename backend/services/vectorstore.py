@@ -2,7 +2,7 @@
 Thin FAISS retrieval helpers shared by the rating pipeline.
 
 FAISS indexes here are always rebuilt in-memory from embeddings already
-cached in MongoDB (jd_embedding, jd_chunks[].embedding) — there is no
+cached in MongoDB (jd_embedding, jd_chunks[].embedding) - there is no
 persistent vector store. Mongo stays the single source of truth; FAISS is
 just an ANN accelerator over vectors we already have.
 """
@@ -29,7 +29,7 @@ def build_faiss_index(
     """Build an in-memory FAISS index from precomputed embeddings (no re-embedding).
 
     embedding_model is only stored on the index for interface completeness
-    (FAISS.from_embeddings requires it) — queries always go through
+    (FAISS.from_embeddings requires it) - queries always go through
     retrieve_top_k, which uses precomputed query vectors, never re-embeds.
     """
     if not texts or not embeddings or len(texts) != len(embeddings):

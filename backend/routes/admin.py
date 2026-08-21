@@ -5,7 +5,7 @@ Access via secret prefix defined in .env (ADMIN_SECRET_PATH).
 Only the admin email can access.
 Regular users can never discover this.
 
-The prefix comes from .env — do not hardcode real value in code.
+The prefix comes from .env - do not hardcode real value in code.
 Example final URL (whatever you set in .env): /k9x7p2mQvL4r/users
 """
 
@@ -22,7 +22,13 @@ from config import settings
 from services.ai_usage import get_platform_ai_summary
 from services.email import send_model_granted_email, smtp_configured
 from services.limits import admin_list_users, admin_update_user_limits, get_user_usage
-from services.ai_models import create_model, delete_model, list_models, update_model
+from services.ai_models import (
+    PURPOSE_USER_FIELDS,
+    create_model,
+    delete_model,
+    list_models,
+    update_model,
+)
 
 
 class JobCleanupRequest(BaseModel):
@@ -49,16 +55,16 @@ class UserSuspendUpdate(BaseModel):
 
 
 class UserModelOverride(BaseModel):
-    provider: str  # e.g. "openai" — not restricted to the self-service catalog
+    provider: str  # e.g. "openai" - not restricted to the self-service catalog
     model: str  # exact model name for that provider
-    purpose: Literal["rating", "cv_parsing"] = "rating"
+    purpose: Literal["rating", "apply_pack", "cv_parsing"] = "rating"
 
 
 class AiModelCreate(BaseModel):
     provider: str
     model: str
     label: str = ""
-    purpose: Literal["rating", "cv_parsing"] = "rating"
+    purpose: Literal["rating", "apply_pack", "cv_parsing"] = "rating"
     cost_multiplier: float = 1.0
 
 
@@ -94,7 +100,8 @@ def _require_admin(user: dict):
 
 @router.get("/ai-models")
 async def list_all_ai_models(
-    purpose: Literal["rating", "cv_parsing"] = "rating", user=Depends(get_current_user)
+    purpose: Literal["rating", "apply_pack", "cv_parsing"] = "rating",
+    user=Depends(get_current_user),
 ):
     _require_admin(user)
     return {"models": await list_models(purpose)}
@@ -206,7 +213,7 @@ async def override_user_model(
     user_id: str, payload: UserModelOverride, user=Depends(get_current_user)
 ):
     """Grant a user a provider/model outside the self-service catalog, for
-    either purpose (rating or CV-parsing) — for one-off requests."""
+    any purpose (rating, apply pack, or CV-parsing) - for one-off requests."""
     _require_admin(user)
     db = get_database()
 
@@ -216,15 +223,7 @@ async def override_user_model(
     if not target:
         raise HTTPException(status_code=404, detail="User not found.")
 
-    provider_field = (
-        "rating_provider" if payload.purpose == "rating" else "cv_parsing_provider"
-    )
-    model_field = "rating_model" if payload.purpose == "rating" else "cv_parsing_model"
-    request_field = (
-        "rating_model_request"
-        if payload.purpose == "rating"
-        else "cv_parsing_model_request"
-    )
+    provider_field, model_field, request_field = PURPOSE_USER_FIELDS[payload.purpose]
 
     await db.users.update_one(
         {"_id": ObjectId(user_id)},
@@ -299,7 +298,7 @@ async def cleanup_user_jobs(payload: JobCleanupRequest, user=Depends(get_current
     """
     Delete (or preview) jobs for a specific user.
 
-    Always scoped to crawled_by == user_id — never touches another user's documents.
+    Always scoped to crawled_by == user_id - never touches another user's documents.
     Use dry_run=true first to see the count, then dry_run=false to execute.
     """
     _require_admin(user)
@@ -311,7 +310,7 @@ async def cleanup_user_jobs(payload: JobCleanupRequest, user=Depends(get_current
     if not target:
         raise HTTPException(status_code=404, detail="User not found.")
 
-    # Base filter — always locked to this user's documents
+    # Base filter - always locked to this user's documents
     query: dict = {"crawled_by": uid}
 
     if payload.filter_type == "old":
@@ -343,7 +342,7 @@ async def cleanup_user_jobs(payload: JobCleanupRequest, user=Depends(get_current
     elif payload.filter_type == "auto_rejected":
         query[f"ratings.{uid}.auto_reject"] = True
 
-    # "all" keeps only the crawled_by scope — deletes every job for this user
+    # "all" keeps only the crawled_by scope - deletes every job for this user
 
     count = await db.jobs.count_documents(query)
 

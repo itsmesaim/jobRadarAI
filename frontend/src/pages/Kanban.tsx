@@ -19,6 +19,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import { jobsApi } from "../api/index";
 import { ScoreBadge } from "../components/ScoreBadge";
+import { RejectReasonModal } from "../components/RejectReasonModal";
 import { useAuthStore } from "../hooks/useStores";
 import type { Job, JobStatus } from "../types";
 
@@ -478,6 +479,7 @@ export function KanbanPage() {
   const jobs = data?.jobs ?? [];
 
   const [rerating, setRerating] = useState(false);
+  const [rejectPrompt, setRejectPrompt] = useState<{ jobId: string; title: string } | null>(null);
   const handleRerateSaved = async () => {
     setRerating(true);
     try {
@@ -507,6 +509,7 @@ export function KanbanPage() {
       if (targetStatus === "REJECTED") {
         const q = REJECTION_QUOTES[Math.floor(Math.random() * REJECTION_QUOTES.length)];
         toast(q, { icon: "💪", duration: 4000 });
+        setRejectPrompt({ jobId, title: current.title });
       } else if (targetStatus === "OFFER") {
         toast.success("Congrats! 🎉 Offer secured!", { duration: 4000 });
       } else {
@@ -585,6 +588,22 @@ export function KanbanPage() {
         <MobileKanbanBoard jobs={jobs} onStatusChange={applyStatusChange} />
       ) : (
         <DesktopKanbanBoard jobs={jobs} onStatusChange={applyStatusChange} />
+      )}
+      {rejectPrompt && (
+        <RejectReasonModal
+          jobTitle={rejectPrompt.title}
+          onSubmit={async (reason) => {
+            const { jobId } = rejectPrompt;
+            setRejectPrompt(null);
+            if (reason) {
+              try {
+                await jobsApi.updateStatus(jobId, "REJECTED", reason);
+              } catch {
+                // Optional note, not worth surfacing an error for.
+              }
+            }
+          }}
+        />
       )}
     </div>
   );

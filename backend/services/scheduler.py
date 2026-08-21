@@ -81,7 +81,7 @@ async def _auto_crawl_and_rate():
                 else "never"
             )
             print(
-                f"[scheduler] [{email}] Skipped — inactive for {idle_desc} "
+                f"[scheduler] [{email}] Skipped - inactive for {idle_desc} "
                 f"(dead-user cutoff {DEAD_USER_INACTIVE_HOURS}h), not wasting tokens"
             )
             continue
@@ -92,7 +92,7 @@ async def _auto_crawl_and_rate():
                 last_crawl = last_crawl.replace(tzinfo=timezone.utc)
             if isinstance(last_crawl, datetime) and (now_utc - last_crawl) < min_gap:
                 print(
-                    f"[scheduler] [{email}] Skipped — crawled {int((now_utc - last_crawl).total_seconds() // 3600)}h ago (min gap {int(min_gap.total_seconds() // 3600)}h)"
+                    f"[scheduler] [{email}] Skipped - crawled {int((now_utc - last_crawl).total_seconds() // 3600)}h ago (min gap {int(min_gap.total_seconds() // 3600)}h)"
                 )
                 continue
 
@@ -138,7 +138,7 @@ def start_scheduler():
     """Start APScheduler.
 
     Auto crawl+rate and reminders run on a 15-min sweep tick rather than a
-    fixed-timezone cron trigger — each tick checks every user's *local* time
+    fixed-timezone cron trigger - each tick checks every user's *local* time
     (via their `timezone` preference) against the target hours, so each user
     gets their own 5am/5pm and 9am/2pm/7pm regardless of where they live,
     without needing one cron job per timezone in use. This also survives

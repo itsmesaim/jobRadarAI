@@ -9,31 +9,44 @@ POST  /jobs/rate-all    , trigger rating for all unrated jobs
 POST  /jobs/manual      , paste a JD manually and rate it instantly
 """
 
+import asyncio
 import json
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from bson import ObjectId
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from config import settings
 from database import get_database
 from deps import get_current_user
+from core.rate_limit import enforce_rate_limit
 from routes.admin import _require_admin
 from services.job_dedup import content_fingerprint, hash_url, job_exists_for_user
 from services.rating import (
     RATING_IN_PROGRESS,
     generate_job_brief,
     is_billable_rating,
+    log_rating_drift,
     rate_all_jobs_for_user,
     unrated_jobs_filter,
     rate_job_for_user,
 )
-from services.apply_pack import MIN_APPLY_PACK_SCORE, generate_apply_pack_stream
+from services.apply_pack import (
+    ApplyPackContent,
+    MIN_APPLY_PACK_SCORE,
+    generate_apply_pack_stream,
+)
 from services.calibration import regenerate_calibration_notes
+from services.cv_latex_boilerplate import (
+    compile_apply_pack_cover_letter_pdf,
+    compile_apply_pack_cv_pdf,
+    suggested_pdf_filename,
+)
+from services.pdf_compile import PdfCompileError
 from services.limits import (
     check_ai_token_quota,
     check_and_increment_apply_pack,
@@ -49,6 +62,31 @@ from services.text_cleanup import clean_candidate_text
 from services.url_fetch import fetch_job_page_text
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+# Shared generation task per user+job so a client disconnect or double-click
+# does not cancel the LLM work or 429 the retry. Single-process, same class as
+# core/rate_limit.py's in-memory limiter.
+_apply_pack_tasks: dict[str, asyncio.Task] = {}
+
+
+def _stamp(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+    return str(value)
+
+
+def _apply_pack_cache_fresh(cached: dict | None, rating: dict, cv_uploaded_at) -> bool:
+    """Ready until this job is re-rated or the CV is replaced. No clock expiry."""
+    if not cached or "content" not in cached:
+        return False
+    return _stamp(cached.get("rated_at")) == _stamp(rating.get("rated_at")) and _stamp(
+        cached.get("cv_uploaded_at")
+    ) == _stamp(cv_uploaded_at)
+
 
 VALID_STATUSES = [
     "NEW",
@@ -69,6 +107,7 @@ TERMINAL_STATUSES = ["APPLIED", "REJECTED", "OFFER"]
 
 class StatusUpdate(BaseModel):
     status: str
+    reason: str | None = None
 
 
 class ManualJD(BaseModel):
@@ -117,6 +156,7 @@ def _format_job(job: dict, user_id: str) -> dict:
         "status": job.get(f"status_{user_id}", "NEW"),
         "rating_in_progress": in_progress,
         "rated_by_model": None if in_progress else rating.get("rated_by_model"),
+        "apply_pack_in_progress": f"{user_id}:{job.get('_id')}" in _apply_pack_tasks,
     }
 
 
@@ -406,6 +446,7 @@ async def list_jobs(
         await db.jobs.find(mongo_query)
         .sort([("posted_at", -1), ("crawled_at", -1)])
         .limit(LIST_SCAN_CAP)
+        .allow_disk_use(True)
         .to_list(length=LIST_SCAN_CAP)
     )
 
@@ -556,7 +597,10 @@ async def rate_all(
 
 # ── FETCH URL (server-side, SSRF-safe) ─────────────────────
 @router.post("/fetch-url")
-async def fetch_job_url(payload: FetchUrlRequest, user=Depends(get_current_user)):
+async def fetch_job_url(
+    payload: FetchUrlRequest, request: Request, user=Depends(get_current_user)
+):
+    enforce_rate_limit(request, "fetch_url")
     return await fetch_job_page_text(payload.url)
 
 
@@ -665,10 +709,14 @@ async def rate_single_job(job_id: str, user=Depends(get_current_user)):
     try:
         rating = await rate_job_for_user(job_doc, user)
     except Exception:
+        import traceback
+
+        traceback.print_exc()
         await refund_rating(user_id, 1)
         raise HTTPException(status_code=500, detail="Re-rating failed. Try again.")
 
     rating["rated_at"] = datetime.now(timezone.utc)
+    log_rating_drift(job_id, (job_doc.get("ratings") or {}).get(user_id), rating)
     await db.jobs.update_one(
         {"_id": ObjectId(job_id)}, {"$set": {f"ratings.{user_id}": rating}}
     )
@@ -726,6 +774,9 @@ async def submit_rating_feedback(
         raise HTTPException(status_code=404, detail="Job not found")
 
     if comment:
+        token_ok, token_msg = await check_ai_token_quota(user)
+        if not token_ok:
+            raise HTTPException(status_code=429, detail=token_msg)
         comment = await clean_candidate_text(
             comment, "feedback on an AI job rating", user_id=user_id
         )
@@ -793,7 +844,11 @@ async def get_job_brief(job_id: str, user=Depends(get_current_user)):
 
 @router.get("/{job_id}/apply-pack")
 async def get_job_apply_pack(
-    job_id: str, regenerate: bool = False, user=Depends(get_current_user)
+    job_id: str,
+    regenerate: bool = False,
+    part: str = "all",
+    note: str = "",
+    user=Depends(get_current_user),
 ):
     db = get_database()
     user_id = str(user["_id"])
@@ -850,13 +905,21 @@ async def get_job_apply_pack(
     # explicitly asks for a fresh one via ?regenerate=true.
     cv_uploaded_at = (user.get("cv") or {}).get("uploaded_at")
     cached = (job.get("apply_pack_cache") or {}).get(user_id)
-    if (
-        cached
-        and not regenerate
-        and cached.get("rated_at") == rating.get("rated_at")
-        and cached.get("cv_uploaded_at") == cv_uploaded_at
-    ):
+    part = part if part in ("all", "cv", "cover") else "all"
+    note = (note or "")[:400]
+    if part in ("cv", "cover"):
+        if not cached or "content" not in cached:
+            raise HTTPException(
+                status_code=400,
+                detail="Generate the full pack first, then rebuild just the CV or letter.",
+            )
+        regenerate = True
+    if not regenerate and _apply_pack_cache_fresh(cached, rating, cv_uploaded_at):
         remaining = await get_remaining_apply_packs(user)
+        print(
+            f"[apply_pack] cache HIT job={job_id} has_content={bool(cached.get('content'))}",
+            flush=True,
+        )
 
         async def cached_stream():
             yield _sse(
@@ -871,24 +934,43 @@ async def get_job_apply_pack(
 
         return StreamingResponse(cached_stream(), media_type="text/event-stream")
 
-    allowed, message, remaining = await check_and_increment_apply_pack(user)
-    if not allowed:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message
-        )
+    task_key = f"{user_id}:{job_id}"
+    task = _apply_pack_tasks.get(task_key)
+    if task is None:
+        if part == "all":
+            allowed, message, remaining = await check_and_increment_apply_pack(user)
+            if not allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message
+                )
+        else:
+            remaining = await get_remaining_apply_packs(user)
 
-    async def event_stream():
-        try:
-            result = None
-            async for kind, payload in generate_apply_pack_stream(job, user, rating):
-                if kind == "stage":
-                    yield _sse("stage", payload)
-                elif kind == "done":
-                    result = payload
-            if result:
-                # Only cache on an actually-completed generation, a client
-                # disconnect mid-stream never reaches this line, so a broken/
-                # partial attempt is never served back as if it were cached.
+        async def _produce() -> dict | None:
+            print(
+                f"[apply_pack] cache MISS job={job_id} user={user_id} "
+                f"regenerate={regenerate} cached_keys={list((cached or {}).keys())}",
+                flush=True,
+            )
+            print(f"[apply_pack] generating job={job_id} user={user_id}", flush=True)
+            try:
+                result = None
+                async for kind, payload in generate_apply_pack_stream(
+                    job,
+                    user,
+                    rating,
+                    part=part,
+                    note=note,
+                    previous=(
+                        (cached or {}).get("content")
+                        if part in ("cv", "cover")
+                        else None
+                    ),
+                ):
+                    if kind == "done":
+                        result = payload
+                if not result or not result.get("content"):
+                    raise ValueError("Apply pack generation finished with no content.")
                 await db.jobs.update_one(
                     {"_id": ObjectId(job_id)},
                     {
@@ -896,33 +978,154 @@ async def get_job_apply_pack(
                             f"apply_pack_cache.{user_id}": {
                                 "pack": result["pack"],
                                 "ats": result["ats"],
+                                "content": result["content"],
                                 "rated_at": rating.get("rated_at"),
                                 "cv_uploaded_at": cv_uploaded_at,
+                                "generated_at": datetime.now(timezone.utc),
                             }
                         }
                     },
                 )
-            yield _sse(
-                "done",
-                {
-                    "pack": result["pack"] if result else None,
-                    "ats": result["ats"] if result else None,
-                    "apply_packs_remaining": remaining,
-                    "cached": False,
-                },
-            )
-        except ValueError as exc:
-            await refund_apply_pack(user_id)
-            yield _sse("error", {"detail": str(exc)})
-        except Exception as exc:
-            import traceback
+                print(f"[apply_pack] cached job={job_id}", flush=True)
+                return result
+            except Exception as exc:
+                import traceback
 
-            print(f"[apply_pack] !!! generation failed for job={job_id}: {exc}")
-            traceback.print_exc()
-            await refund_apply_pack(user_id)
+                print(f"[apply_pack] !!! generation failed for job={job_id}: {exc}")
+                traceback.print_exc()
+                await refund_apply_pack(user_id)
+                raise
+            finally:
+                _apply_pack_tasks.pop(task_key, None)
+
+        task = asyncio.create_task(_produce())
+        _apply_pack_tasks[task_key] = task
+    else:
+        remaining = await get_remaining_apply_packs(user)
+        print(f"[apply_pack] joining in-flight generation job={job_id}")
+
+    async def event_stream():
+        yield _sse(
+            "stage",
+            {
+                "stage": "drafting",
+                "messages": ["Building your apply pack…"],
+            },
+        )
+        try:
+            print(f"[apply_pack] SSE waiting for generation job={job_id}", flush=True)
+            result = await task
+        except ValueError as exc:
+            print(f"[apply_pack] SSE error job={job_id}: {exc}", flush=True)
+            yield _sse("error", {"detail": str(exc)})
+            return
+        except Exception as exc:
+            print(f"[apply_pack] SSE failed job={job_id}: {exc}", flush=True)
             yield _sse("error", {"detail": "Failed to generate apply pack. Try again."})
+            return
+        if not result or not result.get("pack"):
+            print(f"[apply_pack] SSE empty result job={job_id}", flush=True)
+            yield _sse("error", {"detail": "Failed to generate apply pack. Try again."})
+            return
+        print(f"[apply_pack] SSE sending done job={job_id}", flush=True)
+        yield _sse(
+            "done",
+            {
+                "pack": result["pack"],
+                "ats": result["ats"],
+                "apply_packs_remaining": remaining,
+                "cached": False,
+            },
+        )
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+async def _get_cached_apply_pack_content(
+    job_id: str, user: dict
+) -> tuple[dict, ApplyPackContent]:
+    """Shared lookup for the two PDF download endpoints: both need an existing
+    apply_pack_cache entry (from a prior POST /jobs/{id}/apply-pack) for this
+    user+job+CV version, same freshness check as the SSE cached-stream branch."""
+    db = get_database()
+    user_id = str(user["_id"])
+    try:
+        job = await db.jobs.find_one({"_id": ObjectId(job_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid job ID.")
+    if not job or job.get("crawled_by") != user_id:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    rating = job.get("ratings", {}).get(user_id, {})
+    cv_uploaded_at = (user.get("cv") or {}).get("uploaded_at")
+    cached = (job.get("apply_pack_cache") or {}).get(user_id)
+    if (
+        not cached
+        or "content" not in cached
+        or not _apply_pack_cache_fresh(cached, rating, cv_uploaded_at)
+    ):
+        print(
+            f"[apply_pack] PDF cache miss job={job_id} "
+            f"cached={bool(cached)} has_content={bool(cached and 'content' in cached)}",
+            flush=True,
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="No apply pack generated for this job yet. Click Download apply pack first.",
+        )
+    return job, ApplyPackContent(**cached["content"])
+
+
+@router.get("/{job_id}/apply-pack/cv.pdf")
+async def get_apply_pack_cv_pdf(job_id: str, user=Depends(get_current_user)):
+    print(f"[apply_pack] CV PDF requested job={job_id}", flush=True)
+    job, parsed = await _get_cached_apply_pack_content(job_id, user)
+    try:
+        pdf_bytes, overflow, _dropped = compile_apply_pack_cv_pdf(user, job, parsed)
+    except PdfCompileError as exc:
+        print(f"[apply_pack] CV PDF compile failed job={job_id}: {exc}", flush=True)
+        raise HTTPException(
+            status_code=500, detail="Could not compile the CV PDF. Try again."
+        )
+    print(
+        f"[apply_pack] CV PDF ok job={job_id} bytes={len(pdf_bytes)} overflow={overflow}",
+        flush=True,
+    )
+    filename = suggested_pdf_filename(user, job)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Apply-Pack-Overflow": "true" if overflow else "false",
+        },
+    )
+
+
+@router.get("/{job_id}/apply-pack/cover-letter.pdf")
+async def get_apply_pack_cover_letter_pdf(job_id: str, user=Depends(get_current_user)):
+    print(f"[apply_pack] cover-letter PDF requested job={job_id}", flush=True)
+    job, parsed = await _get_cached_apply_pack_content(job_id, user)
+    try:
+        pdf_bytes = compile_apply_pack_cover_letter_pdf(user, job, parsed)
+    except PdfCompileError as exc:
+        print(
+            f"[apply_pack] cover-letter PDF compile failed job={job_id}: {exc}",
+            flush=True,
+        )
+        raise HTTPException(
+            status_code=500, detail="Could not compile the cover letter PDF. Try again."
+        )
+    print(
+        f"[apply_pack] cover-letter PDF ok job={job_id} bytes={len(pdf_bytes)}",
+        flush=True,
+    )
+    filename = suggested_pdf_filename(user, job, suffix="cover_letter")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ── STATUS, must be before /{job_id} ────────────────────
@@ -942,15 +1145,15 @@ async def update_status(
     if not job or job.get("crawled_by") != user_id:
         raise HTTPException(status_code=404, detail="Job not found.")
 
-    await db.jobs.update_one(
-        {"_id": ObjectId(job_id)},
-        {
-            "$set": {
-                f"status_{user_id}": payload.status,
-                f"status_at_{user_id}": datetime.now(timezone.utc),
-            }
-        },
-    )
+    update = {
+        f"status_{user_id}": payload.status,
+        f"status_at_{user_id}": datetime.now(timezone.utc),
+    }
+    # Surfaced back on future jobs at the same company, see get_job's past_rejection lookup.
+    if payload.status == "REJECTED" and payload.reason and payload.reason.strip():
+        update[f"rejection_reason_{user_id}"] = payload.reason.strip()[:500]
+
+    await db.jobs.update_one({"_id": ObjectId(job_id)}, {"$set": update})
     return {"message": "Status updated.", "status": payload.status}
 
 
@@ -970,6 +1173,31 @@ async def get_job(job_id: str, user=Depends(get_current_user)):
 
     result = _format_job(job, user_id)
     result["full_text"] = job.get("full_text", "")[:3000]
+    rating = job.get("ratings", {}).get(user_id, {})
+    cv_uploaded_at = (user.get("cv") or {}).get("uploaded_at")
+    cached = (job.get("apply_pack_cache") or {}).get(user_id)
+    ready = _apply_pack_cache_fresh(cached, rating, cv_uploaded_at)
+    result["apply_pack_ready"] = ready
+    result["apply_pack_ats"] = (cached or {}).get("ats") if ready else None
+
+    company = job.get("company")
+    if company:
+        past_rejection = await db.jobs.find_one(
+            {
+                "_id": {"$ne": ObjectId(job_id)},
+                "crawled_by": user_id,
+                "company": {"$regex": f"^{re.escape(company)}$", "$options": "i"},
+                f"status_{user_id}": "REJECTED",
+                f"rejection_reason_{user_id}": {"$exists": True, "$ne": ""},
+            },
+            sort=[(f"status_at_{user_id}", -1)],
+        )
+        if past_rejection:
+            result["past_rejection_reason"] = past_rejection.get(
+                f"rejection_reason_{user_id}"
+            )
+            result["past_rejection_title"] = past_rejection.get("title")
+
     return result
 
 

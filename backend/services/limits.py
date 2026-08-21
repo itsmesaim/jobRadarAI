@@ -142,7 +142,7 @@ async def get_ai_token_quota(user: dict) -> dict:
 
 
 async def _reset_if_new_day(user: dict) -> dict:
-    """Reset daily counters if it's a new day, in the user's own timezone —
+    """Reset daily counters if it's a new day, in the user's own timezone -
     not a fixed UTC midnight. A global UTC cliff let a user near the boundary
     (e.g. UTC-8) cross it mid-local-day and get a second day's quota inside
     what they experienced as one calendar day (observed: 10/day limit, 14
@@ -261,7 +261,7 @@ async def _sync_ratings_counter(user_id: str, actual: int) -> None:
 
 
 async def _effective_ratings_used(user: dict, usage: dict) -> int:
-    """Max of stored counter and real rated-job count — fixes drift after failed increments."""
+    """Max of stored counter and real rated-job count - fixes drift after failed increments."""
     user_id = str(user.get("_id", ""))
     counter = int(usage.get("ratings", 0) or 0)
     db_count = await count_ratings_today(user)
@@ -467,6 +467,9 @@ async def get_user_usage(user_id: str) -> dict:
         "rating_provider": user.get("rating_provider", ""),
         "rating_model": user.get("rating_model", ""),
         "rating_model_request": user.get("rating_model_request"),
+        "apply_pack_provider": user.get("apply_pack_provider", ""),
+        "apply_pack_model": user.get("apply_pack_model", ""),
+        "apply_pack_model_request": user.get("apply_pack_model_request"),
         "cv_parsing_provider": user.get("cv_parsing_provider", ""),
         "cv_parsing_model": user.get("cv_parsing_model", ""),
         "cv_parsing_model_request": user.get("cv_parsing_model_request"),
@@ -491,7 +494,7 @@ async def admin_update_user_limits(
     updates = {}
     # NOTE: full_access / full_access_until are the ONLY source of truth for
     # unlimited access (see _has_unlimited_access). Do NOT also stamp
-    # search_limit/rating_limit/token_limit overrides to 9999/0 here — those
+    # search_limit/rating_limit/token_limit overrides to 9999/0 here - those
     # are separate, persistent fields with no expiry of their own, so once
     # written they silently keep granting unlimited access forever, even
     # after full_access_until has passed (this was a real bug: a 12h grant
@@ -521,7 +524,7 @@ async def admin_update_user_limits(
 
 
 async def check_and_increment_cv_upload(user: dict) -> tuple[bool, str]:
-    """Prevent CV upload spam — each upload triggers an LLM parse. Returns (allowed, message)."""
+    """Prevent CV upload spam - each upload triggers an LLM parse. Returns (allowed, message)."""
     if _has_unlimited_access(user):
         return True, ""
 

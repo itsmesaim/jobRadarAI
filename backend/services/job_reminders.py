@@ -19,7 +19,7 @@ from services.email import (
 )
 from services.limits import _reset_if_new_day
 
-DEFAULT_TIMEZONE = "Europe/Dublin"
+DEFAULT_TIMEZONE = "UTC"
 SWEEP_WINDOW_MINUTES = 15
 
 
@@ -156,7 +156,7 @@ async def _try_send_reminder_for_user(user: dict) -> dict:
         if settings.debug:
             top = ", ".join(f"{j['title']} ({j['score']}/10)" for j in jobs[:5])
             print(
-                f"[reminders] [{email}] SMTP not configured ({reason}) — "
+                f"[reminders] [{email}] SMTP not configured ({reason}) - "
                 f"would email {len(jobs)} high-score jobs: {top}"
             )
         return {"email": email, "skipped": "smtp_not_configured", "count": len(jobs)}

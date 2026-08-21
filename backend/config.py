@@ -1,7 +1,7 @@
 """
 Central configuration. Everything reads from environment variables
 (loaded from .env). This is also where the LLM provider switch lives
-for later phases — change LLM_PROVIDER and nothing else breaks.
+for later phases - change LLM_PROVIDER and nothing else breaks.
 """
 
 from pathlib import Path
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     #  MongoDB
     # Option A (dev): MONGO_URI=mongodb://localhost:27017
-    # Option B (VPS with auth): set MONGO_USER, MONGO_PASSWORD, MONGO_HOST — URI is built automatically
+    # Option B (VPS with auth): set MONGO_USER, MONGO_PASSWORD, MONGO_HOST - URI is built automatically
     mongo_uri: str = "mongodb://localhost:27017"
     mongo_db: str = "jobradar"
     mongo_host: str = "localhost"
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     password_reset_expire_minutes: int = 60  # reset link validity
     frontend_url: str = "http://localhost:5173"
 
-    # Optional SMTP — required to email reset links in production
+    # Optional SMTP - required to email reset links in production
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
@@ -56,13 +56,8 @@ class Settings(BaseSettings):
 
     #  LLM
     # Swap provider here only. LangChain abstraction handles the rest.
-    # Supported: "ollama" | "openai" | "xai"
-    #
-    # Set the actual models in your .env file:
-    #   - OLLAMA_MODEL
-    #   - OPENAI_MODEL
-    #   - XAI_MODEL or GROK_MODEL
-    #   - RATING_MODEL + RATING_PROVIDER (for using different model/provider only for bulk rating)
+    # Supported: ollama | xai (Grok) | anthropic | mistral | openai | deepseek
+    # Set models in .env: OLLAMA_MODEL, GROK_MODEL / XAI_MODEL, ANTHROPIC_MODEL, ...
     llm_provider: str = "ollama"
 
     ollama_base_url: str = "http://localhost:11434"
@@ -80,27 +75,29 @@ class Settings(BaseSettings):
     xai_model: str = Field(default="", validation_alias="XAI_MODEL")
     grok_model: str = Field(default="", validation_alias="GROK_MODEL")
 
-    # Mistral — OpenAI-API-compatible endpoint, no extra dependency needed
+    # Mistral - OpenAI-API-compatible endpoint, no extra dependency needed
     # (see services/llm.py). EU-based (GDPR-friendly), free tier available.
     mistral_api_key: str = ""
     mistral_model: str = ""
 
-    # DeepSeek — OpenAI-API-compatible endpoint, same shape as Mistral above.
-    # One of the default per-user rating providers seeded into the admin-managed
-    # catalog (see services/ai_models.py).
+    # DeepSeek - OpenAI-API-compatible endpoint, same shape as Mistral above.
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-chat"
+
+    # Anthropic Claude
+    anthropic_api_key: str = ""
+    anthropic_model: str = ""
 
     # Optional separate model just for job rating (bulk / rate-all).
     # Lets you mix providers, e.g. parse CV with OpenAI, rate jobs with fast Grok.
     # Control everything via .env (RATING_MODEL, RATING_PROVIDER, etc.)
     rating_model: str = ""
     rating_provider: str = (
-        ""  # "xai" | "openai" | "ollama" | "mistral" (empty = use main llm_provider)
+        ""  # ollama | xai | anthropic | mistral | openai | deepseek (empty = llm_provider)
     )
     # Max concurrent LLM calls during bulk rating. Every call now uses the
     # full-length prompt (see rating.py), so this directly controls tokens/min
-    # sent to your rating provider — lower it if you hit 429 TPM rate limits
+    # sent to your rating provider - lower it if you hit 429 TPM rate limits
     # on a low-tier model/org (e.g. gpt-4.1-nano).
     rating_concurrency: int = 4
 
@@ -136,7 +133,7 @@ class Settings(BaseSettings):
     # Do NOT commit your real admin email or secret path.
     admin_email: str = ""
     admin_secret_path: str = (
-        ""  # e.g. "k9x7p2mQvL4r" — random string used as URL prefix for admin routes
+        ""  # e.g. "k9x7p2mQvL4r" - random string used as URL prefix for admin routes
     )
 
     # Free tier defaults (per day, reset daily)
@@ -151,7 +148,7 @@ class Settings(BaseSettings):
         3_000_000  # ~12 days' worth of daily max; backstop against sustained abuse
     )
 
-    # AI usage tracking — optional; set rates in .env to enable cost estimates in admin
+    # AI usage tracking - optional; set rates in .env to enable cost estimates in admin
     ai_monthly_budget_usd: float = 0
     ai_cost_per_1k_prompt_tokens: float = 0
     ai_cost_per_1k_completion_tokens: float = 0

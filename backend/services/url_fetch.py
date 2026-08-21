@@ -1,5 +1,5 @@
 """
-Server-side URL fetch for manual JD paste — replaces client-side allorigins.win.
+Server-side URL fetch for manual JD paste - replaces client-side allorigins.win.
 
 Blocks SSRF targets (private IPs, localhost, metadata hosts).
 """

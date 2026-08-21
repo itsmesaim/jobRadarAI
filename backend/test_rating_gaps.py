@@ -9,7 +9,7 @@ separate gaps, one pulled from the responsibilities section, and (b) tag
 an "Enterprise exposure to AI tools" requirement as Desirable even though
 it sits directly under a "(Required)" heading.
 
-This makes a REAL call to the configured RATING_PROVIDER — it is a live
+This makes a REAL call to the configured RATING_PROVIDER - it is a live
 smoke test, not deterministic/offline, so it's not wired into CI. Run
 manually with: python test_rating_gaps.py
 """
@@ -94,7 +94,7 @@ def demo():
     if ai_tools_gaps:
         assert any("[essential]" in g.lower() for g in ai_tools_gaps), (
             f"AI tools requirement sits under 'Core Engineering Foundations "
-            f"(Required)' in the fixture JD — expected an [Essential] tag, got: "
+            f"(Required)' in the fixture JD - expected an [Essential] tag, got: "
             f"{ai_tools_gaps}"
         )
 
@@ -103,18 +103,18 @@ def demo():
     ]
     assert not refinement_gaps, (
         f"'refinement of the test strategy' is a responsibilities bullet, not a "
-        f"requirement — it must not appear as a gap: {refinement_gaps}"
+        f"requirement - it must not appear as a gap: {refinement_gaps}"
     )
 
-    print("OK — one automation-framework gap, no responsibilities-sourced gap")
+    print("OK - one automation-framework gap, no responsibilities-sourced gap")
 
 
 # ── Braiins-style fixture: gap/strength inversion + title-named language ──
 #
 # Reproduces a real bug report: a Rust-first JD that names TypeScript/React
 # and Python as OPTIONAL exposure areas ("you may also touch ...") got those
-# same skills — which the candidate already has and which the model itself
-# listed as matched strengths — also listed as [Preferred] gaps. Separately,
+# same skills - which the candidate already has and which the model itself
+# listed as matched strengths - also listed as [Preferred] gaps. Separately,
 # duplicate entries showed up verbatim in matched_strengths, and the score
 # (6/10) didn't reflect that Rust, the language the job title is built
 # around, is completely absent from the candidate's profile.
@@ -132,7 +132,7 @@ Required:
 - Experience designing and maintaining backend services and APIs.
 
 You may also touch TypeScript/React frontend code, Python-based tools or
-legacy services, internal tooling, and CI/CD pipelines as needed — these are
+legacy services, internal tooling, and CI/CD pipelines as needed - these are
 not the focus of the role but come up occasionally.
 
 Preferred:
@@ -212,7 +212,7 @@ def demo_gap_strength_inversion():
     )
 
     # Bug 3: job title names Rust as the core skill; candidate has zero Rust
-    # evidence anywhere in the profile — score must reflect that, not just a
+    # evidence anywhere in the profile - score must reflect that, not just a
     # standard per-item Essential deduction.
     assert score is not None and score <= 4, (
         f"expected score <= 4 for a title-named language (Rust) with zero "
@@ -220,7 +220,7 @@ def demo_gap_strength_inversion():
     )
 
     print(
-        "OK — no gap/strength inversion, no duplicate strengths, score reflects missing title-named language"
+        "OK - no gap/strength inversion, no duplicate strengths, score reflects missing title-named language"
     )
 
 

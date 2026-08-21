@@ -123,7 +123,7 @@ async def forgot_password(payload: ForgotPasswordRequest, request: Request):
         elif settings.debug:
             reason = smtp_missing_reason() or "unknown"
             print(
-                f"[auth] SMTP not configured ({reason}) — "
+                f"[auth] SMTP not configured ({reason}) - "
                 f"password reset link for {email}: {reset_url}"
             )
 

@@ -5,7 +5,7 @@ Run on the server (same env as the app):
     cd backend
     uv run python scripts/diagnose_matching.py you@example.com
 
-Paste the output back — no DB access needed on the other end.
+Paste the output back - no DB access needed on the other end.
 """
 
 import asyncio
@@ -42,7 +42,7 @@ async def main(email: str):
     print(f"  secondary_roles: {user.get('secondary_roles')}")
     print(f"  key_skills: {user.get('key_skills')}")
     print(
-        f"  preferred_locations: {user.get('preferred_locations')} (default if unset: ['Dublin Ireland'])"
+        f"  preferred_locations: {user.get('preferred_locations')} (empty if unset, never a default city)"
     )
 
     now = datetime.now(timezone.utc)

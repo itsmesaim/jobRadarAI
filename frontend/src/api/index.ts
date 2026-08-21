@@ -40,6 +40,38 @@ export const authApi = {
   },
 };
 
+/** Fetches a Bearer-token-protected file and triggers a browser download, since a plain
+ * <a href> can't carry an Authorization header. Returns response headers the caller might
+ * care about (e.g. the CV endpoint's page-overflow flag). */
+async function downloadFile(url: string, filenameFallback: string): Promise<{ overflow: boolean }> {
+  const res = await fetch(buildUrl(url), { headers: authHeaders() });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const data = await res.json();
+      detail = data?.detail || detail;
+    } catch {
+      /* body wasn't JSON, keep statusText */
+    }
+    const err = new Error(detail) as ApiError;
+    err.response = { status: res.status, data: { detail } };
+    throw err;
+  }
+  const overflow = res.headers.get("X-Apply-Pack-Overflow") === "true";
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] || filenameFallback;
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(blobUrl);
+  return { overflow };
+}
+
 export const jobsApi = {
   list: async (params?: {
     score_min?: number;
@@ -112,8 +144,8 @@ export const jobsApi = {
     return res.data as { title: string; text: string };
   },
 
-  updateStatus: async (id: string, status: JobStatus) => {
-    const res = await api.patch(`/jobs/${id}/status`, { status });
+  updateStatus: async (id: string, status: JobStatus, reason?: string | null) => {
+    const res = await api.patch(`/jobs/${id}/status`, { status, reason });
     return res.data;
   },
 
@@ -129,16 +161,22 @@ export const jobsApi = {
     id: string,
     onStage: (event: { stage: string; messages: string[] }) => void,
     regenerate = false,
+    part: "all" | "cv" | "cover" = "all",
+    note = "",
   ): Promise<{
     pack: string;
     apply_packs_remaining: number;
     ats: { alignment_pct: number; matched: string[]; missing: string[]; fixes: string[] } | null;
     cached: boolean;
   }> => {
-    const res = await fetch(
-      buildUrl(`/jobs/${id}/apply-pack${regenerate ? "?regenerate=true" : ""}`),
-      { headers: authHeaders() },
-    );
+    const qs = new URLSearchParams();
+    if (regenerate) qs.set("regenerate", "true");
+    if (part !== "all") qs.set("part", part);
+    if (note.trim()) qs.set("note", note.trim().slice(0, 400));
+    const q = qs.toString();
+    const res = await fetch(buildUrl(`/jobs/${id}/apply-pack${q ? `?${q}` : ""}`), {
+      headers: authHeaders(),
+    });
 
     if (!res.ok || !res.body) {
       let detail = res.statusText;
@@ -164,10 +202,8 @@ export const jobsApi = {
     } | null = null;
     let errorDetail: string | null = null;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+    const consume = (chunk: string) => {
+      buffer += chunk;
       let sepIndex: number;
       while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
         const frame = buffer.slice(0, sepIndex);
@@ -180,6 +216,16 @@ export const jobsApi = {
         else if (eventMatch[1] === "done") result = data;
         else if (eventMatch[1] === "error") errorDetail = data.detail;
       }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        consume(decoder.decode());
+        if (buffer.trim()) consume("\n\n");
+        break;
+      }
+      consume(decoder.decode(value, { stream: true }));
     }
 
     if (errorDetail) {
@@ -190,6 +236,11 @@ export const jobsApi = {
     if (!result) throw new Error("Apply pack stream ended unexpectedly");
     return result;
   },
+
+  downloadApplyPackCv: (id: string) => downloadFile(`/jobs/${id}/apply-pack/cv.pdf`, "cv.pdf"),
+
+  downloadApplyPackCoverLetter: (id: string) =>
+    downloadFile(`/jobs/${id}/apply-pack/cover-letter.pdf`, "cover-letter.pdf"),
 
   hide: async (id: string) => {
     const res = await api.delete(`/jobs/${id}`);

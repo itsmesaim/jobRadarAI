@@ -1,4 +1,4 @@
-"""Job description quality helpers — detect stubs and enrich from URLs."""
+"""Job description quality helpers - detect stubs and enrich from URLs."""
 
 from __future__ import annotations
 

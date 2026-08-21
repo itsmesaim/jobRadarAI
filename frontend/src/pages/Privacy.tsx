@@ -1,212 +1,146 @@
 import { Link } from "react-router-dom";
-import { Logo } from "../components/Logo";
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section style={{ marginBottom: 36 }}>
-      <h2 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 10px", color: "var(--text)" }}>
-        {title}
-      </h2>
-      <div style={{ fontSize: 15, color: "var(--text-secondary)", lineHeight: 1.75 }}>
-        {children}
-      </div>
-    </section>
-  );
-}
+import { LegalSection, LegalShell } from "../components/LegalShell";
 
 export function PrivacyPage() {
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "16px 24px",
-          maxWidth: 780,
-          margin: "0 auto",
-        }}
-      >
-        <Link to="/" style={{ display: "flex" }}>
-          <Logo size={28} wordmarkSize={17} />
-        </Link>
-        <Link to="/login" className="btn btn-secondary">
-          Log in
-        </Link>
-      </header>
-
-      <main style={{ maxWidth: 780, margin: "0 auto", padding: "16px 24px 96px" }}>
-        <h1
-          style={{
-            fontSize: "clamp(32px, 5vw, 44px)",
-            fontWeight: 800,
-            letterSpacing: "-0.02em",
-            margin: "0 0 10px",
-            color: "var(--text)",
-          }}
-        >
-          Privacy Policy
-        </h1>
-        <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 40 }}>
-          Last updated: {new Date().toISOString().slice(0, 10)}
+    <LegalShell title="Privacy Policy">
+      <LegalSection title="Who we are">
+        <p>
+          JobRadar ("we", "us") is a job-search tool. It crawls job boards, rates listings against
+          your CV using AI, can generate a tailored CV and cover letter PDF, and helps you track
+          applications. This policy explains what personal data we collect, why, and the rights you
+          have over it.
         </p>
+      </LegalSection>
 
-        <Section title="Who we are">
-          <p>
-            JobRadar ("we", "us") is a job-search tool that crawls job boards, rates listings
-            against your CV using AI, and helps you track applications. This policy explains what
-            personal data we collect, why, and the rights you have over it.
-          </p>
-        </Section>
+      <LegalSection title="Information we collect">
+        <p style={{ marginBottom: 10 }}>
+          <strong style={{ color: "var(--text)" }}>Account data:</strong> name, email, and a bcrypt
+          hash of your password. We never store the password itself.
+        </p>
+        <p style={{ marginBottom: 10 }}>
+          <strong style={{ color: "var(--text)" }}>CV data:</strong> when you upload a CV (PDF,
+          Word, ODT, text, or TeX), we extract text and use AI to produce a structured breakdown
+          (skills, experience, projects, education, links). We store the extracted text and
+          structured data, not the original file.
+        </p>
+        <p style={{ marginBottom: 10 }}>
+          <strong style={{ color: "var(--text)" }}>Preferences:</strong> target roles, locations,
+          salary, key skills, visa/work authorization, work mode, timezone, flagship projects/jobs
+          you mark, about-me notes, and which AI models you picked for rating, apply packs, and CV
+          parsing.
+        </p>
+        <p>
+          <strong style={{ color: "var(--text)" }}>Activity data:</strong> job listings crawled for
+          you, AI fit scores, strengths, gaps, tailoring tips, rating feedback you leave, Kanban
+          status, and cached apply-pack content (tailored CV and cover letter text) until you
+          re-rate that job or replace your CV.
+        </p>
+      </LegalSection>
 
-        <Section title="Information we collect">
-          <p style={{ marginBottom: 10 }}>
-            <strong style={{ color: "var(--text)" }}>Account data:</strong> your name, email
-            address, and a securely hashed password. We never store your password in plain text and
-            cannot recover it, only reset it.
-          </p>
-          <p style={{ marginBottom: 10 }}>
-            <strong style={{ color: "var(--text)" }}>CV data:</strong> when you upload a CV, we
-            extract the text from your PDF and use AI to produce a structured breakdown (skills,
-            experience, education, contact details). We store the extracted text and structured
-            data, not the original PDF file.
-          </p>
-          <p style={{ marginBottom: 10 }}>
-            <strong style={{ color: "var(--text)" }}>Preferences:</strong> your target roles,
-            locations, salary range, key skills, work authorization, preferred work mode, and any
-            free-text notes you add about yourself.
-          </p>
-          <p>
-            <strong style={{ color: "var(--text)" }}>Activity data:</strong> job listings crawled on
-            your behalf, the AI-generated fit scores/strengths/gaps tied to your account, and your
-            Kanban pipeline status for each listing.
-          </p>
-        </Section>
+      <LegalSection title="How we use your data">
+        <p>
+          We use your CV and preferences to search job boards, score listings, and generate
+          tailoring tips and apply-pack documents for you. Account data is used to sign you in and
+          run the service. We do not sell your data, and we do not use it for advertising.
+        </p>
+      </LegalSection>
 
-        <Section title="How we use your data">
-          <p>
-            Your CV and preferences are used to search job boards on your behalf and to generate AI
-            fit ratings, tailoring tips, and application briefs. We use your account data solely to
-            authenticate you and operate the service, never for advertising, and never sold to
-            anyone.
-          </p>
-        </Section>
+      <LegalSection title="Protecting your contact details from AI providers">
+        <p>
+          When your CV is parsed, we redact phone number and email before sending the text to an AI
+          provider. Real contact details are restored locally into your stored CV so generated
+          documents can still show them.
+        </p>
+      </LegalSection>
 
-        <Section title="Protecting your contact details from AI providers">
-          <p>
-            When your CV is parsed, we redact your phone number and email address before sending the
-            text to our AI provider, so the provider never sees them. Your real contact details are
-            extracted locally and restored directly into your stored CV data, so your structured CV
-            and any documents generated from it still include them correctly.
-          </p>
-        </Section>
+      <LegalSection title="Third parties we share data with">
+        <ul style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 8 }}>
+          <li>
+            <strong style={{ color: "var(--text)" }}>Jooble and JobsAPI (Indeed):</strong> receive
+            search terms from your job preferences. They do not receive your CV or identity.
+          </li>
+          <li>
+            <strong style={{ color: "var(--text)" }}>AI providers:</strong> the model you pick in
+            Settings for CV parsing, job rating, or apply packs receives the CV/job text needed for
+            that step (contact details redacted for parsing). OpenAI also receives CV and job text
+            to create similarity embeddings for a fast pre-filter, even if you picked another
+            provider for rating.
+          </li>
+          <li>
+            <strong style={{ color: "var(--text)" }}>MongoDB:</strong> stores account, CV,
+            preference, and job data described above.
+          </li>
+        </ul>
+      </LegalSection>
 
-        <Section title="Third parties we share data with">
-          <ul style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 8 }}>
-            <li>
-              <strong style={{ color: "var(--text)" }}>Jooble and JobsAPI (Indeed):</strong> receive
-              search terms derived from your job preferences to find listings. They never receive
-              your CV or identity.
-            </li>
-            <li>
-              <strong style={{ color: "var(--text)" }}>Mistral (EU-based), by default:</strong>{" "}
-              receives your CV text (with phone/email redacted, see above) and job descriptions to
-              parse your CV into structured data, generate fit ratings, gaps, tailoring tips,
-              briefs, and roasts. You can independently switch the CV-parsing model and the rating
-              model to OpenAI or DeepSeek from Settings; doing so sends that data to the provider
-              you pick instead, and requires your explicit confirmation first.
-            </li>
-            <li>
-              <strong style={{ color: "var(--text)" }}>OpenAI:</strong> always receives your CV text
-              and job description text to generate similarity embeddings (a numeric vector) used for
-              a fast pre-filter step before rating, regardless of which provider you've picked for
-              parsing/rating; this text is not used for parsing or rating unless you've also chosen
-              OpenAI for that.
-            </li>
-            <li>
-              <strong style={{ color: "var(--text)" }}>DeepSeek:</strong> only receives data if you
-              choose it as your CV-parsing or rating provider in Settings; not used otherwise.
-            </li>
-            <li>
-              <strong style={{ color: "var(--text)" }}>MongoDB:</strong> our database provider,
-              which stores all account, CV, preference, and job data described above.
-            </li>
-          </ul>
-        </Section>
+      <LegalSection title="Where your data is stored and processed">
+        <p>
+          Our app servers and database run in the EU (Lauterbourg, France). If you pick an AI
+          provider outside the EU, that party processes the data they receive. Switching an AI
+          provider in Settings requires your confirmation.
+        </p>
+      </LegalSection>
 
-        <Section title="Where your data is stored and processed">
-          <p>
-            Our servers and database run on infrastructure located in Lauterbourg, France (EU). With
-            the default Mistral provider handling CV parsing and job rating, the core processing of
-            your CV and job data stays within the EU end to end. If you switch either model to
-            OpenAI or DeepSeek in Settings, that data is processed by that provider instead (outside
-            the EU) for whichever step you switched.
-          </p>
-        </Section>
+      <LegalSection title="Data retention">
+        <p>
+          We keep your data for as long as your account exists. Deleting your account removes your
+          user record and every job listing tied to it from our database immediately. That cannot be
+          undone.
+        </p>
+        <p>
+          Server operational logs (for example an email address on a failed request) rotate out
+          within 30 days. Those logs are not the database and are not wiped by account deletion, but
+          they expire on their own.
+        </p>
+      </LegalSection>
 
-        <Section title="Data retention">
-          <p>
-            We keep your data for as long as your account exists. Deleting your account permanently
-            and immediately removes your user record and every job listing tied to it from our
-            database. This action cannot be undone.
-          </p>
-          <p>
-            Separately, our server keeps short-lived operational logs (e.g. your email address, to
-            trace a failed search or rating for debugging) for up to 30 days, after which they are
-            automatically rotated out. These logs are not part of the database and are not covered
-            by the account-deletion action above, but they age out on their own within that window.
-          </p>
-        </Section>
+      <LegalSection title="Your rights">
+        <p>
+          You can export everything we hold, delete only your CV, or delete the whole account from{" "}
+          <strong style={{ color: "var(--text)" }}>Settings → Data &amp; privacy</strong>. In the
+          EU/EEA or UK these are your GDPR rights of access, portability, and erasure.
+        </p>
+      </LegalSection>
 
-        <Section title="Your rights">
-          <p>
-            You can download a complete export of everything we hold about you, or permanently
-            delete your account and all associated data, at any time from{" "}
-            <strong style={{ color: "var(--text)" }}>Settings → Data &amp; privacy</strong>. If
-            you're in the EU/EEA or UK, these are your rights to access, portability, and erasure
-            under GDPR.
-          </p>
-        </Section>
+      <LegalSection title="Security">
+        <p>
+          Passwords are hashed with bcrypt. Sessions use a signed access token. Admin tools are
+          limited to one configured operator account.
+        </p>
+      </LegalSection>
 
-        <Section title="Security">
-          <p>
-            Passwords are hashed with bcrypt and never stored in plain text. Your session uses a
-            signed access token. Admin functionality is restricted to a single, explicitly
-            configured administrator account and cannot be reached by any other user.
-          </p>
-        </Section>
+      <LegalSection title="Cookies and tracking">
+        <p style={{ marginBottom: 10 }}>
+          JobRadar does not set advertising or analytics cookies. The public landing page loads no
+          third-party scripts. Fonts and JavaScript are self-hosted.
+        </p>
+        <p>
+          After you sign in, your session token and theme sit in your browser's local storage, not
+          in cookies, and are only sent to our API. See the{" "}
+          <Link to="/cookies" style={{ color: "var(--accent)" }}>
+            Cookie Policy
+          </Link>
+          .
+        </p>
+      </LegalSection>
 
-        <Section title="Cookies and tracking">
-          <p style={{ marginBottom: 10 }}>
-            JobRadar does not use cookies, analytics, or advertising trackers. The public landing
-            page loads no third-party scripts or CDN assets. Fonts and JavaScript are self-hosted
-            and bundled at build time (Vite), so visiting the homepage does not contact Google,
-            Cloudflare, or any other external tracker.
-          </p>
-          <p>
-            After you sign in, your session token and theme preference are stored in your browser's
-            local storage, not cookies, and are only sent to our own API, never to third-party
-            analytics or ad networks.
-          </p>
-        </Section>
+      <LegalSection title="Changes to this policy">
+        <p>
+          If this policy changes in a material way, we update the date at the top. Continued use
+          after a change means you accept the revised policy.
+        </p>
+      </LegalSection>
 
-        <Section title="Changes to this policy">
-          <p>
-            If this policy changes in a material way, we'll update the date at the top of this page.
-            Continued use of JobRadar after a change means you accept the revised policy.
-          </p>
-        </Section>
-
-        <Section title="Contact">
-          <p>
-            Questions about this policy or your data? Email{" "}
-            <a href="mailto:saimkaskar1@gmail.com" style={{ color: "var(--accent)" }}>
-              saimkaskar1@gmail.com
-            </a>
-            .
-          </p>
-        </Section>
-      </main>
-    </div>
+      <LegalSection title="Contact">
+        <p>
+          Questions about this policy or your data? Email{" "}
+          <a href="mailto:saimkaskar1@gmail.com" style={{ color: "var(--accent)" }}>
+            saimkaskar1@gmail.com
+          </a>
+          .
+        </p>
+      </LegalSection>
+    </LegalShell>
   );
 }

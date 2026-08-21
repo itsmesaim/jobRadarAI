@@ -205,8 +205,25 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
 
-.claude/worktrees/
-.claude/worktrees/
+# Local secrets (keep .env.example)
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Tectonic PDF engine (download on the VPS, not in git)
+backend/bin/
+backend/.tectonic_cache/
+
+# Logs / scratch
+tmp/
+temp/
+
 .claude/
-.claude/worktrees/

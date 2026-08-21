@@ -29,11 +29,25 @@ from services.prompt_safety import fence
 # ── Step 1: file bytes → raw text (format-specific) ──────
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    pages = [page.get_text() for page in doc]
+    pages = []
+    link_notes = []
+    for page in doc:
+        pages.append(page.get_text())
+        # get_text() only returns visible text, a hyperlinked label like "LinkedIn"
+        # carries its URL as a link annotation, not in the text stream, so the LLM
+        # parser never sees it unless it's spliced in separately here.
+        for link in page.get_links():
+            uri = link.get("uri")
+            if link.get("kind") == fitz.LINK_URI and uri:
+                label = page.get_textbox(link["from"]).strip()
+                if label:
+                    link_notes.append(f"[{label}: {uri}]")
     doc.close()
     raw = "\n".join(pages).strip()
     if not raw:
         raise ValueError("PDF appears to be empty or scanned (no extractable text).")
+    if link_notes:
+        raw += "\n\n" + "\n".join(link_notes)
     return raw
 
 
@@ -98,13 +112,20 @@ The JSON must follow this exact structure:
   "phone": "string or null",
   "location": "string or null",
   "summary": "string, the professional summary or objective",
-  "skills": ["skill1", "skill2"],
+  "links": {
+    "website": "personal site/portfolio URL exactly as written, or null",
+    "github": "GitHub profile URL exactly as written, or null",
+    "linkedin": "LinkedIn profile URL exactly as written, or null"
+  },
+  "skills": [
+    {"category": "string, e.g. Backend, Frontend, Cloud & DevOps, Machine Learning", "items": ["skill1", "skill2"]}
+  ],
   "experience": [
     {
       "title": "string",
-      "company": "string",
-      "start": "string e.g. 2022",
-      "end": "string e.g. 2025 or Present",
+      "company": "string, the organization name only, never append an event/context description with a pipe or dash",
+      "start": "string e.g. 2022, or null if this was a one-off event with no real duration",
+      "end": "string e.g. 2025 or Present, or null if this was a one-off event with no real duration",
       "bullets": ["bullet1", "bullet2"]
     }
   ],
@@ -114,7 +135,8 @@ The JSON must follow this exact structure:
       "description": "string, one sentence summary",
       "tech": ["tech1", "tech2"],
       "bullets": ["bullet1", "bullet2"],
-      "url": "string or null"
+      "live_url": "deployed/demo link exactly as written, or null",
+      "repo_url": "source code/GitHub repo link exactly as written, or null"
     }
   ],
   "education": [
@@ -123,7 +145,8 @@ The JSON must follow this exact structure:
       "institution": "string",
       "start": "string",
       "end": "string",
-      "grade": "string or null"
+      "grade": "string or null",
+      "specialization": "string or null, a Minor/Honours/concentration explicitly listed for this degree, e.g. 'Minor (Honours) in AI & ML in Healthcare', null if none is written"
     }
   ],
   "languages": ["English", "etc"],
@@ -133,14 +156,106 @@ The JSON must follow this exact structure:
 Rules:
 - Extract ONLY what is actually in the CV. Never invent or assume.
 - If a field is missing, use null for strings or [] for arrays.
-- skills should be individual technologies/tools, not sentences.
+- skills should be individual technologies/tools, not sentences, grouped under the
+  candidate's own natural categories (or close to them). Put anything that doesn't fit
+  a clear category under "Other" rather than forcing it somewhere it doesn't belong.
 - Keep bullet points concise and exactly as written in the CV.
+- links/live_url/repo_url: only fill these in if a URL is actually written in the CV
+  text, verbatim, never construct or guess one (e.g. never invent a github.com/username
+  URL just because a username is mentioned elsewhere). null if not present. Hyperlinked
+  labels appear as "[Label: URL]" notes near the end of the text, e.g. "[LinkedIn:
+  https://...]", match those to the right field by label the same as any other URL
+  written in the CV.
+- specialization: capture a Minor, Honours designation, or concentration ONLY if the CV
+  explicitly names one for that specific degree, as its own field, not folded into
+  "degree". null if the degree line doesn't mention one, never guess or infer.
 - The contact block has been replaced with [REDACTED_PHONE] / [REDACTED_EMAIL]
   placeholders, leave "phone" and "email" as null, they're filled in locally.
 """.strip()
 
+
+def flatten_skills(skills: list) -> list[str]:
+    """skills is either the categorized shape ([{"category": ..., "items": [...]}]) or
+    the older flat list[str] shape (CVs parsed before categorization existed), flattens
+    either into a plain list of skill names for callers that just need the names, not
+    the grouping (rating prompts, keyword matching, skill counts)."""
+    if not skills:
+        return []
+    if isinstance(skills, dict):
+        skills = [skills]
+    if isinstance(skills[0], dict):
+        return [
+            s
+            for group in skills
+            if isinstance(group, dict)
+            for s in (group.get("items") or [])
+            if isinstance(s, str)
+        ]
+    return [s for s in skills if isinstance(s, str)]
+
+
+# Search queries, not the full CV skill dump. Long parenthetical names
+# ("GANs (Generative Adversarial Networks, ...)") make Indeed/Jooble return 0.
+_SEARCH_SKILL_CAP = 8
+_SEARCH_SKILL_MAX_LEN = 32
+_SEARCH_SKILL_SKIP = {
+    "html5",
+    "css3",
+    "git",
+    "github",
+    "git / github",
+    "postman",
+    "agile",
+    "agile / scrum",
+    "scrum",
+    "performance optimisation",
+    "technical documentation",
+}
+
+
+def search_skills_from_cv(skills: list) -> list[str]:
+    """Short skill names for job-board search queries. One lead skill per
+    category when grouped, else first N short names from a flat list."""
+    if not skills:
+        return []
+    if isinstance(skills, dict):
+        skills = [skills]
+    picked: list[str] = []
+    seen: set[str] = set()
+
+    def consider(name: str) -> None:
+        s = name.strip()
+        if not s or len(s) > _SEARCH_SKILL_MAX_LEN:
+            return
+        key = s.lower()
+        if key in seen or key in _SEARCH_SKILL_SKIP:
+            return
+        seen.add(key)
+        picked.append(s)
+
+    if isinstance(skills[0], dict):
+        for group in skills:
+            if not isinstance(group, dict) or len(picked) >= _SEARCH_SKILL_CAP:
+                break
+            for item in group.get("items") or []:
+                if isinstance(item, str):
+                    consider(item)
+                    if item.strip() in picked:
+                        break
+    else:
+        for item in skills:
+            if len(picked) >= _SEARCH_SKILL_CAP:
+                break
+            if isinstance(item, str):
+                consider(item)
+    return picked[:_SEARCH_SKILL_CAP]
+
+
 _PHONE_RE = re.compile(r"(\+?\d[\d\-.\s()]{7,}\d)")
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+_MINOR_HONOURS_RE = re.compile(
+    r"\b(minor|honours|honors|concentration)\b", re.IGNORECASE
+)
 
 
 def _redact_contact_details(text: str) -> str:
@@ -213,6 +328,19 @@ async def parse_cv_with_llm(raw_text: str, user: dict | None = None) -> dict:
     parsed["phone"] = phone
     parsed["email"] = email
     parsed["parsed_by_model"] = f"{provider}:{model}"
+
+    # Deterministic backstop, not another prompt ask: the LLM can miss a minor/honours
+    # line, this can't recover the text, but it can at least flag the CV for review
+    # instead of the gap staying invisible (surfaced via Settings' existing CV review
+    # banner for auto-filled fields).
+    education = parsed.get("education") or []
+    has_specialization = any((edu or {}).get("specialization") for edu in education)
+    if education and not has_specialization and _MINOR_HONOURS_RE.search(raw_text):
+        parsed["parse_warnings"] = [
+            "Your CV mentions a Minor/Honours/concentration but we couldn't confidently "
+            "extract it into the Education section, please check and add it manually if needed."
+        ]
+
     return parsed
 
 

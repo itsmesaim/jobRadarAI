@@ -14,7 +14,7 @@ DELETE /users/skill-overrides/{skill}, remove a specific override
 
 Also adds about_me to UserPreferences.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from bson import ObjectId
@@ -26,9 +26,10 @@ from core.security import verify_password
 from database import get_database
 from deps import get_current_user
 from models.user import DeleteAccountRequest
+from services.cv_parser import flatten_skills
 from services.email import send_model_request_admin_email, smtp_configured
 from services.limits import get_user_usage
-from services.ai_models import get_model, list_models
+from services.ai_models import PURPOSE_USER_FIELDS, PURPOSES, get_model, list_models
 from services.calibration import (
     MIN_FEEDBACK_FOR_CALIBRATION,
     regenerate_calibration_notes,
@@ -54,8 +55,8 @@ class WorkMode(BaseModel):
 
 
 class UserPreferences(BaseModel):
-    preferred_locations: list[str] = ["Dublin Ireland"]
-    primary_role: str = "Full Stack Developer"
+    preferred_locations: list[str] = []
+    primary_role: str = ""
     secondary_roles: list[str] = []
     job_types: JobTypes = JobTypes()
     min_salary: int = 0
@@ -66,18 +67,24 @@ class UserPreferences(BaseModel):
     work_authorization: str = ""
     avoid_industries: list[str] = []
     work_mode: WorkMode = WorkMode()
-    about_me: str = ""  # free-text career context, surfaced early in rating prompt
+    about_me: str = ""  # user's own notes, never overwritten by CV parse
+    about_me_from_cv: str = ""  # CV summary, refreshed on each upload
+    showcase_projects: list[str] = (
+        []
+    )  # flagship work to lead tailored CVs, any user's list
     email_reminders_enabled: bool = True  # daily high-score apply nudges via SMTP
     reminder_hours: list[int] = (
         []
     )  # local hours (0-23) to send reminders; [] = app default (see job_reminders.py)
-    timezone: str = "Europe/Dublin"  # IANA tz, drives when auto-crawl/reminders fire
+    timezone: str = ""  # IANA tz; empty = UTC until they pick one in Settings
     # "" = app default. Otherwise must match an active entry in the
     # admin-managed AI model catalog (services/ai_models.py), validated in
     # update_preferences below, not via a fixed Literal, since admin can
     # add/remove models without a code change.
     rating_provider: str = ""
     rating_model: str = ""
+    apply_pack_provider: str = ""
+    apply_pack_model: str = ""
     # Same idea, for the model that parses an uploaded CV into structured JSON.
     cv_parsing_provider: str = ""
     cv_parsing_model: str = ""
@@ -120,6 +127,9 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
 
     await _validate_model_choice("rating_provider", "rating_model", "rating")
     await _validate_model_choice(
+        "apply_pack_provider", "apply_pack_model", "apply_pack"
+    )
+    await _validate_model_choice(
         "cv_parsing_provider", "cv_parsing_model", "cv_parsing"
     )
 
@@ -139,11 +149,17 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
         "avoid_industries": prefs["avoid_industries"],
         "work_mode": prefs["work_mode"],
         "about_me": prefs["about_me"],
+        "about_me_from_cv": prefs.get("about_me_from_cv", ""),
+        "showcase_projects": [
+            p.strip() for p in (prefs.get("showcase_projects") or []) if str(p).strip()
+        ][:12],
         "email_reminders_enabled": prefs["email_reminders_enabled"],
         "reminder_hours": reminder_hours,
         "timezone": prefs["timezone"],
         "rating_provider": prefs["rating_provider"],
         "rating_model": prefs["rating_model"],
+        "apply_pack_provider": prefs["apply_pack_provider"],
+        "apply_pack_model": prefs["apply_pack_model"],
         "cv_parsing_provider": prefs["cv_parsing_provider"],
         "cv_parsing_model": prefs["cv_parsing_model"],
     }
@@ -155,6 +171,8 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
     # "revert off an admin override" path, no special case.
     if prefs["rating_provider"] != user.get("rating_provider", ""):
         updates["rating_provider_consent_at"] = datetime.now(timezone.utc)
+    if prefs["apply_pack_provider"] != user.get("apply_pack_provider", ""):
+        updates["apply_pack_provider_consent_at"] = datetime.now(timezone.utc)
     if prefs["cv_parsing_provider"] != user.get("cv_parsing_provider", ""):
         updates["cv_parsing_provider_consent_at"] = datetime.now(timezone.utc)
 
@@ -165,8 +183,8 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
 @router.get("/preferences")
 async def get_preferences(user=Depends(get_current_user)):
     return {
-        "preferred_locations": user.get("preferred_locations", ["Dublin Ireland"]),
-        "primary_role": user.get("primary_role", "Full Stack Developer"),
+        "preferred_locations": user.get("preferred_locations", []),
+        "primary_role": user.get("primary_role", ""),
         "secondary_roles": user.get("secondary_roles", []),
         "job_types": user.get("job_types", {}),
         "min_salary": user.get("min_salary", 0),
@@ -180,12 +198,17 @@ async def get_preferences(user=Depends(get_current_user)):
             "work_mode", {"remote": True, "hybrid": True, "onsite": False}
         ),
         "about_me": user.get("about_me", ""),
+        "about_me_from_cv": user.get("about_me_from_cv", ""),
+        "showcase_projects": user.get("showcase_projects", []),
         "email_reminders_enabled": user.get("email_reminders_enabled", True),
         "reminder_hours": user.get("reminder_hours", []),
-        "timezone": user.get("timezone", "Europe/Dublin"),
+        "timezone": user.get("timezone", ""),
         "rating_provider": user.get("rating_provider", ""),
         "rating_model": user.get("rating_model", ""),
         "rating_model_request": user.get("rating_model_request"),
+        "apply_pack_provider": user.get("apply_pack_provider", ""),
+        "apply_pack_model": user.get("apply_pack_model", ""),
+        "apply_pack_model_request": user.get("apply_pack_model_request"),
         "cv_parsing_provider": user.get("cv_parsing_provider", ""),
         "cv_parsing_model": user.get("cv_parsing_model", ""),
         "cv_parsing_model_request": user.get("cv_parsing_model_request"),
@@ -214,7 +237,8 @@ async def regenerate_calibration_notes_now(user=Depends(get_current_user)):
 
 @router.get("/ai-models")
 async def get_available_ai_models(
-    purpose: Literal["rating", "cv_parsing"] = "rating", user=Depends(get_current_user)
+    purpose: Literal["rating", "apply_pack", "cv_parsing"] = "rating",
+    user=Depends(get_current_user),
 ):
     """Active catalog entries for a Settings picker (admin-managed, see
     routes/admin.py ai-models CRUD)."""
@@ -224,7 +248,7 @@ async def get_available_ai_models(
 class ModelRequest(BaseModel):
     requested_model: str
     note: str = ""
-    purpose: Literal["rating", "cv_parsing"] = "rating"
+    purpose: Literal["rating", "apply_pack", "cv_parsing"] = "rating"
 
 
 @router.post("/rating-model-request")
@@ -237,11 +261,7 @@ async def request_model(payload: ModelRequest, user=Depends(get_current_user)):
     if not requested_model:
         raise HTTPException(status_code=400, detail="requested_model is required.")
 
-    field = (
-        "rating_model_request"
-        if payload.purpose == "rating"
-        else "cv_parsing_model_request"
-    )
+    field = PURPOSE_USER_FIELDS[payload.purpose][2]
     db = get_database()
     now = datetime.now(timezone.utc)
     await db.users.update_one(
@@ -278,19 +298,34 @@ async def request_model(payload: ModelRequest, user=Depends(get_current_user)):
 # entries) rather than a separate stored notification log.
 
 
+# A job's rated_at/status_at timestamp is set once and never moves again, so comparing
+# it against notifications_last_seen_at alone means a still-true condition (an unapplied
+# 8+ job, a stale follow-up) can only ever light the badge ONCE, opening the bell one
+# time permanently kills it even though nothing was actually resolved. This re-arms the
+# badge for still-true, still-actionable conditions after a few days of silence, "new
+# model" alerts are a one-time event and deliberately excluded, they have nothing to re-nag about.
+NOTIFICATIONS_REMIND_AFTER_DAYS = 3
+
+
 @router.get("/notifications")
 async def get_notifications(user=Depends(get_current_user)):
     db = get_database()
     user_id = str(user["_id"])
     last_seen = user.get("notifications_last_seen_at")
+    if isinstance(last_seen, datetime) and last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+    remind_stale = last_seen is not None and (
+        datetime.now(timezone.utc) - last_seen
+        > timedelta(days=NOTIFICATIONS_REMIND_AFTER_DAYS)
+    )
 
     notifications = []
     unseen_count = 0
 
     # The dropdown always lists every currently-live item (still actionable,
     # e.g. "3 top matches ready to apply to" stays useful even if you've
-    # already seen it), but the badge only counts what's new since last_seen,
-    # so opening the bell actually clears it instead of nagging forever.
+    # already seen it). The badge counts what's new since last_seen, OR,
+    # if it's been a few days of silence, still-unresolved items too.
     apply_soon_count = await get_apply_soon_count(db, user_id)
     if apply_soon_count > 0:
         notifications.append(
@@ -308,7 +343,7 @@ async def get_notifications(user=Depends(get_current_user)):
             if last_seen
             else apply_soon_count
         )
-        if apply_soon_new > 0:
+        if apply_soon_new > 0 or remind_stale:
             unseen_count += 1
 
     # Named per-job entries, not a bare count, "1 job needs a follow-up" gives
@@ -331,18 +366,23 @@ async def get_notifications(user=Depends(get_current_user)):
                 "link": "/kanban",
             }
         )
-        if job["newly_stale"]:
+        if job["newly_stale"] or remind_stale:
             unseen_count += 1
 
     # Only compare against a baseline once one exists, otherwise every model
     # ever added would show up as "new" on a user's very first bell check.
     if last_seen:
-        for purpose in ("rating", "cv_parsing"):
+        purpose_labels = {
+            "rating": "job rating",
+            "apply_pack": "apply pack / tailored CV",
+            "cv_parsing": "CV parsing",
+        }
+        for purpose in PURPOSES:
             new_model_count = await db.rating_models.count_documents(
                 {"purpose": purpose, "active": True, "created_at": {"$gt": last_seen}}
             )
             if new_model_count > 0:
-                label = "job rating" if purpose == "rating" else "CV parsing"
+                label = purpose_labels[purpose]
                 notifications.append(
                     {
                         "kind": "new_model",
@@ -434,7 +474,7 @@ async def get_data_summary(user=Depends(get_current_user)):
         cv_summary = {
             "filename": cv.get("filename"),
             "uploaded_at": cv.get("uploaded_at"),
-            "skills_count": len(structured.get("skills", [])),
+            "skills_count": len(flatten_skills(structured.get("skills", []))),
             "experience_count": len(structured.get("experience", [])),
             "projects_count": len(structured.get("projects", [])),
             "education_count": len(structured.get("education", [])),
@@ -578,6 +618,8 @@ async def export_my_data(user=Depends(get_current_user)):
             "avoid_industries": user.get("avoid_industries", []),
             "work_mode": user.get("work_mode", {}),
             "about_me": user.get("about_me", ""),
+            "about_me_from_cv": user.get("about_me_from_cv", ""),
+            "showcase_projects": user.get("showcase_projects", []),
         },
         "skill_overrides": user.get("skill_overrides", {}),
         "jobs": exported_jobs,

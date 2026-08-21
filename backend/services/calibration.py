@@ -1,11 +1,11 @@
 """
-Standing calibration notes — distills a user's rating feedback into a short
+Standing calibration notes - distills a user's rating feedback into a short
 set of rules applied to EVERY rating, not just embedding-similar ones.
 
 services/rating.py already retrieves the user's feedback on similar past
 jobs per-rating (_retrieve_similar_rated_jobs), but that only surfaces
 feedback when the new job happens to be embedding-similar to the specific
-job the feedback was left on — a general correction ("stop penalizing me for
+job the feedback was left on - a general correction ("stop penalizing me for
 freelance-only experience") never becomes a standing rule under that scheme.
 This module periodically summarizes ALL of a user's feedback into a
 persistent note block (services/rating.py injects it into every prompt,
@@ -17,11 +17,15 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from config import settings
 from database import get_database
+from services.ai_usage import record_from_llm_response
+from services.limits import check_ai_token_quota
 from services.llm import get_llm
+from services.prompt_safety import fence
 
 # Below this many feedback entries there isn't enough signal to distill
-# recurring patterns from — leave calibration_notes empty rather than have
+# recurring patterns from - leave calibration_notes empty rather than have
 # the LLM invent "patterns" out of 1-2 data points.
 MIN_FEEDBACK_FOR_CALIBRATION = 3
 
@@ -33,7 +37,7 @@ You are analyzing a candidate's feedback on their AI job-fit ratings to
 extract STANDING RULES the rater should follow on every future rating, not
 just similar ones.
 
-Look for recurring corrections — the same complaint or correction showing up
+Look for recurring corrections - the same complaint or correction showing up
 across multiple jobs. Ignore one-off comments that don't repeat.
 
 Output 3-8 short, concrete, imperative rules (one per line, no numbering, no
@@ -78,9 +82,9 @@ def _build_feedback_block(entries: list[dict]) -> str:
     for e in entries:
         line = f"- {e['title']}: AI scored {e['score']}/10 ({e['verdict']})"
         if e.get("stars"):
-            line += f" — user rated the rating itself {e['stars']}/5 stars"
+            line += f" - user rated the rating itself {e['stars']}/5 stars"
         if e.get("comment"):
-            line += f' — user said: "{e["comment"]}"'
+            line += f' - user said: "{e["comment"]}"'
         lines.append(line)
     return "\n".join(lines)
 
@@ -94,12 +98,31 @@ async def regenerate_calibration_notes(user_id: str) -> str | None:
     if len(entries) < MIN_FEEDBACK_FOR_CALIBRATION:
         return None
 
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        return None
+    token_ok, _ = await check_ai_token_quota(user)
+    if not token_ok:
+        return (
+            None  # background/quiet-fail path, matches this function's existing style
+        )
+
     messages = [
         SystemMessage(content=CALIBRATION_SYSTEM_PROMPT),
-        HumanMessage(content=_build_feedback_block(entries)),
+        HumanMessage(content=fence("FEEDBACK HISTORY", _build_feedback_block(entries))),
     ]
     llm = get_llm()
     response = await llm.ainvoke(messages)
+
+    model = getattr(llm, "model", getattr(llm, "model_name", settings.openai_model))
+    await record_from_llm_response(
+        user_id,
+        response,
+        operation="calibration",
+        provider=settings.llm_provider,
+        model=str(model or "unknown"),
+    )
+
     notes = (response.content or "").strip()
 
     if not notes or notes == "NO_CLEAR_PATTERN":

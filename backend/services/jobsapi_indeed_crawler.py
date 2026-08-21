@@ -1,6 +1,6 @@
 """
 JobsAPI (RapidAPI - jobs-api14) Indeed crawler.
-Paid tier: $10/mo, 20,000 calls — Ireland supported via countryCode=ie.
+Paid tier: $10/mo, 20,000 calls - Ireland supported via countryCode=ie.
 Docs: rapidapi.com/Pat92/api/jobs-api14
 """
 
@@ -12,6 +12,7 @@ from bson import ObjectId
 
 from config import settings
 from database import get_database
+from services.cv_parser import flatten_skills, search_skills_from_cv
 from services.jd_text import MIN_JD_LENGTH, is_incomplete_jd
 from services.job_dedup import content_fingerprint, find_duplicate_job, hash_url
 
@@ -21,25 +22,17 @@ MAX_JOB_AGE_DAYS = 21
 
 
 def _build_search_terms(user: dict) -> list[str]:
-    primary_role = user.get("primary_role", "Full Stack Developer")
-    secondary_roles = user.get("secondary_roles", [])
-    roles = [primary_role] + secondary_roles
+    roles = [
+        r.strip()
+        for r in [user.get("primary_role"), *(user.get("secondary_roles") or [])]
+        if r and str(r).strip()
+    ]
 
     key_skills = user.get("key_skills", [])
     if not key_skills:
         cv = user.get("cv", {})
         structured = cv.get("structured", {})
-        all_skills = structured.get("skills", [])
-        skip = {
-            "HTML5",
-            "CSS3",
-            "Git / GitHub",
-            "Postman",
-            "Agile / Scrum",
-            "Performance Optimisation",
-            "Technical Documentation",
-        }
-        key_skills = [s for s in all_skills if s not in skip][:5]
+        key_skills = search_skills_from_cv(structured.get("skills", []))
 
     terms = []
     for role in roles:
@@ -49,6 +42,8 @@ def _build_search_terms(user: dict) -> list[str]:
                 terms.append(f"{role} {skill}")
             if len(key_skills) >= 2:
                 terms.append(f"{key_skills[0]} {key_skills[1]} developer")
+    if not roles:
+        terms.extend(key_skills[:5])
 
     seen = set()
     unique = [t for t in terms if not (t in seen or seen.add(t))]
@@ -124,7 +119,7 @@ def _detect_location_string(location: str) -> str:
         return "Remote"
     if "europe" in loc:
         return "Europe"
-    # pass through as-is — Indeed handles free text well
+    # pass through as-is - Indeed handles free text well
     return location
 
 
@@ -137,10 +132,10 @@ def _jobsapi_headers() -> dict:
 
 def _skip_jobsapi(max_stored: int | None, label: str) -> dict | None:
     if not settings.jobsapi_key:
-        print(f"[{label}] SKIPPED — JOBSAPI_KEY not set in server .env")
+        print(f"[{label}] SKIPPED - JOBSAPI_KEY not set in server .env")
         return {"found": 0, "stored": 0, "skipped": 0}
     if max_stored is not None and max_stored <= 0:
-        print(f"[{label}] SKIPPED — storage cap already reached this cycle")
+        print(f"[{label}] SKIPPED - storage cap already reached this cycle")
         return {"found": 0, "stored": 0, "skipped": 0}
     return None
 
@@ -160,7 +155,9 @@ async def crawl_jobs_for_user_jobsapi(
         user = fresh_user
 
     search_terms = _build_search_terms(user)
-    locations = user.get("preferred_locations", ["Dublin Ireland"])
+    locations = [
+        loc for loc in (user.get("preferred_locations") or []) if str(loc).strip()
+    ]
 
     headers = _jobsapi_headers()
 
@@ -276,7 +273,7 @@ async def crawl_jobs_for_user_jobsapi(
 
                     url_hash = hash_url(url)
 
-                    # Relevance filter — avoid storing clearly off-target jobs
+                    # Relevance filter - avoid storing clearly off-target jobs
                     if not _is_relevant_job(full_text, user):
                         skipped += 1
                         continue
@@ -337,7 +334,7 @@ def _is_relevant_job(full_text: str, user: dict) -> bool:
     if not key_skills:
         cv = user.get("cv", {})
         structured = cv.get("structured", {})
-        all_skills = structured.get("skills", [])
+        all_skills = flatten_skills(structured.get("skills", []))
         skip = {"HTML5", "CSS3", "Git / GitHub", "Postman", "Agile / Scrum"}
         key_skills = [s for s in all_skills if s not in skip][:5]
 

@@ -5,6 +5,7 @@ Suitable for single-process deployments. For multi-worker production,
 put rate limiting at the reverse proxy (nginx, Cloudflare) as well.
 """
 
+import ipaddress
 import time
 from collections import defaultdict
 
@@ -18,6 +19,7 @@ _LIMITS: dict[str, tuple[int, int]] = {
     "login": (10, 60),
     "register": (5, 60),
     "forgot_password": (5, 300),
+    "fetch_url": (10, 60),
 }
 
 # Prune stale keys every N calls to prevent unbounded memory growth on long-running servers
@@ -25,17 +27,27 @@ _PRUNE_EVERY = 500
 _prune_counter = 0
 
 
+def _is_trusted_proxy_peer(host: str) -> bool:
+    """True if `host` is the loopback/private address of a local reverse
+    proxy (nginx on the same VPS), the only case where forwarding the
+    client's own X-Forwarded-For header is safe to trust."""
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private
+
+
 def _client_ip(request: Request) -> str:
+    peer = request.client.host if request.client else "unknown"
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
+    if forwarded and _is_trusted_proxy_peer(peer):
         return forwarded.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return "unknown"
+    return peer
 
 
 def _prune_stale_keys(now: float) -> None:
-    """Remove keys whose entire hit list has expired — prevents dict growing forever."""
+    """Remove keys whose entire hit list has expired - prevents dict growing forever."""
     max_window = max(w for _, w in _LIMITS.values())
     cutoff = now - max_window
     stale = [k for k, hits in _hits.items() if not any(t > cutoff for t in hits)]

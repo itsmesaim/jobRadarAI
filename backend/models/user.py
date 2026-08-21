@@ -3,7 +3,7 @@ User schemas (Pydantic v2).
 
 Note: we keep request models (what the client sends) separate from
 response models (what we send back). Password hashes never appear in
-any response model — they simply aren't a field on UserPublic.
+any response model - they simply aren't a field on UserPublic.
 """
 
 from datetime import datetime
