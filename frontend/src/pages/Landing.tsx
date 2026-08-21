@@ -612,10 +612,10 @@ function DemoJobDetailModal({
             <div className="job-modal-footer-actions">
               <Link
                 to="/login"
-                className="btn btn-ghost job-modal-action-btn"
-                title="Opens the original job listing in a new tab"
+                className="btn job-modal-action-btn job-modal-apply-here"
+                title="Open the original listing to apply"
               >
-                <ExternalLink size={14} /> View posting
+                <ExternalLink size={14} /> Apply here
               </Link>
               <Link
                 to="/login"

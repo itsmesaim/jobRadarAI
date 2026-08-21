@@ -4,14 +4,11 @@ import {
   Building2,
   MapPin,
   Check,
-  Clock,
   Download,
   Loader,
   Sparkles,
   ClipboardCopy,
   RefreshCw,
-  CalendarClock,
-  Cpu,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -55,11 +52,32 @@ function timeAgo(dateStr?: string): string {
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
-  const remMins = mins % 60;
-  if (hrs < 24) return remMins > 0 ? `${hrs}h ${remMins}m ago` : `${hrs}h ago`;
+  if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
   return `${Math.floor(days / 7)}w ago`;
+}
+
+function sourceLabel(source?: string): string {
+  if (source === "manual") return "Manual";
+  if (source === "jooble") return "Jooble";
+  if (source === "jobsapi-indeed") return "Indeed";
+  if (source === "jobsapi-linkedin") return "LinkedIn";
+  return "Auto";
+}
+
+function prettyRatedBy(raw?: string | null): string {
+  if (!raw) return "";
+  const s = raw.trim();
+  const i = s.indexOf(":");
+  if (i < 0) return s;
+  const provider = s.slice(0, i);
+  const model = s.slice(i + 1);
+  const stripped = model.toLowerCase().startsWith(provider.toLowerCase())
+    ? model.slice(provider.length).replace(/^[-:]/, "")
+    : model;
+  const prov = provider.charAt(0).toUpperCase() + provider.slice(1);
+  return stripped ? `${prov} ${stripped}` : prov;
 }
 
 function fullDate(dateStr?: string): string {
@@ -125,7 +143,7 @@ export function JobDetailModal({ job, onClose }: Props) {
   const queryClient = useQueryClient();
   const [copiedBrief, setCopiedBrief] = useState(false);
   const [packReady, setPackReady] = useState(false);
-  const [packLoading, setPackLoading] = useState(false);
+  const [packLoading, setPackLoading] = useState(!!job.apply_pack_in_progress);
   const [packStageText, setPackStageText] = useState<string | null>(null);
   const packBusyRef = useRef(false);
   const [packAts, setPackAts] = useState<{
@@ -378,136 +396,60 @@ export function JobDetailModal({ job, onClose }: Props) {
   };
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 60,
-        padding: 16,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="card job-detail-modal"
-        style={{
-          width: "100%",
-          maxWidth: 680,
-          maxHeight: "88dvh",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
-      >
+    <div className="job-modal-overlay" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="card job-detail-modal">
         {/* Header */}
         <div className="job-modal-header">
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                marginBottom: "var(--space-2)",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: "var(--text-xs)",
-                  fontWeight: 600,
-                  letterSpacing: "0.05em",
-                  textTransform: "uppercase",
-                  color: "var(--text-muted)",
-                }}
-              >
-                {job.source === "manual"
-                  ? "Manual"
-                  : job.source === "jooble"
-                    ? "Jooble"
-                    : job.source === "jobsapi-indeed"
-                      ? "Indeed"
-                      : job.source === "jobsapi-linkedin"
-                        ? "LinkedIn"
-                        : "Auto"}
-              </span>
-            </div>
-
-            <div className="job-modal-timestamps">
+          <div className="job-modal-header-main">
+            <h2 className="job-modal-title">{title}</h2>
+            {(company || location) && (
+              <p className="job-modal-company">
+                {company && (
+                  <span>
+                    <Building2 size={13} /> {company}
+                  </span>
+                )}
+                {location && (
+                  <span>
+                    <MapPin size={13} /> {location}
+                  </span>
+                )}
+              </p>
+            )}
+            <p className="job-modal-timestamps">
+              <span className="job-modal-source">{sourceLabel(job.source)}</span>
               {job.posted_at_actual && (
-                <span
-                  title={`Posted: ${fullDate(job.posted_at_actual)}`}
-                  style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}
-                >
-                  <Clock size={11} /> Posted {timeAgo(job.posted_at_actual)}
+                <span title={`Posted: ${fullDate(job.posted_at_actual)}`}>
+                  Posted {timeAgo(job.posted_at_actual)}
                 </span>
               )}
               {job.crawled_at && (
-                <span
-                  title={`Pulled by JobRadar: ${fullDate(job.crawled_at)}`}
-                  style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}
-                >
-                  <CalendarClock size={11} /> Pulled {timeAgo(job.crawled_at)}
+                <span title={`Pulled by JobRadar: ${fullDate(job.crawled_at)}`}>
+                  Pulled {timeAgo(job.crawled_at)}
                 </span>
               )}
               {rating.rated_at && (
-                <span
-                  title={`Last rated: ${fullDate(rating.rated_at)}`}
-                  style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}
-                >
-                  <Sparkles size={11} /> Rated {timeAgo(rating.rated_at)}
+                <span title={`Last rated: ${fullDate(rating.rated_at)}`}>
+                  Rated {timeAgo(rating.rated_at)}
                 </span>
               )}
               {rating.rated_by_model && (
-                <span
-                  title={`Rated by: ${rating.rated_by_model}`}
-                  style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}
-                >
-                  <Cpu size={11} /> {rating.rated_by_model}
+                <span className="job-modal-model" title={`Rated by: ${rating.rated_by_model}`}>
+                  {prettyRatedBy(rating.rated_by_model)}
                 </span>
               )}
-            </div>
-            <h2 className="job-modal-title">{title}</h2>
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "var(--space-3)",
-                fontSize: "var(--text-sm)",
-                color: "var(--text-secondary)",
-              }}
-            >
-              {company && (
-                <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
-                  <Building2 size={13} /> {company}
-                </span>
-              )}
-              {location && (
-                <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
-                  <MapPin size={13} /> {location}
-                </span>
-              )}
-            </div>
+            </p>
           </div>
-          <div
-            style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}
-          >
+          <div className="job-modal-header-aside">
             <ScoreBadge score={rating.score} size="lg" loading={!!job.rating_in_progress} />
-            <button
-              onClick={onClose}
-              className="btn btn-ghost"
-              style={{ padding: "var(--space-2) var(--space-3)" }}
-              aria-label="Close"
-            >
+            <button onClick={onClose} className="btn btn-ghost job-modal-close" aria-label="Close">
               <X size={16} />
             </button>
           </div>
         </div>
 
         {/* Body, scrollable */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-5) var(--space-6)" }}>
+        <div className="job-modal-body">
           {job.rating_in_progress && (
             <p
               style={{
@@ -927,9 +869,10 @@ export function JobDetailModal({ job, onClose }: Props) {
                 href={job.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn btn-ghost job-modal-action-btn"
+                className="btn job-modal-action-btn job-modal-apply-here"
+                title="Open the original listing to apply"
               >
-                <ExternalLink size={14} /> View posting
+                <ExternalLink size={14} /> Apply here
               </a>
             )}
             <button

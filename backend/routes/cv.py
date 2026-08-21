@@ -84,10 +84,8 @@ async def upload_cv(
         "$unset": {"cv_embedding": ""},
     }
 
-    # Auto-fill Settings fields that overlap 1:1 with parsed CV data, so the
-    # user isn't manually re-typing what's already on their CV. Always
-    # overwrites with the latest CV's values (per product decision), only
-    # when the CV actually has that field, never wipe a field with nothing.
+    # Fill empty search prefs from the CV. Never clobber locations or role
+    # the user already set. Key skills refresh from this parse.
     autofilled = _autofill_preferences_from_cv(structured, user)
     if autofilled:
         update["$set"].update(autofilled)
@@ -102,23 +100,32 @@ async def upload_cv(
 
 
 def _autofill_preferences_from_cv(structured: dict, user: dict | None = None) -> dict:
-    """Maps parsed CV fields onto Settings. Never overwrites the user's own
-    about_me. Key skills for search stay a short list, the full dump lives on
-    the CV and is already used for rating."""
+    """Maps parsed CV fields onto Settings.
+
+    Role and search locations fill only when empty so a re-upload does not
+    wipe Job search. Key skills always refresh from this CV (short search
+    list). about_me is never touched. about_me_from_cv follows the new CV.
+    """
     fields: dict = {}
     user = user or {}
 
     experience = structured.get("experience") or []
-    if experience and experience[0].get("title"):
+    if (
+        experience
+        and experience[0].get("title")
+        and not str(user.get("primary_role") or "").strip()
+    ):
         fields["primary_role"] = experience[0]["title"]
 
-    location = structured.get("location")
-    if location:
+    location = (structured.get("location") or "").strip()
+    existing_locations = [
+        loc for loc in (user.get("preferred_locations") or []) if str(loc).strip()
+    ]
+    if location and not existing_locations:
         fields["preferred_locations"] = [location]
 
     search = search_skills_from_cv(structured.get("skills") or [])
-    existing = user.get("key_skills") or []
-    if search and (not existing or len(existing) > 15):
+    if search:
         fields["key_skills"] = search
 
     summary = (structured.get("summary") or "").strip()

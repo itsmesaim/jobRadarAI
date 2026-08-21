@@ -64,9 +64,77 @@ from services.url_fetch import fetch_job_page_text
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 # Shared generation task per user+job so a client disconnect or double-click
-# does not cancel the LLM work or 429 the retry. Single-process, same class as
-# core/rate_limit.py's in-memory limiter.
+# does not cancel the LLM work or 429 the retry. In-memory is same-process
+# only; Mongo apply_pack_generating survives refresh and other workers.
 _apply_pack_tasks: dict[str, asyncio.Task] = {}
+_PACK_GEN_STALE = timedelta(minutes=12)
+
+
+def _as_utc(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        try:
+            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _pack_is_generating(job: dict, user_id: str) -> bool:
+    started = _as_utc((job.get("apply_pack_generating") or {}).get(user_id))
+    if not started:
+        return False
+    return datetime.now(timezone.utc) - started < _PACK_GEN_STALE
+
+
+async def _claim_apply_pack_generation(db, job_id: str, user_id: str) -> bool:
+    now = datetime.now(timezone.utc)
+    field = f"apply_pack_generating.{user_id}"
+    doc = await db.jobs.find_one_and_update(
+        {
+            "_id": ObjectId(job_id),
+            "$or": [
+                {field: {"$exists": False}},
+                {field: None},
+                {field: {"$lt": now - _PACK_GEN_STALE}},
+            ],
+        },
+        {"$set": {field: now}},
+    )
+    return doc is not None
+
+
+async def _release_apply_pack_generation(db, job_id: str, user_id: str) -> None:
+    await db.jobs.update_one(
+        {"_id": ObjectId(job_id)},
+        {"$unset": {f"apply_pack_generating.{user_id}": ""}},
+    )
+
+
+async def _wait_for_apply_pack(
+    db, job_id: str, user_id: str, rating: dict, cv_uploaded_at
+) -> dict | None:
+    deadline = datetime.now(timezone.utc) + _PACK_GEN_STALE
+    while datetime.now(timezone.utc) < deadline:
+        job = await db.jobs.find_one({"_id": ObjectId(job_id)})
+        if not job:
+            return None
+        cached = (job.get("apply_pack_cache") or {}).get(user_id)
+        if _apply_pack_cache_fresh(cached, rating, cv_uploaded_at):
+            return {
+                "pack": cached["pack"],
+                "ats": cached["ats"],
+                "content": cached.get("content"),
+            }
+        if not _pack_is_generating(job, user_id):
+            return None
+        await asyncio.sleep(1.5)
+    return None
 
 
 def _stamp(value) -> str | None:
@@ -156,7 +224,10 @@ def _format_job(job: dict, user_id: str) -> dict:
         "status": job.get(f"status_{user_id}", "NEW"),
         "rating_in_progress": in_progress,
         "rated_by_model": None if in_progress else rating.get("rated_by_model"),
-        "apply_pack_in_progress": f"{user_id}:{job.get('_id')}" in _apply_pack_tasks,
+        "apply_pack_in_progress": (
+            f"{user_id}:{job.get('_id')}" in _apply_pack_tasks
+            or _pack_is_generating(job, user_id)
+        ),
     }
 
 
@@ -936,71 +1007,92 @@ async def get_job_apply_pack(
 
     task_key = f"{user_id}:{job_id}"
     task = _apply_pack_tasks.get(task_key)
+    if task is not None and task.done():
+        _apply_pack_tasks.pop(task_key, None)
+        task = None
+
+    joining_existing = False
     if task is None:
-        if part == "all":
-            allowed, message, remaining = await check_and_increment_apply_pack(user)
-            if not allowed:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message
-                )
-        else:
-            remaining = await get_remaining_apply_packs(user)
+        claimed = await _claim_apply_pack_generation(db, job_id, user_id)
+        if claimed:
+            if part == "all":
+                allowed, message, remaining = await check_and_increment_apply_pack(user)
+                if not allowed:
+                    await _release_apply_pack_generation(db, job_id, user_id)
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message
+                    )
+            else:
+                remaining = await get_remaining_apply_packs(user)
 
-        async def _produce() -> dict | None:
-            print(
-                f"[apply_pack] cache MISS job={job_id} user={user_id} "
-                f"regenerate={regenerate} cached_keys={list((cached or {}).keys())}",
-                flush=True,
-            )
-            print(f"[apply_pack] generating job={job_id} user={user_id}", flush=True)
-            try:
-                result = None
-                async for kind, payload in generate_apply_pack_stream(
-                    job,
-                    user,
-                    rating,
-                    part=part,
-                    note=note,
-                    previous=(
-                        (cached or {}).get("content")
-                        if part in ("cv", "cover")
-                        else None
-                    ),
-                ):
-                    if kind == "done":
-                        result = payload
-                if not result or not result.get("content"):
-                    raise ValueError("Apply pack generation finished with no content.")
-                await db.jobs.update_one(
-                    {"_id": ObjectId(job_id)},
-                    {
-                        "$set": {
-                            f"apply_pack_cache.{user_id}": {
-                                "pack": result["pack"],
-                                "ats": result["ats"],
-                                "content": result["content"],
-                                "rated_at": rating.get("rated_at"),
-                                "cv_uploaded_at": cv_uploaded_at,
-                                "generated_at": datetime.now(timezone.utc),
+            async def _produce() -> dict | None:
+                print(
+                    f"[apply_pack] cache MISS job={job_id} user={user_id} "
+                    f"regenerate={regenerate} cached_keys={list((cached or {}).keys())}",
+                    flush=True,
+                )
+                print(
+                    f"[apply_pack] generating job={job_id} user={user_id}", flush=True
+                )
+                try:
+                    result = None
+                    async for kind, payload in generate_apply_pack_stream(
+                        job,
+                        user,
+                        rating,
+                        part=part,
+                        note=note,
+                        previous=(
+                            (cached or {}).get("content")
+                            if part in ("cv", "cover")
+                            else None
+                        ),
+                    ):
+                        if kind == "done":
+                            result = payload
+                    if not result or not result.get("content"):
+                        raise ValueError(
+                            "Apply pack generation finished with no content."
+                        )
+                    await db.jobs.update_one(
+                        {"_id": ObjectId(job_id)},
+                        {
+                            "$set": {
+                                f"apply_pack_cache.{user_id}": {
+                                    "pack": result["pack"],
+                                    "ats": result["ats"],
+                                    "content": result["content"],
+                                    "rated_at": rating.get("rated_at"),
+                                    "cv_uploaded_at": cv_uploaded_at,
+                                    "generated_at": datetime.now(timezone.utc),
+                                }
                             }
-                        }
-                    },
-                )
-                print(f"[apply_pack] cached job={job_id}", flush=True)
-                return result
-            except Exception as exc:
-                import traceback
+                        },
+                    )
+                    print(f"[apply_pack] cached job={job_id}", flush=True)
+                    return result
+                except Exception as exc:
+                    import traceback
 
-                print(f"[apply_pack] !!! generation failed for job={job_id}: {exc}")
-                traceback.print_exc()
-                await refund_apply_pack(user_id)
-                raise
-            finally:
-                _apply_pack_tasks.pop(task_key, None)
+                    print(f"[apply_pack] !!! generation failed for job={job_id}: {exc}")
+                    traceback.print_exc()
+                    await refund_apply_pack(user_id)
+                    raise
+                finally:
+                    _apply_pack_tasks.pop(task_key, None)
+                    await _release_apply_pack_generation(db, job_id, user_id)
 
-        task = asyncio.create_task(_produce())
-        _apply_pack_tasks[task_key] = task
+            task = asyncio.create_task(_produce())
+            _apply_pack_tasks[task_key] = task
+        else:
+            joining_existing = True
+            remaining = await get_remaining_apply_packs(user)
+            print(f"[apply_pack] waiting for in-flight generation job={job_id}")
+            task = asyncio.create_task(
+                _wait_for_apply_pack(db, job_id, user_id, rating, cv_uploaded_at)
+            )
     else:
+        joining_existing = True
         remaining = await get_remaining_apply_packs(user)
         print(f"[apply_pack] joining in-flight generation job={job_id}")
 
@@ -1014,7 +1106,10 @@ async def get_job_apply_pack(
         )
         try:
             print(f"[apply_pack] SSE waiting for generation job={job_id}", flush=True)
-            result = await task
+            result = await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # Browser refresh/close: keep generation running for the next join.
+            return
         except ValueError as exc:
             print(f"[apply_pack] SSE error job={job_id}: {exc}", flush=True)
             yield _sse("error", {"detail": str(exc)})
@@ -1034,7 +1129,7 @@ async def get_job_apply_pack(
                 "pack": result["pack"],
                 "ats": result["ats"],
                 "apply_packs_remaining": remaining,
-                "cached": False,
+                "cached": joining_existing,
             },
         )
 

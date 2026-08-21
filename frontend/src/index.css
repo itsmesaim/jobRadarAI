@@ -1203,12 +1203,72 @@
     gap: var(--space-2);
   }
 
-  .settings-pick-order {
+  .settings-pick-chosen {
     margin: 0 0 var(--space-3);
-    padding-left: 1.2em;
+  }
+
+  .settings-pick-chosen-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+
+  .settings-pick-chosen-bar .settings-pick-heading {
+    margin: 0;
+  }
+
+  .settings-pick-order {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .settings-pick-order > li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    background: var(--accent-light);
     font-size: var(--text-sm);
     color: var(--text);
-    line-height: 1.5;
+  }
+
+  .settings-pick-order-name {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.4;
+  }
+
+  .settings-pick-order-remove {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-1);
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+  }
+
+  .settings-pick-order-remove:hover {
+    color: var(--text);
+    background: var(--bg-hover);
+  }
+
+  .settings-pick-order .settings-pick-num {
+    margin-top: 0;
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--bg-card);
   }
 
   .settings-pick-name {
@@ -1257,6 +1317,20 @@
   .settings-section-card {
     padding: var(--space-5);
     margin-bottom: var(--space-4);
+  }
+
+  .settings-section-title {
+    font-size: var(--text-base);
+    font-weight: 600;
+    margin: 0 0 2px;
+    color: var(--text);
+  }
+
+  .settings-section-sub {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    margin: 0 0 14px;
+    line-height: 1.45;
   }
 
   .settings-sidebar {
@@ -1607,9 +1681,84 @@
     }
 
     .settings-page {
+      --text-sm: 13px;
+      --text-base: 14px;
+      --text-lg: 16px;
+      --text-xl: 18px;
+      --text-2xl: 20px;
       grid-template-columns: 1fr;
       padding: var(--space-4) var(--space-3)
         calc(64px + var(--space-6) + env(safe-area-inset-bottom, 0px));
+    }
+
+    .settings-title {
+      font-size: var(--text-xl);
+      font-weight: 700;
+    }
+
+    .settings-header {
+      margin-bottom: var(--space-3);
+    }
+
+    .settings-page .btn {
+      font-size: var(--text-sm);
+      padding: 7px 12px;
+    }
+
+    .settings-page .input {
+      font-size: var(--text-sm);
+      padding: 8px 12px;
+    }
+
+    .settings-page .label {
+      font-size: var(--text-xs);
+    }
+
+    .settings-section-title {
+      font-size: var(--text-sm);
+    }
+
+    .settings-section-sub {
+      margin-bottom: 10px;
+    }
+
+    .settings-pick-why,
+    .settings-pick-empty,
+    .settings-autofill-banner {
+      font-size: var(--text-xs);
+      line-height: 1.45;
+    }
+
+    .settings-completeness-label,
+    .settings-completeness-complete,
+    .settings-save-bar-label {
+      font-size: var(--text-xs);
+    }
+
+    .admin-page {
+      --text-sm: 13px;
+      --text-base: 14px;
+      --text-lg: 16px;
+      --text-xl: 18px;
+      --text-2xl: 20px;
+    }
+
+    .admin-page .btn {
+      font-size: var(--text-sm);
+      padding: 7px 12px;
+    }
+
+    .admin-page .input {
+      font-size: var(--text-sm);
+      padding: 8px 12px;
+    }
+
+    .admin-page .label {
+      font-size: var(--text-xs);
+    }
+
+    .admin-page h1 {
+      font-size: var(--text-xl);
     }
 
     .settings-page.has-unsaved {
@@ -1705,12 +1854,26 @@
       margin-bottom: var(--space-6);
       scroll-margin-top: 96px;
     }
+  }
 
-    .job-detail-modal {
-      max-height: 92dvh !important;
-      border-bottom-left-radius: 0 !important;
-      border-bottom-right-radius: 0 !important;
-    }
+  .job-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 60;
+    padding: 16px;
+  }
+
+  .job-detail-modal {
+    width: 100%;
+    max-width: 680px;
+    max-height: 88dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .job-modal-footer {
@@ -1720,6 +1883,7 @@
     padding: var(--space-3) var(--space-5) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid var(--border);
     background: var(--bg-card);
+    flex-shrink: 0;
   }
 
   .job-modal-header {
@@ -1729,15 +1893,87 @@
     gap: var(--space-3);
     padding: var(--space-5) var(--space-6);
     border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .job-modal-header-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .job-modal-header-aside {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    flex-shrink: 0;
+  }
+
+  .job-modal-close {
+    padding: var(--space-2) var(--space-3);
   }
 
   .job-modal-timestamps {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-3);
+    align-items: center;
+    gap: 2px 0;
+    margin: 8px 0 0;
     font-size: var(--text-xs);
     color: var(--text-muted);
-    margin-bottom: var(--space-2);
+    line-height: 1.4;
+  }
+
+  .job-modal-timestamps > span {
+    display: inline;
+    white-space: nowrap;
+  }
+
+  .job-modal-timestamps > span:not(:last-child)::after {
+    content: "·";
+    margin: 0 0.45em;
+    opacity: 0.5;
+  }
+
+  .job-modal-source {
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .job-modal-model {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+
+  .job-modal-company {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+  }
+
+  .job-modal-company > span {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .job-modal-company > span > svg {
+    flex-shrink: 0;
+  }
+
+  .job-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-5) var(--space-6);
+    min-height: 0;
   }
 
   .job-modal-title {
@@ -1749,25 +1985,55 @@
   }
 
   @media (max-width: 640px) {
+    .job-modal-overlay {
+      padding: 10px;
+      align-items: center;
+    }
+
     .job-modal-header {
-      padding: var(--space-3) var(--space-4);
+      padding: 12px 14px 10px;
       gap: var(--space-2);
+    }
+
+    .job-modal-header-aside {
+      gap: var(--space-1);
+    }
+
+    .job-modal-close {
+      padding: var(--space-1);
     }
 
     .job-modal-title {
-      font-size: var(--text-lg);
-      margin-bottom: var(--space-1);
+      font-size: var(--text-base);
+      margin: 0 0 4px;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
     }
 
     .job-modal-timestamps {
-      gap: var(--space-2);
-      margin-bottom: var(--space-1);
+      margin-top: 6px;
+    }
+
+    .job-modal-company {
+      font-size: var(--text-xs);
+    }
+
+    .job-modal-body {
+      flex: 1 1 auto;
+      padding: 12px 14px 14px;
     }
   }
 
   .job-modal-apply-pack {
     width: 100%;
+    display: flex;
     justify-content: center;
+    align-items: center;
+    text-align: center;
+    box-sizing: border-box;
     padding: var(--space-3) var(--space-4);
     font-size: var(--text-base);
     font-weight: 600;
@@ -1823,15 +2089,21 @@
 
   .job-modal-dl {
     width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .job-modal-dl > summary {
     list-style: none;
     cursor: pointer;
+    width: 100%;
   }
 
-  .job-modal-dl > summary::-webkit-details-marker {
+  .job-modal-dl > summary::-webkit-details-marker,
+  .job-modal-dl > summary::marker {
     display: none;
+    content: none;
   }
 
   .job-modal-dl-menu {
@@ -1890,7 +2162,9 @@
 
   .job-modal-footer-actions {
     display: flex;
-    align-items: stretch;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: nowrap;
     gap: var(--space-2);
     margin-top: var(--space-1);
     padding-top: var(--space-3);
@@ -1905,39 +2179,70 @@
     min-height: 40px;
   }
 
+  .job-modal-apply-here {
+    color: var(--success);
+    border: 1px solid var(--success-border);
+    background: var(--success-bg);
+  }
+
+  .job-modal-apply-here:hover {
+    color: var(--success);
+    border-color: var(--success);
+    background: var(--success-bg);
+  }
+
   @media (max-width: 640px) {
+    .job-detail-modal {
+      max-height: calc(100dvh - 20px);
+      height: auto;
+      max-width: none;
+      border-radius: var(--radius-lg);
+    }
+
     .job-modal-footer {
-      gap: var(--space-2);
-      padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
-      /* Not scrollable, not height-capped: a second scroll region inside the footer
-         buries the action buttons behind an easy-to-miss inner scrollbar, worse than
-         the cramped-body problem it was meant to fix. Space is reclaimed instead by
-         cutting real content weight (ATS panel collapsed by default, see JobDetailModal). */
+      gap: 6px;
+      padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
     }
 
     .job-modal-apply-pack {
-      padding: var(--space-2) var(--space-3);
+      width: 100%;
+      align-self: stretch;
+      justify-content: center;
+      padding: 8px 14px;
       font-size: var(--text-sm);
+      min-height: 0;
     }
 
     .job-modal-pack-hint:not(.is-waiting) {
-      display: -webkit-box;
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 1;
-      overflow: hidden;
+      display: none;
+    }
+
+    .job-modal-pack-hint.is-waiting {
+      min-height: 0;
     }
 
     .job-modal-footer-actions {
       flex-direction: row;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
+      align-items: center;
+      justify-content: center;
       margin-top: 0;
-      padding-top: var(--space-2);
+      padding-top: 8px;
+      gap: 4px;
     }
 
     .job-modal-action-btn {
-      min-height: 36px;
-      padding: var(--space-2) var(--space-3);
+      flex: 0 1 auto;
+      min-width: 0;
+      min-height: 0;
+      padding: 6px 8px;
       font-size: var(--text-xs);
+      gap: 4px;
+    }
+
+    .job-modal-header-aside > span {
+      font-size: 14px !important;
+      padding: 3px 8px !important;
     }
   }
 

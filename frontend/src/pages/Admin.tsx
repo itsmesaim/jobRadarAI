@@ -2399,14 +2399,14 @@ export function AdminPage() {
 
   if (!user?.isAdmin) {
     return (
-      <div className="page-shell" style={{ textAlign: "center", paddingTop: 60 }}>
+      <div className="page-shell admin-page" style={{ textAlign: "center", paddingTop: 60 }}>
         Access denied
       </div>
     );
   }
 
   return (
-    <div className="page-shell">
+    <div className="page-shell admin-page">
       <div style={{ marginBottom: "var(--space-5)" }}>
         <h1
           style={{

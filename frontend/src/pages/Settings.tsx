@@ -356,8 +356,8 @@ export function SettingsPage() {
     try {
       const { autofilled_fields, structured } = await cvApi.upload(file);
       queryClient.invalidateQueries({ queryKey: ["cv"] });
+      queryClient.invalidateQueries({ queryKey: ["prefs"] });
       if (autofilled_fields?.length) {
-        queryClient.invalidateQueries({ queryKey: ["prefs"] });
         setAutofilledFields(autofilled_fields);
       }
       toast.success("CV uploaded and parsed");
@@ -402,6 +402,16 @@ export function SettingsPage() {
       return;
     }
     addShowcase(name);
+  };
+
+  const removeShowcase = (name: string) => {
+    update({
+      showcase_projects: localPrefs.showcase_projects.filter((x) => x !== name),
+    });
+  };
+
+  const clearShowcase = () => {
+    update({ showcase_projects: [] });
   };
 
   const addSkill = () => {
@@ -655,9 +665,9 @@ export function SettingsPage() {
             {autofilledFields && (
               <div className="settings-autofill-banner">
                 <span>
-                  We filled in {autofilledFields.map((f) => AUTOFILL_LABELS[f] || f).join(", ")}{" "}
-                  from your CV, below and on the <strong>Job search</strong> tab. Review and adjust
-                  before saving.
+                  We updated {autofilledFields.map((f) => AUTOFILL_LABELS[f] || f).join(", ")} from
+                  your CV. Role and locations stay as you set them unless they were empty. Review
+                  the <strong>Job search</strong> tab before saving.
                 </span>
                 <button
                   type="button"
@@ -671,13 +681,13 @@ export function SettingsPage() {
 
             <Section
               title="Flagship work"
-              subtitle="Click in the order you want them on the tailored CV. 1 is first. Click again to drop it. Save after you pick."
+              subtitle="Click in the order you want them on the tailored CV. 1 is first. Drop one from Your order, or clear all. Save after you pick."
             >
               <div className="settings-pick-why">
                 <p>
                   <strong>Why this exists.</strong> Your CV has many projects and jobs. The AI does
-                  not know which ones you want to be known for. Click in order (1, 2, 3). Click
-                  again to remove. Save when done.
+                  not know which ones you want to be known for. Click in order (1, 2, 3). Remove a
+                  single one from Your order, or clear the whole list. Save when done.
                 </p>
                 <ul>
                   <li>
@@ -754,13 +764,32 @@ export function SettingsPage() {
                 </>
               )}
               {localPrefs.showcase_projects.length > 0 && (
-                <ol className="settings-pick-order">
-                  {localPrefs.showcase_projects.map((p, i) => (
-                    <li key={p}>
-                      {i + 1}. {p}
-                    </li>
-                  ))}
-                </ol>
+                <div className="settings-pick-chosen">
+                  <div className="settings-pick-chosen-bar">
+                    <p className="settings-pick-heading">Your order</p>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={clearShowcase}>
+                      Clear all
+                    </button>
+                  </div>
+                  <ol className="settings-pick-order">
+                    {localPrefs.showcase_projects.map((p, i) => (
+                      <li key={p}>
+                        <span className="settings-pick-num" aria-hidden>
+                          {i + 1}
+                        </span>
+                        <span className="settings-pick-order-name">{p}</span>
+                        <button
+                          type="button"
+                          className="settings-pick-order-remove"
+                          onClick={() => removeShowcase(p)}
+                          aria-label={`Remove ${p}`}
+                        >
+                          <X size={14} />
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
               )}
               <TagInput
                 value={newShowcase}
@@ -1188,7 +1217,7 @@ export function SettingsPage() {
             {/* Key skills */}
             <Section
               title="Key skills"
-              subtitle="Search queries only, keep this to about 8 short names (Python, FastAPI, React). The full skill list on your CV is already used for rating. Re-upload replaces a huge dump with a short list."
+              subtitle="Search queries only, keep this to about 8 short names (Python, FastAPI, React). The full skill list on your CV is already used for rating. Re-upload refreshes this list from the new CV."
             >
               <div
                 style={{
@@ -2659,19 +2688,8 @@ function Section({
 }) {
   return (
     <div className="card settings-section-card">
-      <h3
-        style={{
-          fontSize: "var(--text-base)",
-          fontWeight: 600,
-          margin: "0 0 2px",
-          color: "var(--text)",
-        }}
-      >
-        {title}
-      </h3>
-      <p style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", margin: "0 0 14px" }}>
-        {subtitle}
-      </p>
+      <h3 className="settings-section-title">{title}</h3>
+      <p className="settings-section-sub">{subtitle}</p>
       {children}
     </div>
   );
