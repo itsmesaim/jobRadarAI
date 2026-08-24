@@ -67,6 +67,11 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 # does not cancel the LLM work or 429 the retry. In-memory is same-process
 # only; Mongo apply_pack_generating survives refresh and other workers.
 _apply_pack_tasks: dict[str, asyncio.Task] = {}
+
+# Each generation is up to 3 LLM calls (draft/critique/revision, 300s each);
+# unthrottled concurrent generations from one user (e.g. many open job tabs)
+# can pile up real load, so cap how many a single user can have running.
+MAX_CONCURRENT_APPLY_PACKS_PER_USER = 2
 _PACK_GEN_STALE = timedelta(minutes=12)
 
 
@@ -189,8 +194,9 @@ class FetchUrlRequest(BaseModel):
     url: str
 
 
-def _format_job(job: dict, user_id: str) -> dict:
+def _format_job(job: dict, user_id: str, cv_uploaded_at=None) -> dict:
     rating = job.get("ratings", {}).get(user_id, {})
+    cached = (job.get("apply_pack_cache") or {}).get(user_id)
     posted = job.get("posted_at") or job.get("crawled_at")
     # While a background rate-all worker has claimed this job it holds a
     # placeholder rating with verdict=RATING_IN_PROGRESS and score=0 so a
@@ -228,6 +234,7 @@ def _format_job(job: dict, user_id: str) -> dict:
             f"{user_id}:{job.get('_id')}" in _apply_pack_tasks
             or _pack_is_generating(job, user_id)
         ),
+        "apply_pack_ready": _apply_pack_cache_fresh(cached, rating, cv_uploaded_at),
     }
 
 
@@ -355,6 +362,7 @@ def _dedupe_and_format_jobs(
     jobs: list[dict],
     user_id: str,
     *,
+    cv_uploaded_at=None,
     score_min: int,
     score_max: int,
     rating: str,
@@ -373,7 +381,7 @@ def _dedupe_and_format_jobs(
         if fp in seen_fingerprints:
             continue
 
-        formatted = _format_job(job, user_id)
+        formatted = _format_job(job, user_id, cv_uploaded_at)
         if not _passes_job_filters(
             job,
             formatted,
@@ -395,6 +403,7 @@ async def _list_kanban_jobs(
     db,
     user_id: str,
     *,
+    cv_uploaded_at=None,
     score_min: int,
     score_max: int,
     rating: str,
@@ -444,6 +453,7 @@ async def _list_kanban_jobs(
     return _dedupe_and_format_jobs(
         merged,
         user_id,
+        cv_uploaded_at=cv_uploaded_at,
         score_min=score_min,
         score_max=score_max,
         rating=rating,
@@ -470,9 +480,11 @@ async def list_jobs(
     limit: int = 20,
     kanban: bool = False,
     exclude_terminal: bool = False,
+    job_id: str = None,
 ):
     db = get_database()
     user_id = str(user["_id"])
+    cv_uploaded_at = (user.get("cv") or {}).get("uploaded_at")
 
     if rating not in ("all", "rated", "unrated"):
         raise HTTPException(
@@ -480,10 +492,32 @@ async def list_jobs(
             detail="rating must be one of: all, rated, unrated",
         )
 
+    if job_id:
+        # Deep-link lookup (e.g. "CVs you've built" dropdown), exact job,
+        # ignores every other filter so it can never be hidden by them.
+        try:
+            job = await db.jobs.find_one(
+                {"_id": ObjectId(job_id), **_user_job_filter(user_id)}
+            )
+        except Exception:
+            job = None
+        results = [_format_job(job, user_id, cv_uploaded_at)] if job else []
+        return {
+            "jobs": results,
+            "page": 1,
+            "limit": 1,
+            "total": len(results),
+            "pages": 1,
+            "account_total": await db.jobs.count_documents(
+                {**_user_job_filter(user_id), f"hidden_{user_id}": {"$ne": True}}
+            ),
+        }
+
     if kanban:
         results = await _list_kanban_jobs(
             db,
             user_id,
+            cv_uploaded_at=cv_uploaded_at,
             score_min=score_min,
             score_max=score_max,
             rating=rating,
@@ -524,6 +558,7 @@ async def list_jobs(
     filtered = _dedupe_and_format_jobs(
         all_jobs,
         user_id,
+        cv_uploaded_at=cv_uploaded_at,
         score_min=score_min,
         score_max=score_max,
         rating=rating,
@@ -547,6 +582,49 @@ async def list_jobs(
         "pages": max(1, (total + limit - 1) // limit) if total else 1,
         "account_total": account_total,
     }
+
+
+# "Just built, go look" is the point of this list, not an archive, bound it
+# to a rolling window so it can't quietly grow into a permanent CV inventory.
+APPLY_PACK_HISTORY_DAYS = 4
+
+
+@router.get("/apply-packs")
+async def list_apply_packs(
+    user=Depends(get_current_user), page: int = 1, limit: int = 20
+):
+    """Jobs with a currently-ready apply pack, built in the last
+    APPLY_PACK_HISTORY_DAYS days, most recent first. Mirrors the "CV ready"
+    badge (apply_pack_ready), so a job re-rated or CV-updated since it was
+    built drops off here too, not just off the card.
+    """
+    db = get_database()
+    user_id = str(user["_id"])
+    cv_uploaded_at = (user.get("cv") or {}).get("uploaded_at")
+    cache_key = f"apply_pack_cache.{user_id}"
+    cutoff = datetime.now(timezone.utc) - timedelta(days=APPLY_PACK_HISTORY_DAYS)
+
+    all_jobs = (
+        await db.jobs.find(
+            {
+                **_user_job_filter(user_id),
+                f"{cache_key}.generated_at": {"$gte": cutoff},
+            }
+        )
+        .sort(f"{cache_key}.generated_at", -1)
+        .to_list(length=500)
+    )
+    formatted = []
+    for job in all_jobs:
+        fmt = _format_job(job, user_id, cv_uploaded_at)
+        if not fmt["apply_pack_ready"]:
+            continue
+        fmt["cv_generated_at"] = job["apply_pack_cache"][user_id].get("generated_at")
+        formatted.append(fmt)
+
+    start = (page - 1) * limit
+    page_items = formatted[start : start + limit]
+    return {"jobs": page_items, "page": page, "limit": limit, "total": len(formatted)}
 
 
 # ── RATE ALL ─────────────────────────────────────────────
@@ -1015,6 +1093,20 @@ async def get_job_apply_pack(
     if task is None:
         claimed = await _claim_apply_pack_generation(db, job_id, user_id)
         if claimed:
+            active_for_user = sum(
+                1
+                for key, t in _apply_pack_tasks.items()
+                if key.startswith(f"{user_id}:") and not t.done()
+            )
+            if active_for_user >= MAX_CONCURRENT_APPLY_PACKS_PER_USER:
+                await _release_apply_pack_generation(db, job_id, user_id)
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=(
+                        f"Only {MAX_CONCURRENT_APPLY_PACKS_PER_USER} CVs can build at "
+                        "once, wait for one to finish, then try again."
+                    ),
+                )
             if part == "all":
                 allowed, message, remaining = await check_and_increment_apply_pack(user)
                 if not allowed:
@@ -1266,14 +1358,13 @@ async def get_job(job_id: str, user=Depends(get_current_user)):
     if not job or job.get("crawled_by") != user_id:
         raise HTTPException(status_code=404, detail="Job not found.")
 
-    result = _format_job(job, user_id)
-    result["full_text"] = job.get("full_text", "")[:3000]
-    rating = job.get("ratings", {}).get(user_id, {})
     cv_uploaded_at = (user.get("cv") or {}).get("uploaded_at")
+    result = _format_job(job, user_id, cv_uploaded_at)
+    result["full_text"] = job.get("full_text", "")[:3000]
     cached = (job.get("apply_pack_cache") or {}).get(user_id)
-    ready = _apply_pack_cache_fresh(cached, rating, cv_uploaded_at)
-    result["apply_pack_ready"] = ready
-    result["apply_pack_ats"] = (cached or {}).get("ats") if ready else None
+    result["apply_pack_ats"] = (
+        (cached or {}).get("ats") if result["apply_pack_ready"] else None
+    )
 
     company = job.get("company")
     if company:

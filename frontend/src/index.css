@@ -503,6 +503,26 @@
     line-height: 1;
   }
 
+  /* Same shape as the notification badge, neutral color: an informational
+     count (CVs built), not an alert like unseen notifications. */
+  .cv-history-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
   .notification-dropdown {
     position: absolute;
     top: calc(100% + var(--space-2));

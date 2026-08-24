@@ -84,6 +84,7 @@ export const jobsApi = {
     limit?: number;
     kanban?: boolean;
     exclude_terminal?: boolean;
+    job_id?: string;
   }) => {
     const res = await api.get("/jobs", { params });
     return res.data as JobsResponse;
@@ -92,6 +93,11 @@ export const jobsApi = {
   get: async (id: string) => {
     const res = await api.get(`/jobs/${id}`);
     return res.data as Job;
+  },
+
+  listApplyPacks: async (params?: { page?: number; limit?: number }) => {
+    const res = await api.get("/jobs/apply-packs", { params });
+    return res.data as { jobs: Job[]; page: number; limit: number; total: number };
   },
 
   rateAll: async () => {
@@ -321,12 +327,16 @@ export const userApi = {
   getNotifications: async () => {
     const res = await api.get("/users/notifications");
     return res.data as {
-      notifications: { kind: string; message: string; link: string }[];
+      notifications: { kind: string; message: string; link: string; key: string }[];
       unseen_count: number;
     };
   },
   markNotificationsSeen: async () => {
     const res = await api.post("/users/notifications/seen");
+    return res.data;
+  },
+  dismissNotification: async (key: string) => {
+    const res = await api.post("/users/notifications/dismiss", { key });
     return res.data;
   },
 

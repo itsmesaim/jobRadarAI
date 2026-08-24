@@ -5,6 +5,7 @@ import { clearUserScopedCache } from "../queryClient";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotificationBell } from "./NotificationBell";
+import { CvHistoryBell } from "./CvHistoryBell";
 
 interface Props {
   onHelpClick?: () => void;
@@ -119,6 +120,7 @@ export function Navbar({ onHelpClick }: Props = {}) {
                 <HelpCircle size={16} />
               </button>
             )}
+            <CvHistoryBell />
             <NotificationBell />
             <ThemeToggle />
             <button

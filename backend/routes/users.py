@@ -69,13 +69,13 @@ class UserPreferences(BaseModel):
     work_mode: WorkMode = WorkMode()
     about_me: str = ""  # user's own notes, never overwritten by CV parse
     about_me_from_cv: str = ""  # CV summary, refreshed on each upload
-    showcase_projects: list[str] = (
-        []
-    )  # flagship work to lead tailored CVs, any user's list
+    showcase_projects: list[
+        str
+    ] = []  # flagship work to lead tailored CVs, any user's list
     email_reminders_enabled: bool = True  # daily high-score apply nudges via SMTP
-    reminder_hours: list[int] = (
-        []
-    )  # local hours (0-23) to send reminders; [] = app default (see job_reminders.py)
+    reminder_hours: list[
+        int
+    ] = []  # local hours (0-23) to send reminders; [] = app default (see job_reminders.py)
     timezone: str = ""  # IANA tz; empty = UTC until they pick one in Settings
     # "" = app default. Otherwise must match an active entry in the
     # admin-managed AI model catalog (services/ai_models.py), validated in
@@ -321,16 +321,31 @@ async def get_notifications(user=Depends(get_current_user)):
 
     notifications = []
     unseen_count = 0
+    dismissed: dict = {
+        k: (v.replace(tzinfo=timezone.utc) if v.tzinfo is None else v)
+        for k, v in user.get("dismissed_notifications", {}).items()
+    }
 
     # The dropdown always lists every currently-live item (still actionable,
     # e.g. "3 top matches ready to apply to" stays useful even if you've
     # already seen it). The badge counts what's new since last_seen, OR,
     # if it's been a few days of silence, still-unresolved items too.
+    # A dismissed item stays hidden unless it's genuinely re-armed (a new
+    # qualifying job/model since the dismiss), see notifications/dismiss.
+    apply_soon_dismissed_at = dismissed.get("apply_soon")
     apply_soon_count = await get_apply_soon_count(db, user_id)
-    if apply_soon_count > 0:
+    apply_soon_new_since_dismiss = (
+        await get_apply_soon_count(db, user_id, since=apply_soon_dismissed_at)
+        if apply_soon_dismissed_at
+        else apply_soon_count
+    )
+    if apply_soon_count > 0 and (
+        not apply_soon_dismissed_at or apply_soon_new_since_dismiss > 0
+    ):
         notifications.append(
             {
                 "kind": "apply_soon",
+                "key": "apply_soon",
                 "message": (
                     f"{apply_soon_count} top match"
                     f"{'es' if apply_soon_count != 1 else ''} scoring 8+/10 ready to apply to"
@@ -349,14 +364,22 @@ async def get_notifications(user=Depends(get_current_user)):
     # Named per-job entries, not a bare count, "1 job needs a follow-up" gives
     # nothing to act on. Capped at 5 so a long-neglected pipeline doesn't flood
     # the dropdown; the rest still show up once these are cleared in Kanban.
+    # A job dropping out of this query on its own (status change moves
+    # status_at forward) is what re-arms a dismissed entry, so dismiss here
+    # can suppress unconditionally: no dismissed job stays in this list
+    # unless it went stale again.
     stale_jobs = await get_stale_followup_jobs(
         db, user_id, limit=5, last_seen=last_seen
     )
     for job in stale_jobs:
+        key = f"stale_followup:{job['id']}"
+        if key in dismissed:
+            continue
         status_label = job["status"].replace("_", " ").title()
         notifications.append(
             {
                 "kind": "stale_followup",
+                "key": key,
                 "message": (
                     f"{job['title']}"
                     + (f" at {job['company']}" if job["company"] else "")
@@ -378,14 +401,27 @@ async def get_notifications(user=Depends(get_current_user)):
             "cv_parsing": "CV parsing",
         }
         for purpose in PURPOSES:
+            key = f"new_model:{purpose}"
+            model_dismissed_at = dismissed.get(key)
             new_model_count = await db.rating_models.count_documents(
                 {"purpose": purpose, "active": True, "created_at": {"$gt": last_seen}}
             )
+            if new_model_count > 0 and model_dismissed_at:
+                new_since_dismiss = await db.rating_models.count_documents(
+                    {
+                        "purpose": purpose,
+                        "active": True,
+                        "created_at": {"$gt": model_dismissed_at},
+                    }
+                )
+                if new_since_dismiss == 0:
+                    continue
             if new_model_count > 0:
                 label = purpose_labels[purpose]
                 notifications.append(
                     {
                         "kind": "new_model",
+                        "key": key,
                         "message": (
                             f"{new_model_count} new AI model"
                             f"{'s' if new_model_count != 1 else ''} available for {label}"
@@ -396,6 +432,27 @@ async def get_notifications(user=Depends(get_current_user)):
                 unseen_count += 1
 
     return {"notifications": notifications, "unseen_count": unseen_count}
+
+
+@router.post("/notifications/dismiss")
+async def dismiss_notification(payload: dict, user=Depends(get_current_user)):
+    key = payload.get("key")
+    if not key:
+        raise HTTPException(status_code=400, detail="key is required")
+    db = get_database()
+    now = datetime.now(timezone.utc)
+    dismissed: dict = {
+        k: (v.replace(tzinfo=timezone.utc) if v.tzinfo is None else v)
+        for k, v in user.get("dismissed_notifications", {}).items()
+    }
+    # Self-pruning: no separate cleanup job needed for this volume.
+    dismissed = {k: v for k, v in dismissed.items() if (now - v) < timedelta(days=30)}
+    dismissed[key] = now
+    await db.users.update_one(
+        {"_id": ObjectId(user["_id"])},
+        {"$set": {"dismissed_notifications": dismissed}},
+    )
+    return {"message": "Dismissed."}
 
 
 @router.post("/notifications/seen")

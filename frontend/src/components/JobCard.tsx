@@ -6,24 +6,7 @@ import { JobDetailModal } from "./JobDetailModal";
 import { RejectReasonModal } from "./RejectReasonModal";
 import { jobsApi } from "../api/index";
 import type { Job, JobStatus, Props } from "../types";
-
-function timeAgo(dateStr?: string): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return "";
-  const now = new Date();
-  const diff = now.getTime() - d.getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  const remMins = mins % 60;
-  if (hrs < 24) return remMins > 0 ? `${hrs}h ${remMins}m ago` : `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d ago`;
-  const weeks = Math.floor(days / 7);
-  return `${weeks}w ago`;
-}
+import { timeAgo } from "../utils/time";
 
 function fullDate(dateStr?: string): string {
   if (!dateStr) return "";
@@ -261,6 +244,18 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                   }}
                 >
                   Strong match
+                </span>
+              )}
+              {job.apply_pack_ready && !job.apply_pack_in_progress && (
+                <span
+                  className="badge"
+                  style={{
+                    background: "var(--success-bg)",
+                    color: "var(--success)",
+                    border: "1px solid var(--success-border)",
+                  }}
+                >
+                  CV ready
                 </span>
               )}
               {job.apply_pack_in_progress && (

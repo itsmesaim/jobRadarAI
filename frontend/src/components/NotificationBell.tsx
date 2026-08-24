@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bell } from "lucide-react";
+import { Bell, X } from "lucide-react";
 import { userApi } from "../api/index";
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -20,6 +21,11 @@ export function NotificationBell() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
   });
 
+  const dismissMutation = useMutation({
+    mutationFn: userApi.dismissNotification,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+
   const notifications = data?.notifications ?? [];
   const unseenCount = data?.unseen_count ?? 0;
 
@@ -29,8 +35,19 @@ export function NotificationBell() {
     if (next && unseenCount > 0) seenMutation.mutate();
   };
 
+  useEffect(() => {
+    if (!open) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [open]);
+
   return (
-    <div style={{ position: "relative" }}>
+    <div ref={wrapperRef} style={{ position: "relative" }}>
       <button
         onClick={toggle}
         className="btn btn-ghost"
@@ -44,17 +61,16 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <>
-          <div style={{ position: "fixed", inset: 0, zIndex: 90 }} onClick={() => setOpen(false)} />
-          <div className="notification-dropdown">
-            {notifications.length === 0 ? (
-              <p className="notification-dropdown-empty">You're all caught up.</p>
-            ) : (
-              notifications.map((n, i) => (
+        <div className="notification-dropdown">
+          {notifications.length === 0 ? (
+            <p className="notification-dropdown-empty">You're all caught up.</p>
+          ) : (
+            notifications.map((n) => (
+              <div key={n.key} style={{ display: "flex", alignItems: "stretch" }}>
                 <button
-                  key={i}
                   type="button"
                   className="notification-dropdown-item"
+                  style={{ flex: 1 }}
                   onClick={() => {
                     setOpen(false);
                     navigate(n.link);
@@ -62,10 +78,23 @@ export function NotificationBell() {
                 >
                   {n.message}
                 </button>
-              ))
-            )}
-          </div>
-        </>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  title="Dismiss"
+                  aria-label="Dismiss"
+                  style={{ padding: "0 var(--space-2)" }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    dismissMutation.mutate(n.key);
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
       )}
     </div>
   );

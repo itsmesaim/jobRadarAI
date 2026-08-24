@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Search,
@@ -281,7 +281,9 @@ export function Dashboard() {
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
+  const location = useLocation();
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [jobIdFilter, setJobIdFilter] = useState<string | undefined>(undefined);
   const [limitModalKind, setLimitModalKind] = useState<LimitKind | null>(null);
 
   const openLimitModal = (kind: LimitKind) => setLimitModalKind(kind);
@@ -290,6 +292,18 @@ export function Dashboard() {
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 1000);
     return () => clearTimeout(t);
   }, [searchQuery]);
+
+  // Deep link from elsewhere (e.g. the "CVs you've built" dropdown), jump
+  // straight to that exact job by id instead of opening a detail modal out
+  // of context, so it renders through the normal card + filter flow. Keyed
+  // on location.search (not []) so it fires even when already on this page.
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get("job_id");
+    if (!id) return;
+    setJobIdFilter(id);
+    setPage(1);
+    navigate("/", { replace: true });
+  }, [location.search, navigate]);
 
   const queryClient = useQueryClient();
 
@@ -366,6 +380,7 @@ export function Dashboard() {
       page,
       debouncedQuery,
       viewMode,
+      jobIdFilter,
     ],
     enabled: !!user,
     queryFn: () =>
@@ -379,6 +394,7 @@ export function Dashboard() {
         limit: 20,
         q: debouncedQuery || undefined,
         exclude_terminal: excludeTerminal,
+        job_id: jobIdFilter,
       }),
     refetchInterval: 30000,
   });
@@ -832,6 +848,7 @@ export function Dashboard() {
           value={searchQuery}
           onChange={(e) => {
             setSearchQuery(e.target.value);
+            setJobIdFilter(undefined);
             setPage(1);
           }}
           className="input dash-search-input"
@@ -907,6 +924,7 @@ export function Dashboard() {
               active={scoreFilter === o.id}
               onClick={() => {
                 setScoreFilter(o.id);
+                setJobIdFilter(undefined);
                 setPage(1);
               }}
             />
@@ -944,6 +962,7 @@ export function Dashboard() {
               onClick={() => {
                 setViewMode("active");
                 setStatusFilter(undefined);
+                setJobIdFilter(undefined);
                 setPage(1);
               }}
               style={{
@@ -964,6 +983,7 @@ export function Dashboard() {
             <button
               onClick={() => {
                 setViewMode("all");
+                setJobIdFilter(undefined);
                 setPage(1);
               }}
               style={{

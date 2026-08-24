@@ -43,6 +43,7 @@ export interface Job {
   past_rejection_title?: string;
   apply_pack_ready?: boolean;
   apply_pack_in_progress?: boolean;
+  cv_generated_at?: string; // only present on GET /jobs/apply-packs
   apply_pack_ats?: {
     alignment_pct: number;
     matched: string[];
