@@ -88,6 +88,8 @@ export interface UserPreferences {
   nationality: string;
   visa_status: string;
   work_authorization: string;
+  visa_country: string;
+  visa_type: string;
   avoid_industries: string[];
   work_mode: WorkMode;
   about_me: string;

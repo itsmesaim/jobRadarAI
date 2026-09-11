@@ -65,17 +65,19 @@ class UserPreferences(BaseModel):
     nationality: str = ""
     visa_status: str = ""
     work_authorization: str = ""
+    visa_country: str = ""  # country the held visa/permit is valid in, e.g. "Germany"
+    visa_type: str = ""  # e.g. "EU Blue Card", "H-1B", "Stamp 1G"
     avoid_industries: list[str] = []
     work_mode: WorkMode = WorkMode()
     about_me: str = ""  # user's own notes, never overwritten by CV parse
     about_me_from_cv: str = ""  # CV summary, refreshed on each upload
-    showcase_projects: list[
-        str
-    ] = []  # flagship work to lead tailored CVs, any user's list
+    showcase_projects: list[str] = (
+        []
+    )  # flagship work to lead tailored CVs, any user's list
     email_reminders_enabled: bool = True  # daily high-score apply nudges via SMTP
-    reminder_hours: list[
-        int
-    ] = []  # local hours (0-23) to send reminders; [] = app default (see job_reminders.py)
+    reminder_hours: list[int] = (
+        []
+    )  # local hours (0-23) to send reminders; [] = app default (see job_reminders.py)
     timezone: str = ""  # IANA tz; empty = UTC until they pick one in Settings
     # "" = app default. Otherwise must match an active entry in the
     # admin-managed AI model catalog (services/ai_models.py), validated in

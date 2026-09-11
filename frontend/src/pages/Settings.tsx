@@ -65,6 +65,8 @@ const DEFAULT_PREFS: UserPreferences = {
   nationality: "",
   visa_status: "",
   work_authorization: "",
+  visa_country: "",
+  visa_type: "",
   avoid_industries: [],
   work_mode: { remote: true, hybrid: true, onsite: false },
   about_me: "",
@@ -952,7 +954,7 @@ export function SettingsPage() {
             {/* Nationality + visa status */}
             <Section
               title="Nationality & visa status"
-              subtitle="Lets the rating engine reason about whether you can legally work in a job's country, and auto-reject listings that need sponsorship you don't have."
+              subtitle="Lets the rating engine reason about whether you can legally work in a job's country and auto-reject listings that need sponsorship you don't have. Nationality and visa country/type also print on your generated CV and cover letter."
             >
               <div style={{ marginBottom: "var(--space-3)" }}>
                 <label className="label">Nationality</label>
@@ -963,7 +965,7 @@ export function SettingsPage() {
                   onChange={(e) => update({ nationality: e.target.value })}
                 />
               </div>
-              <div>
+              <div style={{ marginBottom: "var(--space-3)" }}>
                 <label className="label">Visa / permit status</label>
                 <input
                   className="input"
@@ -971,6 +973,28 @@ export function SettingsPage() {
                   value={localPrefs.visa_status}
                   onChange={(e) => update({ visa_status: e.target.value })}
                 />
+              </div>
+              <div
+                style={{ display: "flex", gap: "var(--space-3)", marginBottom: "var(--space-2)" }}
+              >
+                <div style={{ flex: 1 }}>
+                  <label className="label">Visa held for (country)</label>
+                  <input
+                    className="input"
+                    placeholder="e.g. Germany"
+                    value={localPrefs.visa_country}
+                    onChange={(e) => update({ visa_country: e.target.value })}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label className="label">Visa type</label>
+                  <input
+                    className="input"
+                    placeholder="e.g. EU Blue Card"
+                    value={localPrefs.visa_type}
+                    onChange={(e) => update({ visa_type: e.target.value })}
+                  />
+                </div>
               </div>
               <div
                 style={{
@@ -994,6 +1018,8 @@ export function SettingsPage() {
                 >
                   Name the actual permit and what it currently allows, "EU citizen, no restrictions"
                   or "H-1B, transfer required" are both more useful than just naming a country.
+                  "Visa held for" and "Visa type" are what actually print on your CV, e.g. "Indian
+                  national — eligible to work in Germany (EU Blue Card)".
                 </p>
               </div>
             </Section>

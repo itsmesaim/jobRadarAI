@@ -218,17 +218,6 @@ def _contact_line(user: dict) -> str:
     return " \\quad\\textbar\\quad ".join(parts)
 
 
-def _header_country(user: dict) -> str:
-    """Home country from the CV location line only. Search locations (jobs in
-    Germany while living in India) are not a right-to-work claim."""
-    loc = (
-        ((user.get("cv") or {}).get("structured") or {}).get("location") or ""
-    ).strip()
-    if "," in loc:
-        return loc.rsplit(",", 1)[-1].strip()
-    return loc
-
-
 def _header_links_line(user: dict) -> str:
     """Second header line from THIS user's links + visa/location, not a fixed Ireland line."""
     structured = (user.get("cv") or {}).get("structured") or {}
@@ -253,15 +242,25 @@ def _header_links_line(user: dict) -> str:
 
 
 def _work_auth_line(user: dict) -> str:
-    """Only what they actually filled in Settings (visa / work authorization).
-    Never infer Germany rights from a Germany job search."""
-    detail = (user.get("visa_status") or user.get("work_authorization") or "").strip()
-    if not detail:
-        return ""
-    country = _header_country(user)
-    if country and country.lower() not in detail.lower():
-        return _latex_escape(f"Eligible to work in {country} ({detail})")
-    return _latex_escape(detail)
+    """Built only from what the user explicitly declared in Settings
+    (nationality, visa_country, visa_type) — never guessed from the CV's
+    free-text location, which conflates city and country."""
+    nationality = (user.get("nationality") or "").strip()
+    country = (user.get("visa_country") or "").strip()
+    visa_type = (user.get("visa_type") or "").strip()
+
+    lead = f"{nationality} national" if nationality else ""
+    if country and visa_type:
+        elig = f"eligible to work in {country} ({visa_type})"
+    elif country:
+        elig = f"eligible to work in {country}"
+    elif visa_type:
+        elig = visa_type
+    else:
+        elig = ""
+
+    line = " — ".join(p for p in (lead, elig) if p)
+    return _latex_escape(line) if line else ""
 
 
 _CATEGORY_TOKEN_RE = re.compile(r"[a-z0-9]+")

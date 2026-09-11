@@ -877,7 +877,10 @@ Education: {json.dumps(structured.get("education", []))}
             except Exception as e:
                 if not _is_rate_limit_error(e) or attempt == max_attempts:
                     raise
-                wait_s = _retry_after_seconds(e)
+                # ponytail: flat default backoff doesn't scale with attempts;
+                # exponential covers per-minute limits better when the
+                # provider doesn't name a wait time in its error.
+                wait_s = _retry_after_seconds(e, default=1.5 * (2 ** (attempt - 1)))
                 print(
                     f"[rating] rate limited (attempt {attempt}/{max_attempts}, "
                     f"provider={provider_label} model={model_label}), retrying in {wait_s:.2f}s"
