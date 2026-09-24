@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { ProgressBar } from "../components/ProgressBar";
 import { SetRatingModelModal } from "../components/SetRatingModelModal";
+import { Overlay } from "../components/Modal";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useAuthStore } from "../hooks/useStores";
 import { adminApi, jobsApi } from "../api";
@@ -830,21 +831,15 @@ function UserDetailModal({
   const isFull = isUserFullAccess(user);
 
   return (
-    <div
+    <Overlay
       role="dialog"
       aria-modal="true"
       aria-labelledby="admin-user-modal-title"
       onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0, 0, 0, 0.72)",
-        backdropFilter: "blur(4px)",
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "center",
-        zIndex: 1000,
-      }}
+      align="flex-end"
+      dim={0.72}
+      blur
+      padding={0}
       className="admin-modal-overlay"
     >
       <div
@@ -1278,7 +1273,7 @@ function UserDetailModal({
           Close
         </button>
       </div>
-    </div>
+    </Overlay>
   );
 }
 
@@ -1671,12 +1666,19 @@ function AiModelsPanel({
               marginBottom: "var(--space-3)",
             }}
           >
-            <input
+            <select
               className="input"
-              placeholder="Provider"
               value={provider}
               onChange={(e) => setProvider(e.target.value)}
-            />
+            >
+              <option value="">Provider</option>
+              <option value="ollama">ollama</option>
+              <option value="openai">openai</option>
+              <option value="xai">xai (Grok)</option>
+              <option value="anthropic">anthropic (Claude)</option>
+              <option value="mistral">mistral</option>
+              <option value="deepseek">deepseek</option>
+            </select>
             <input
               className="input"
               placeholder="Model id"

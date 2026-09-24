@@ -30,11 +30,17 @@ export function PrivacyPage() {
           you mark, about-me notes, and which AI models you picked for rating, apply packs, and CV
           parsing.
         </p>
-        <p>
+        <p style={{ marginBottom: 10 }}>
           <strong style={{ color: "var(--text)" }}>Activity data:</strong> job listings crawled for
           you, AI fit scores, strengths, gaps, tailoring tips, rating feedback you leave, Kanban
           status, and cached apply-pack content (tailored CV and cover letter text) until you
           re-rate that job or replace your CV.
+        </p>
+        <p>
+          <strong style={{ color: "var(--text)" }}>Job chat:</strong> each job has its own
+          conversation thread, stored per job and per user, so it's there when you come back. If you
+          mention a project, role, or skill in chat and choose to add it to your MASTER CV, we store
+          that addition on your CV data the same as anything typed in Settings.
         </p>
       </LegalSection>
 
@@ -51,6 +57,21 @@ export function PrivacyPage() {
           When your CV is parsed, we redact phone number and email before sending the text to an AI
           provider. Real contact details are restored locally into your stored CV so generated
           documents can still show them.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Job chat and MASTER CV edits">
+        <p style={{ marginBottom: 10 }}>
+          Each job's chat is scoped to that role: rating explanations, CV/cover tips, and employer
+          form questions. Messages that need an AI reply are sent to the AI provider you've picked
+          (or the app default) along with the job description and your CV context, fenced so pasted
+          job text can't be read as instructions. Simple replies (greetings, thanks, product FAQ)
+          are answered locally without any AI call.
+        </p>
+        <p>
+          If you tell chat about a project, role, or skill, it proposes the exact addition as a
+          card, you can edit the details, and nothing is written to your MASTER CV until you tap
+          Accept. Choosing "Keep chat-only" discards the proposal.
         </p>
       </LegalSection>
 

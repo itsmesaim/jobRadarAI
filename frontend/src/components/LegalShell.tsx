@@ -47,7 +47,7 @@ export function LegalShell({ title, children }: { title: string; children: React
           {title}
         </h1>
         <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 40 }}>
-          Last updated: 2026-08-21
+          Last updated: 2026-09-24
         </p>
         {children}
         <nav

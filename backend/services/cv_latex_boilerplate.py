@@ -48,7 +48,7 @@ CV_LATEX_BOILERPLATE = r"""\documentclass[10pt, a4paper]{article}
 \usepackage{hyperref}
 \usepackage{fontspec}
 \IfFontExistsTF{Latin Modern Roman}{\setmainfont{Latin Modern Roman}}{\setmainfont{DejaVu Serif}}
-\usepackage{microtype}
+\usepackage[ligatures=false]{microtype}
 \usepackage{parskip}
 \usepackage{xcolor}
 
@@ -108,6 +108,12 @@ def _normalize_template_prefs(user: dict) -> tuple[str, list[str]]:
 
 
 def _boilerplate_for_user(user: dict) -> str:
+    custom = (user.get("cv_latex_template") or "").strip()
+    if custom:
+        # User-uploaded .tex (already validated on save). Keep as-is; placeholders
+        # are filled in personalize_boilerplate.
+        return custom
+
     preset, sections = _normalize_template_prefs(user)
     body_parts = []
     for key in sections:
@@ -680,13 +686,13 @@ def _trim_one_bullet(tailored_experience: list) -> tuple[list, bool]:
 
 def compile_apply_pack_cv_pdf(
     user: dict, job: dict, parsed
-) -> tuple[bytes, bool, list[str]]:
+) -> tuple[bytes, bool, list[str], list[str]]:
     """assemble_tailored_tex() + compile, trimming experience bullets one at a time
     (most over-provisioned role first, floor at EXPERIENCE_BULLET_FLOOR) if the first
     compile runs past 1 page, recompiling after each. Projects are never dropped to
     force a page fit, the 3-4 project minimum wins over the 1-page ceiling. Returns
-    (pdf_bytes, overflow, dropped_names); overflow is True if still >1 page once every
-    role is at its floor, the download still succeeds either way.
+    (pdf_bytes, overflow, dropped_names, pdf_warns); overflow is True if still >1 page
+    once every role is at its floor, the download still succeeds either way.
     """
     from services.pdf_compile import compile_tex_to_pdf
 
@@ -708,7 +714,14 @@ def compile_apply_pack_cv_pdf(
     # Once every role is at its bullet floor and it still doesn't fit, ship it as a
     # (flagged) 2-page PDF with every selected project intact rather than silently
     # dropping below the stated minimum to force a single page.
-    return pdf_bytes, page_count > 1, dropped
+    from services.apply_pack_backstops import check_pdf_bytes, find_bare_pipes
+
+    pdf_warns = check_pdf_bytes(pdf_bytes, page_count=page_count)
+    latex_warns = find_bare_pipes(tex)
+    warns = pdf_warns + latex_warns
+    if warns:
+        print(f"[apply_pack] pdf/latex checks: {warns}", flush=True)
+    return pdf_bytes, page_count > 1, dropped, warns
 
 
 def format_boilerplate_section(user: dict, job: dict) -> str:

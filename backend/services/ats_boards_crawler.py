@@ -2,7 +2,6 @@
 
 Free, keyless board APIs. User supplies board URLs or `ats:slug` entries in
 `ats_boards` (Settings). No Google scrape, no Apify.
-# ponytail: only these three ATS; Workday/generic HTML when someone pastes a
 # working pattern that doesn't need a browser.
 """
 

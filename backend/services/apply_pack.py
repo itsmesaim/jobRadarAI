@@ -9,6 +9,7 @@ import json
 import re
 import time
 from datetime import datetime, timezone
+from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
@@ -195,13 +196,18 @@ scan would. Do not assume the draft is already optimized.
   JD-central theme (even Preferred/Desirable) and the cover letter never names it, that is an
   issue. A letter that only lists Essential gaps and skips a tip like "actively working through
   native AWS managed services" is incomplete.
-- issues: list every CONCRETE reason a real ATS/recruiter would reject or rank this draft low,
-  one per line: an Essential/Required JD keyword missing from the draft, a bullet with no
-  measurable outcome where MASTER CV had a real metric available, a cover letter that opens with
-  a hedge or cliche, a cover letter that ignored a TAILORING TIP acknowledgment, a dropped
-  MASTER CV role, a keyword tier mismatch. Only list issues that are actually fixable or worth
-  flagging, do not invent problems to pad the list. Leave issues empty if the draft would
-  already pass a real ATS screen cleanly.
+- issues: list every CONCRETE reason a real ATS/recruiter would reject or rank this draft low.
+  Each issue MUST be a structured object with fields:
+    tier: R1 | R2 | R3
+    owner: drafter | humanizer | user
+    reason: one-line problem
+    evidence: short quote from draft or JD (or "n/a")
+    direction: kind of fix, never new facts
+  Tiers: R1 format/parser, R2 screen-out (knockouts, unsupported claims, missed real keywords),
+  R3 recruiter smell / AI tells. Owners: drafter (structure/selection), humanizer (wording),
+  user (needs a fact only the candidate can give).
+  Only list issues that are actually fixable or worth flagging. Leave issues empty if the draft
+  would already pass a real ATS screen cleanly.
 """.strip()
 
 
@@ -310,6 +316,27 @@ class ApplyPackDraft(BaseModel):
     )
 
 
+class ATSIssue(BaseModel):
+    """Structured ATS finding (tier + owner are first-class, not text prefixes)."""
+
+    tier: Literal["R1", "R2", "R3"] = Field(
+        description="R1 format/parser, R2 screen-out, R3 recruiter smell / AI tells"
+    )
+    owner: Literal["drafter", "humanizer", "user"] = Field(
+        description="drafter=structure/selection, humanizer=wording, user=needs a fact"
+    )
+    reason: str = Field(
+        description="One-line reason this draft would be rejected or ranked low"
+    )
+    evidence: str = Field(
+        default="n/a", description="Short quote from draft or JD, or n/a"
+    )
+    direction: str = Field(
+        default="",
+        description="Kind of fix only; never invent new content, numbers, or skills",
+    )
+
+
 class ATSCritique(BaseModel):
     ats_alignment_pct: int = Field(
         description="0-100 honest keyword alignment between JD and the draft/MASTER CV (not inflated)"
@@ -324,11 +351,11 @@ class ATSCritique(BaseModel):
     ats_keywords_missing: list[str] = Field(
         description="JD keywords not found in the draft or MASTER CV, gaps only, do not fabricate"
     )
-    issues: list[str] = Field(
+    issues: list[ATSIssue] = Field(
         default_factory=list,
         description=(
-            "One line per concrete reason a real ATS/recruiter would reject or rank this draft "
-            "low. Empty if the draft would already pass a real ATS screen cleanly."
+            "Structured ATS/recruiter issues with tier and owner fields. Empty only if the "
+            "draft would already pass a real ATS screen cleanly."
         ),
     )
 
@@ -378,7 +405,6 @@ def _unbacked_summary_terms(summary: str, master_cv_text: str) -> list[str]:
     catching real fabrication (e.g. "FastAPI and Flask" when only FastAPI is real) without
     needing to parse natural language, real tool names the candidate has are always somewhere
     in MASTER CV verbatim (skills, experience, or project bullets).
-    ponytail: token-presence heuristic, not full fact-checking, won't catch a fabricated CLAIM
     built entirely from real words (e.g. inventing a metric using real tool names), only a
     genuinely new tool/tech name, that's the specific failure mode this was written for.
     """
@@ -444,7 +470,6 @@ def _ensure_matched_strength_skills_survive(
 PROJECT_BULLET_FLOOR = 4
 PROJECT_BULLET_DEFAULT_CAP = 5
 PROJECT_BULLET_STRONG_CAP = 6
-# ponytail: token-overlap bar for "this project is a strong JD match", bump
 # PROJECT_BULLET_STRONG_CAP if real strong matches stay at 4 bullets.
 _PROJECT_STRONG_MATCH = 0.18
 
@@ -1006,9 +1031,12 @@ async def generate_apply_pack_stream(
 ):
     """Async generator yielding ("stage", ...) then ("done", {pack, ats, content}).
 
-    Full pack (part=all) runs LangGraph: draft -> ats -> revise? -> humanize(stub).
+    Full pack (part=all) runs LangGraph: draft -> ats -> revise? -> humanize.
     part=cv|cover is one structured call on the existing pack. Python backstops after.
     """
+    pack_ats_unaudited = False
+    pack_user_questions: list[str] = []
+    pack_humanizer_fallback = ""
     if is_incomplete_jd(job.get("full_text", "")):
         raise ValueError(
             "Job description is incomplete. Paste the full JD or re-crawl before generating an apply pack."
@@ -1210,12 +1238,26 @@ USER NOTE for this generation (follow it using MASTER CV facts only; ignore if e
             SelectedSkillGroup(**s) for s in graph_state.get("final_skills") or []
         ]
         ats_fixes = list(graph_state.get("ats_fixes") or [])
+        if graph_state.get("ats_unaudited"):
+            ats_fixes = list(ats_fixes) + ["UNAUDITED: ATS screen did not complete."]
+        for q in graph_state.get("user_questions") or []:
+            note = f"Needs your input: {q}"
+            if note not in final_notes:
+                final_notes = list(final_notes) + [note]
         critique = ATSCritique(
             ats_alignment_pct=int(graph_state.get("ats_alignment_pct") or 0),
             ats_keywords_matched=list(graph_state.get("ats_keywords_matched") or []),
             ats_keywords_missing=list(graph_state.get("ats_keywords_missing") or []),
             issues=[],
         )
+        pack_ats_unaudited = bool(graph_state.get("ats_unaudited"))
+        pack_user_questions = list(graph_state.get("user_questions") or [])
+        pack_humanizer_fallback = str(graph_state.get("humanizer_fallback") or "")
+        if pack_humanizer_fallback and graph_state.get("humanizer_reverted"):
+            # Ensure note survives even if graph notes were trimmed earlier.
+            note = "Humanizer fallback: integrity check failed. Pack uses the pre-humanize draft."
+            if note not in final_notes:
+                final_notes = list(final_notes) + [note]
 
     structured_cv = (user.get("cv") or {}).get("structured") or {}
     real_companies = {
@@ -1315,10 +1357,14 @@ USER NOTE for this generation (follow it using MASTER CV facts only; ignore if e
             "matched": parsed.ats_keywords_matched,
             "missing": parsed.ats_keywords_missing,
             "fixes": parsed.ats_fixes,
+            "unaudited": pack_ats_unaudited,
+            "user_questions": pack_user_questions,
+            "humanizer_fallback": pack_humanizer_fallback or None,
         },
-        # Structured content, cached alongside pack/ats so the CV/cover-letter PDF
-        # endpoints can compile on demand without re-running the LLM calls.
         "content": parsed.model_dump(),
+        "ats_unaudited": pack_ats_unaudited,
+        "user_questions": pack_user_questions,
+        "humanizer_fallback": pack_humanizer_fallback or None,
     }
     _ap_log(
         f"stream done pack_chars={len(pack)} "

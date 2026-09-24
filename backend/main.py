@@ -183,7 +183,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition"],
+    expose_headers=[
+        "Content-Disposition",
+        "X-Apply-Pack-Overflow",
+        "X-Apply-Pack-Warnings",
+    ],
 )
 
 # ── routers ──

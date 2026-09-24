@@ -21,9 +21,10 @@ export function TermsPage() {
       <LegalSection title="2. What JobRadar does">
         <p>
           JobRadar crawls third-party job boards, rates listings against your CV using AI, can
-          generate a tailored CV and cover letter PDF from your CV, and helps you track applications
-          on a Kanban board. It does not apply to jobs for you. It does not guarantee interviews or
-          offers.
+          generate a tailored CV and cover letter PDF from your CV, lets you chat about each job
+          (rating explanations, CV/cover tips, form-question drafts, and proposing MASTER CV updates
+          you review before they save), and helps you track applications on a Kanban board. It does
+          not apply to jobs for you. It does not guarantee interviews or offers.
         </p>
       </LegalSection>
 
@@ -57,9 +58,11 @@ export function TermsPage() {
 
       <LegalSection title="6. Your content">
         <p>
-          You keep ownership of your CV and anything you upload. By uploading it, you allow us to
-          process it (including sending redacted portions to an AI provider, as described in the
-          Privacy Policy) solely to provide the service to you.
+          You keep ownership of your CV, anything you upload, and anything you type in job chat. By
+          uploading or sending it, you allow us to process it (including sending relevant portions
+          to an AI provider, as described in the Privacy Policy) solely to provide the service to
+          you. A MASTER CV addition proposed in chat is only saved after you explicitly Accept it,
+          and like the rest of your CV, must be truthful, not invented or exaggerated experience.
         </p>
       </LegalSection>
 

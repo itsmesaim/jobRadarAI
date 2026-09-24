@@ -1,5 +1,48 @@
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
+
+/**
+ * Shared fixed-position backdrop every modal in this app sits on. Each modal
+ * keeps its own inner card markup/styling - this only dedupes the outer
+ * position:fixed/inset:0/flex-center wrapper.
+ */
+export function Overlay({
+  zIndex = 1000,
+  padding = "var(--space-4)",
+  align = "center",
+  dim = 0.55,
+  blur = false,
+  children,
+  style,
+  ...rest
+}: {
+  zIndex?: number;
+  padding?: string | number;
+  align?: "center" | "flex-end";
+  dim?: number;
+  blur?: boolean;
+  children: ReactNode;
+} & HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      {...rest}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: `rgba(0, 0, 0, ${dim})`,
+        ...(blur ? { backdropFilter: "blur(4px)" } : {}),
+        display: "flex",
+        alignItems: align === "center" ? "center" : "flex-end",
+        justifyContent: "center",
+        zIndex,
+        padding,
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
 
 export function Modal({
   titleId,
@@ -19,22 +62,14 @@ export function Modal({
   children: ReactNode;
 }) {
   return (
-    <div
+    <Overlay
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
       onClick={onCancel}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0, 0, 0, 0.72)",
-        backdropFilter: "blur(4px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex,
-        padding: "var(--space-4)",
-      }}
+      zIndex={zIndex}
+      dim={0.72}
+      blur
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -99,7 +134,7 @@ export function Modal({
 
         {children}
       </div>
-    </div>
+    </Overlay>
   );
 }
 

@@ -15,3 +15,10 @@ export function timeAgo(dateStr?: string): string {
   const weeks = Math.floor(days / 7);
   return `${weeks}w ago`;
 }
+
+export function fullDate(dateStr?: string): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString();
+}

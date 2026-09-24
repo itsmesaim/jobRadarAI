@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Overlay } from "./Modal";
 
 /** Small optional prompt shown right after moving a job to Rejected. Stored server-side
  * and surfaced back if the same company shows up again (see JobDetailModal's
@@ -13,19 +14,7 @@ export function RejectReasonModal({
   const [reason, setReason] = useState("");
 
   return (
-    <div
-      onClick={() => onSubmit(null)}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 150,
-        padding: 16,
-      }}
-    >
+    <Overlay onClick={() => onSubmit(null)} zIndex={150} padding={16}>
       <div
         onClick={(e) => e.stopPropagation()}
         className="card"
@@ -82,6 +71,6 @@ export function RejectReasonModal({
           </button>
         </div>
       </div>
-    </div>
+    </Overlay>
   );
 }

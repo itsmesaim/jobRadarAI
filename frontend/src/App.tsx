@@ -10,6 +10,7 @@ import { LoginPage } from "./pages/Login";
 import { ForgotPasswordPage } from "./pages/ForgotPassword";
 import { ResetPasswordPage } from "./pages/ResetPassword";
 import { Dashboard } from "./pages/Dashboard";
+import { JobChatPage } from "./pages/JobChatPage";
 import { KanbanPage } from "./pages/Kanban";
 import { SettingsPage } from "./pages/Settings";
 import { AdminPage } from "./pages/Admin";
@@ -70,6 +71,14 @@ export default function App() {
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/cookies" element={<CookiesPage />} />
           <Route path="/" element={<Home />} />
+          <Route
+            path="/jobs/:jobId"
+            element={
+              <Protected>
+                <JobChatPage />
+              </Protected>
+            }
+          />
           <Route
             path="/kanban"
             element={

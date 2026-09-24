@@ -2,6 +2,7 @@ type RequestConfig = {
   params?: Record<string, string | number | boolean | undefined | null>;
   data?: unknown;
   headers?: Record<string, string>;
+  responseType?: "json" | "blob" | "text";
 };
 
 type ApiResponse<T = any> = { data: T };
@@ -9,6 +10,11 @@ type ApiResponse<T = any> = { data: T };
 export type ApiError = Error & {
   response?: { status: number; data?: { detail?: string } };
 };
+
+/** Pull the backend's `detail` message out of a caught API error, if any. */
+export function getErrorDetail(err: unknown): string | undefined {
+  return (err as ApiError | undefined)?.response?.data?.detail;
+}
 
 const baseURL = import.meta.env.VITE_API_URL;
 
@@ -56,12 +62,16 @@ async function request<T = any>(
   }
 
   let data: T | undefined;
-  const text = await res.text();
-  if (text) {
-    try {
-      data = JSON.parse(text) as T;
-    } catch {
-      data = text as T;
+  if (config.responseType === "blob") {
+    data = (await res.blob()) as T;
+  } else {
+    const text = await res.text();
+    if (text) {
+      try {
+        data = JSON.parse(text) as T;
+      } catch {
+        data = text as T;
+      }
     }
   }
 
@@ -78,6 +88,8 @@ const api = {
   get: <T = any>(path: string, config?: RequestConfig) => request<T>("GET", path, config),
   post: <T = any>(path: string, data?: unknown, config?: RequestConfig) =>
     request<T>("POST", path, { ...config, data }),
+  put: <T = any>(path: string, data?: unknown, config?: RequestConfig) =>
+    request<T>("PUT", path, { ...config, data }),
   patch: <T = any>(path: string, data?: unknown, config?: RequestConfig) =>
     request<T>("PATCH", path, { ...config, data }),
   delete: <T = any>(path: string, config?: RequestConfig) => request<T>("DELETE", path, config),

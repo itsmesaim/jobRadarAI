@@ -8,6 +8,7 @@ import type {
   CVData,
   AiModelCatalogEntry,
   ModelPurpose,
+  MasterCvProposal,
 } from "../types";
 
 export const authApi = {
@@ -43,7 +44,10 @@ export const authApi = {
 /** Fetches a Bearer-token-protected file and triggers a browser download, since a plain
  * <a href> can't carry an Authorization header. Returns response headers the caller might
  * care about (e.g. the CV endpoint's page-overflow flag). */
-async function downloadFile(url: string, filenameFallback: string): Promise<{ overflow: boolean }> {
+async function downloadFile(
+  url: string,
+  filenameFallback: string,
+): Promise<{ overflow: boolean; warnings: string[] }> {
   const res = await fetch(buildUrl(url), { headers: authHeaders() });
   if (!res.ok) {
     let detail = res.statusText;
@@ -58,6 +62,22 @@ async function downloadFile(url: string, filenameFallback: string): Promise<{ ov
     throw err;
   }
   const overflow = res.headers.get("X-Apply-Pack-Overflow") === "true";
+  const warnRaw = res.headers.get("X-Apply-Pack-Warnings") || "";
+  const PDF_WARN_LABELS: Record<string, string> = {
+    pdf_missing: "PDF missing",
+    page_overflow: "CV ran over 1 page",
+    pdftotext_failed: "Could not extract PDF text",
+    empty_extract: "PDF text extract nearly empty",
+    em_dash: "Em dash found in PDF text",
+    ligature: "Ligature glyphs in PDF extract",
+    replacement_chars: "Font/encoding damage in PDF",
+    bare_pipe: "Bare pipe in LaTeX (use textbar)",
+  };
+  const warnings = warnRaw
+    .split(",")
+    .map((w) => w.trim())
+    .filter(Boolean)
+    .map((code) => PDF_WARN_LABELS[code] || code);
   const disposition = res.headers.get("Content-Disposition") || "";
   const filename = /filename="([^"]+)"/.exec(disposition)?.[1] || filenameFallback;
   const blob = await res.blob();
@@ -69,7 +89,7 @@ async function downloadFile(url: string, filenameFallback: string): Promise<{ ov
   a.click();
   a.remove();
   URL.revokeObjectURL(blobUrl);
-  return { overflow };
+  return { overflow, warnings };
 }
 
 export const jobsApi = {
@@ -90,6 +110,24 @@ export const jobsApi = {
     return res.data as JobsResponse;
   },
 
+  getChat: async (id: string) => {
+    const res = await api.get(`/jobs/${id}/chat`);
+    return res.data as {
+      messages: { role: string; content: string; at?: string; refuse?: boolean }[];
+    };
+  },
+  postChat: async (id: string, message: string) => {
+    const res = await api.post(`/jobs/${id}/chat`, { message });
+    return res.data as {
+      reply: string;
+      refuse: boolean;
+      answers: string[];
+      action?: string;
+      proposal?: MasterCvProposal;
+      source?: string;
+      messages: { role: string; content: string; at?: string; refuse?: boolean }[];
+    };
+  },
   get: async (id: string) => {
     const res = await api.get(`/jobs/${id}`);
     return res.data as Job;
@@ -173,7 +211,15 @@ export const jobsApi = {
   ): Promise<{
     pack: string;
     apply_packs_remaining: number;
-    ats: { alignment_pct: number; matched: string[]; missing: string[]; fixes: string[] } | null;
+    ats: {
+      alignment_pct: number;
+      matched: string[];
+      missing: string[];
+      fixes: string[];
+      unaudited?: boolean;
+      user_questions?: string[];
+      humanizer_fallback?: string | null;
+    } | null;
     cached: boolean;
   }> => {
     const qs = new URLSearchParams();
@@ -205,7 +251,15 @@ export const jobsApi = {
     let result: {
       pack: string;
       apply_packs_remaining: number;
-      ats: { alignment_pct: number; matched: string[]; missing: string[]; fixes: string[] } | null;
+      ats: {
+        alignment_pct: number;
+        matched: string[];
+        missing: string[];
+        fixes: string[];
+        unaudited?: boolean;
+        user_questions?: string[];
+        humanizer_fallback?: string | null;
+      } | null;
       cached: boolean;
     } | null = null;
     let errorDetail: string | null = null;
@@ -305,6 +359,20 @@ export const cvApi = {
 };
 
 export const userApi = {
+  getFaq: async (q = "") => {
+    const res = await api.get("/users/faq", { params: q ? { q } : {} });
+    return res.data as {
+      items: { id: string; question: string; answer: string }[];
+      query?: string;
+      answer?: {
+        reply: string;
+        faq_ids: string[];
+        refuse: boolean;
+        source?: string;
+      } | null;
+      hits?: { id: string; question: string; answer: string }[];
+    };
+  },
   getPreferences: async () => {
     const res = await api.get("/users/preferences");
     return res.data as UserPreferences;
@@ -312,6 +380,58 @@ export const userApi = {
   updatePreferences: async (prefs: Partial<UserPreferences>) => {
     const res = await api.patch("/users/preferences", prefs);
     return res.data;
+  },
+  getCvLatexTemplate: async () => {
+    const res = await api.get("/users/cv-latex-template");
+    return res.data as {
+      has_custom: boolean;
+      name: string;
+      updated_at?: string | null;
+      preview: string;
+    };
+  },
+  downloadCvLatexSample: async () => {
+    const res = await api.get("/users/cv-latex-template/sample", {
+      responseType: "blob",
+    });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "jobradar-sample-cv.tex";
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+  uploadCvLatexTemplate: async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await api.put("/users/cv-latex-template", form);
+    return res.data as { ok: boolean; name: string };
+  },
+  deleteCvLatexTemplate: async () => {
+    const res = await api.delete("/users/cv-latex-template");
+    return res.data;
+  },
+  addMasterCvProject: async (payload: {
+    name: string;
+    description?: string;
+    technologies?: string[];
+  }) => {
+    const res = await api.post("/users/cv/projects", payload);
+    return res.data as { ok: boolean; projects_count: number };
+  },
+  addMasterCvExperience: async (payload: {
+    title: string;
+    company?: string;
+    start?: string;
+    end?: string;
+    bullets?: string[];
+  }) => {
+    const res = await api.post("/users/cv/experience", payload);
+    return res.data as { ok: boolean; experience_count: number };
+  },
+  addMasterCvSkills: async (payload: { category?: string; items: string[] }) => {
+    const res = await api.post("/users/cv/skills", payload);
+    return res.data as { ok: boolean; skills_count: number };
   },
   getSkillOverrides: async () => {
     const res = await api.get("/users/skill-overrides");

@@ -29,9 +29,13 @@ import {
   FileText,
   Sun,
   Moon,
+  Search,
+  Cpu,
+  Zap,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { authApi, cvApi, userApi, jobsApi } from "../api/index";
+import { authApi, cvApi, userApi, jobsApi, crawlerApi } from "../api/index";
+import { getErrorDetail } from "../api/client";
 import { useAuthStore, useThemeStore } from "../hooks/useStores";
 import {
   LimitContactModal,
@@ -40,7 +44,7 @@ import {
 } from "../components/LimitContactModal";
 import { RatingProviderConfirmModal } from "../components/RatingProviderConfirmModal";
 import { RequestModelModal } from "../components/RequestModelModal";
-import { ClearanceStamp } from "../components/ui/ClearanceStamp";
+import { Overlay } from "../components/Modal";
 import { getMissingProfileFields } from "../utils/profileCompleteness";
 import type { AiModelCatalogEntry, DataSummary, ModelPurpose, UserPreferences } from "../types";
 
@@ -160,11 +164,32 @@ const SETTINGS_GROUPS: {
   id: string;
   icon: React.ElementType;
   label: string;
+  blurb: string;
 }[] = [
-  { id: "you", icon: UserCircle, label: "You" },
-  { id: "search", icon: SlidersHorizontal, label: "Search" },
-  { id: "ai", icon: Brain, label: "AI" },
-  { id: "account", icon: KeyRound, label: "Account & data" },
+  {
+    id: "you",
+    icon: UserCircle,
+    label: "Profile & CV",
+    blurb: "Upload your CV and tell us who you are",
+  },
+  {
+    id: "search",
+    icon: Search,
+    label: "Job search",
+    blurb: "Roles, locations, and what to include",
+  },
+  {
+    id: "ai",
+    icon: Brain,
+    label: "AI & usage",
+    blurb: "Models, calibration, and daily limits",
+  },
+  {
+    id: "account",
+    icon: KeyRound,
+    label: "Account",
+    blurb: "Theme, password, and your data",
+  },
 ];
 
 const AUTOFILL_LABELS: Record<string, string> = {
@@ -190,7 +215,7 @@ function SettingsSidebar({
       className={`settings-sidebar${mobileOpen ? " settings-sidebar-open" : ""}`}
       aria-label="Settings sections"
     >
-      {SETTINGS_GROUPS.map(({ id, icon: Icon, label }) => (
+      {SETTINGS_GROUPS.map(({ id, icon: Icon, label, blurb }) => (
         <button
           key={id}
           type="button"
@@ -198,15 +223,29 @@ function SettingsSidebar({
           className={`settings-sidebar-link${activeGroup === id ? " settings-sidebar-link-active" : ""}`}
           aria-current={activeGroup === id ? "page" : undefined}
         >
-          <span>
-            <Icon size={14} />
-            {label}
+          <span className="settings-sidebar-link-main">
+            <Icon size={16} />
+            <span>
+              <span className="settings-sidebar-link-label">{label}</span>
+              <span className="settings-sidebar-link-blurb">{blurb}</span>
+            </span>
           </span>
-          {complete[id] != null && <ClearanceStamp complete={!!complete[id]} />}
+          {complete[id] != null && (
+            <span
+              className={`settings-sidebar-dot${complete[id] ? " is-done" : " is-todo"}`}
+              title={complete[id] ? "Ready" : "Needs attention"}
+            />
+          )}
         </button>
       ))}
     </nav>
   );
+}
+
+function formatTokensShort(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${Math.round(n / 100) / 10}k`;
+  return String(n);
 }
 
 export function SettingsPage() {
@@ -244,11 +283,18 @@ export function SettingsPage() {
   const [newOverrideContext, setNewOverrideContext] = useState("");
   const [addingOverride, setAddingOverride] = useState(false);
   const [autofilledFields, setAutofilledFields] = useState<string[] | null>(null);
+  const [aiModelsOpen, setAiModelsOpen] = useState(false);
 
   const { data: cv } = useQuery({
     queryKey: ["cv"],
     queryFn: cvApi.get,
     retry: false,
+  });
+
+  const { data: usage } = useQuery({
+    queryKey: ["crawl-status"],
+    queryFn: crawlerApi.status,
+    refetchInterval: 60000,
   });
 
   const { data: prefs } = useQuery({
@@ -495,41 +541,67 @@ export function SettingsPage() {
 
   const { dark, toggle: toggleTheme } = useThemeStore();
 
+  const isFull = !!(
+    usage?.is_admin ||
+    usage?.token_quota_unlimited ||
+    usage?.full_access ||
+    (usage?.full_access_until && new Date(usage.full_access_until) > new Date())
+  );
+  const searchesLeft = isFull
+    ? null
+    : Math.max(0, (usage?.search_limit ?? 0) - (usage?.searches_used ?? 0));
+  const ratingsLeft = isFull
+    ? null
+    : Math.max(0, (usage?.rating_limit ?? 0) - (usage?.ratings_used ?? 0));
+  const dailyLimit = usage?.daily_token_limit ?? 0;
+  const tokensLeft =
+    isFull || dailyLimit <= 0 ? null : Math.max(0, dailyLimit - (usage?.daily_tokens_used ?? 0));
+  const packsLeft = isFull
+    ? null
+    : Math.max(
+        0,
+        usage?.apply_packs_remaining ??
+          (usage?.apply_pack_limit ?? 0) - (usage?.apply_packs_used ?? 0),
+      );
+
   return (
     <div className={`settings-page${dirty ? " has-unsaved" : ""}`}>
       <div className="settings-header">
-        <h2 className="settings-title text-display">Settings</h2>
+        <div>
+          <h2 className="settings-title text-display">Settings</h2>
+          <p className="settings-subtitle">
+            Set this up once. Search and rating use what you save here.
+          </p>
+        </div>
         {dirty && <span className="settings-unsaved-pill">Unsaved changes</span>}
       </div>
 
-      {/* Always visible regardless of active tab, so missing fields on other
-          tabs are obvious without clicking into each one to check. */}
-      <div className="settings-completeness-bar">
-        {missingFields.length === 0 ? (
-          <span className="settings-completeness-complete">
-            <ClearanceStamp complete /> Profile complete
-          </span>
-        ) : (
-          <>
-            <span className="settings-completeness-label">
+      {missingFields.length > 0 && (
+        <div className="settings-setup-card">
+          <div className="settings-setup-card-copy">
+            <strong>Finish setup to unlock Search</strong>
+            <span>
               {TOTAL_REQUIRED_FIELDS - missingFields.length} of {TOTAL_REQUIRED_FIELDS} required
-              fields set
+              items done. Tap a missing item to jump there.
             </span>
-            <div className="settings-completeness-chips">
-              {missingFields.map((f) => (
-                <button
-                  key={f.key}
-                  type="button"
-                  className="settings-completeness-chip"
-                  onClick={() => setActiveGroup(f.group)}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
+          </div>
+          <div className="settings-completeness-chips">
+            {missingFields.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                className="settings-completeness-chip"
+                onClick={() => {
+                  setActiveGroup(f.group);
+                  setMobileNavOpen(false);
+                }}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <button
         type="button"
@@ -562,21 +634,15 @@ export function SettingsPage() {
 
       <div className="settings-content">
         {activeGroup === "you" && (
-          <SectionGroup id="you" icon={UserCircle} label="You">
-            <AiModelPicker
-              purpose="cv_parsing"
-              title="CV parsing model"
-              subtitle="Which AI turns your uploaded CV into structured data."
-              providerField="cv_parsing_provider"
-              modelField="cv_parsing_model"
-              requestField="cv_parsing_model_request"
-              localPrefs={localPrefs}
-              setLocalPrefs={setLocalPrefs}
-            />
+          <SectionGroup id="you" icon={UserCircle} label="Profile & CV">
+            <p className="settings-tab-intro">
+              Start with your CV. Everything else (rating, tailored packs, form answers) uses this
+              as the source of truth.
+            </p>
             {/* CV Section */}
             <Section
-              title="CV"
-              subtitle="Upload your master CV. Used for job rating and tailoring."
+              title="1. Master CV"
+              subtitle="Upload once. Used for job rating and tailored CV packs."
             >
               {uploading ? (
                 <div
@@ -856,8 +922,8 @@ export function SettingsPage() {
             </Section>
 
             <Section
-              title="CV template"
-              subtitle="Look of tailored CV PDFs. Three presets; turn sections off if you want a shorter pack."
+              title="Built-in layout presets"
+              subtitle="Quick skins when you are not using your own LaTeX. Ignored if a custom .tex is uploaded."
             >
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
                 {CV_TEMPLATE_PRESETS.map((p) => (
@@ -879,7 +945,7 @@ export function SettingsPage() {
               <p
                 style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", marginBottom: 10 }}
               >
-                Sections on the PDF
+                Sections on the PDF (built-in presets only)
               </p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {CV_SECTION_KEYS.map(({ id, label }) => {
@@ -919,45 +985,127 @@ export function SettingsPage() {
                 })}
               </div>
             </Section>
+
+            <LatexTemplateSection />
           </SectionGroup>
         )}
 
         {activeGroup === "ai" && (
-          <SectionGroup id="ai" icon={Brain} label="AI models">
-            <p className="settings-pick-why">
-              Split by job so you can cut cost. Rating hits hundreds of listings. Apply pack runs a
-              few times a day. CV parse runs once per upload. Pick from the list. Switching one
-              purpose does not change the others.
+          <SectionGroup id="ai" icon={Brain} label="AI & usage">
+            <p className="settings-tab-intro">
+              Defaults work for most people. Open model pickers only if you want to change cost or
+              quality. Your daily allowance lives here too.
             </p>
-            <AiModelPicker
-              purpose="rating"
-              title="Rating model"
-              subtitle="Scores crawled jobs. Hundreds of calls. Prefer a cheap or local model."
-              providerField="rating_provider"
-              modelField="rating_model"
-              requestField="rating_model_request"
-              localPrefs={localPrefs}
-              setLocalPrefs={setLocalPrefs}
-            />
-            <AiModelPicker
-              purpose="apply_pack"
-              title="Apply pack / tailored CV"
-              subtitle="Writes the tailored CV and cover letter. A few calls. A stronger model is fine here."
-              providerField="apply_pack_provider"
-              modelField="apply_pack_model"
-              requestField="apply_pack_model_request"
-              localPrefs={localPrefs}
-              setLocalPrefs={setLocalPrefs}
-            />
+
+            <Section title="Your allowance today" subtitle="Resets with your plan limits.">
+              <div className="settings-usage-grid">
+                <div className="settings-usage-card">
+                  <span className="settings-usage-label">
+                    <Search size={13} /> Searches
+                  </span>
+                  <strong>{isFull ? "Unlimited" : `${searchesLeft ?? "—"} left`}</strong>
+                </div>
+                <div className="settings-usage-card">
+                  <span className="settings-usage-label">
+                    <Zap size={13} /> Ratings
+                  </span>
+                  <strong>{isFull ? "Unlimited" : `${ratingsLeft ?? "—"} left`}</strong>
+                </div>
+                <div className="settings-usage-card">
+                  <span className="settings-usage-label">
+                    <Cpu size={13} /> AI tokens
+                  </span>
+                  <strong>
+                    {isFull || tokensLeft == null
+                      ? isFull
+                        ? "Unlimited"
+                        : "Not capped"
+                      : `${formatTokensShort(tokensLeft)} left`}
+                  </strong>
+                </div>
+                <div className="settings-usage-card">
+                  <span className="settings-usage-label">
+                    <FileText size={13} /> CV packs
+                  </span>
+                  <strong>{isFull ? "Unlimited" : `${packsLeft ?? "—"} left`}</strong>
+                </div>
+              </div>
+            </Section>
+
+            <div className="settings-disclosure">
+              <button
+                type="button"
+                className="settings-disclosure-toggle"
+                aria-expanded={aiModelsOpen}
+                onClick={() => setAiModelsOpen((v) => !v)}
+              >
+                <span>
+                  <strong>Change AI models</strong>
+                  <span className="settings-disclosure-hint">
+                    Rating (many calls) · Apply pack (few) · CV parse (on upload)
+                  </span>
+                </span>
+                <ChevronDown
+                  size={18}
+                  style={{
+                    transform: aiModelsOpen ? "rotate(180deg)" : "none",
+                    transition: "transform 0.15s",
+                  }}
+                />
+              </button>
+              {aiModelsOpen && (
+                <div className="settings-disclosure-body">
+                  <p className="settings-pick-why">
+                    Switching one purpose does not change the others. Prefer a cheaper model for
+                    rating; a stronger one is fine for apply packs.
+                  </p>
+                  <AiModelPicker
+                    purpose="rating"
+                    title="Rating model"
+                    subtitle="Scores crawled jobs. Hundreds of calls. Prefer a cheap or local model."
+                    providerField="rating_provider"
+                    modelField="rating_model"
+                    requestField="rating_model_request"
+                    localPrefs={localPrefs}
+                    setLocalPrefs={setLocalPrefs}
+                  />
+                  <AiModelPicker
+                    purpose="apply_pack"
+                    title="Apply pack / tailored CV"
+                    subtitle="Writes the tailored CV and cover letter. A few calls."
+                    providerField="apply_pack_provider"
+                    modelField="apply_pack_model"
+                    requestField="apply_pack_model_request"
+                    localPrefs={localPrefs}
+                    setLocalPrefs={setLocalPrefs}
+                  />
+                  <AiModelPicker
+                    purpose="cv_parsing"
+                    title="CV parsing model"
+                    subtitle="Turns your uploaded CV into structured data. Runs on upload."
+                    providerField="cv_parsing_provider"
+                    modelField="cv_parsing_model"
+                    requestField="cv_parsing_model_request"
+                    localPrefs={localPrefs}
+                    setLocalPrefs={setLocalPrefs}
+                  />
+                </div>
+              )}
+            </div>
+
             <CalibrationNotesSection localPrefs={localPrefs} setLocalPrefs={setLocalPrefs} />
           </SectionGroup>
         )}
 
         {activeGroup === "search" && (
           <>
-            <SectionGroup id="search" icon={SlidersHorizontal} label="Job search preferences">
+            <SectionGroup id="search" icon={SlidersHorizontal} label="Job search">
+              <p className="settings-tab-intro">
+                These filters drive Search jobs. Wrong seniority or role here is why junior jobs
+                show up when you want senior.
+              </p>
               {/* Role */}
-              <Section title="Role" subtitle="What roles should we search for?">
+              <Section title="Role" subtitle="What titles should we search for?">
                 <div style={{ marginBottom: "var(--space-3)" }}>
                   <label className="label">Primary role</label>
                   <input
@@ -1766,7 +1914,10 @@ export function SettingsPage() {
 
         {activeGroup === "account" && (
           <>
-            <SectionGroup id="account" icon={KeyRound} label="Account & security">
+            <SectionGroup id="account" icon={KeyRound} label="Account">
+              <p className="settings-tab-intro">
+                Theme, password, and data controls. Nothing here changes how jobs are searched.
+              </p>
               <Section
                 title="Appearance"
                 subtitle="Same light / dark theme as the rest of the site (also in the top bar)."
@@ -1879,20 +2030,10 @@ export function SettingsPage() {
       </div>
 
       {showDeleteAccount && (
-        <div
+        <Overlay
           onClick={() => {
             setShowDeleteAccount(false);
             setDeleteConfirm("");
-          }}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.55)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            padding: "var(--space-4)",
           }}
         >
           <div
@@ -1977,7 +2118,7 @@ export function SettingsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </Overlay>
       )}
 
       {dirty && (
@@ -2825,6 +2966,124 @@ function DataPrivacySection({
           <Skull size={14} /> Delete account & all data
         </button>
       </div>
+    </Section>
+  );
+}
+
+function LatexTemplateSection() {
+  const queryClient = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { data, isLoading } = useQuery({
+    queryKey: ["cv-latex-template"],
+    queryFn: userApi.getCvLatexTemplate,
+  });
+  const uploadMut = useMutation({
+    mutationFn: (file: File) => userApi.uploadCvLatexTemplate(file),
+    onSuccess: (res) => {
+      toast.success(`Saved ${res.name}`);
+      queryClient.invalidateQueries({ queryKey: ["cv-latex-template"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(getErrorDetail(err) || "Could not save template");
+    },
+  });
+  const deleteMut = useMutation({
+    mutationFn: () => userApi.deleteCvLatexTemplate(),
+    onSuccess: () => {
+      toast.success("Custom template removed - using built-in presets again");
+      queryClient.invalidateQueries({ queryKey: ["cv-latex-template"] });
+    },
+    onError: () => toast.error("Could not delete template"),
+  });
+
+  return (
+    <Section
+      title="Your LaTeX template"
+      subtitle="Bring your own .tex. Apply-pack fills the placeholders from your MASTER CV. Download the sample first."
+    >
+      <p
+        style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12, lineHeight: 1.5 }}
+      >
+        Required placeholders include <code>NAME_PLACEHOLDER</code>,{" "}
+        <code>{"{{{SUMMARY_PLACEHOLDER}}}"}</code>, and{" "}
+        <code>{"{{{EXPERIENCE_PLACEHOLDER}}}"}</code>. Shell-escape commands are blocked.
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => void userApi.downloadCvLatexSample()}
+        >
+          <Download size={14} /> Download sample .tex
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={uploadMut.isPending}
+          onClick={() => fileRef.current?.click()}
+        >
+          {uploadMut.isPending ? (
+            <Loader size={14} className="animate-spin" />
+          ) : (
+            <Upload size={14} />
+          )}
+          Upload .tex
+        </button>
+        {data?.has_custom && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={deleteMut.isPending}
+            onClick={() => {
+              if (window.confirm("Remove your custom LaTeX template?")) deleteMut.mutate();
+            }}
+          >
+            <Trash2 size={14} /> Delete custom template
+          </button>
+        )}
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".tex,text/x-tex,application/x-tex,text/plain"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) uploadMut.mutate(f);
+        }}
+      />
+      {isLoading ? (
+        <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
+      ) : data?.has_custom ? (
+        <div
+          style={{
+            padding: 12,
+            borderRadius: "var(--radius)",
+            border: "1px solid var(--border)",
+            background: "var(--bg-secondary)",
+            fontSize: 13,
+          }}
+        >
+          <strong>{data.name || "custom.tex"}</strong>
+          <pre
+            style={{
+              margin: "8px 0 0",
+              fontSize: 11,
+              whiteSpace: "pre-wrap",
+              color: "var(--text-muted)",
+              maxHeight: 120,
+              overflow: "auto",
+            }}
+          >
+            {data.preview}
+          </pre>
+        </div>
+      ) : (
+        <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
+          No custom template yet - built-in Classic / Compact / Technical are used.
+        </p>
+      )}
     </Section>
   );
 }

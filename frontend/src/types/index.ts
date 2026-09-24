@@ -53,13 +53,32 @@ export interface Job {
   apply_pack_ready?: boolean;
   apply_pack_in_progress?: boolean;
   cv_generated_at?: string; // only present on GET /jobs/apply-packs
-  apply_pack_ats?: {
-    alignment_pct: number;
-    matched: string[];
-    missing: string[];
-    fixes: string[];
-  } | null;
+  apply_pack_ats?: ApplyPackAts | null;
 }
+
+/** ATS summary returned when an apply pack finishes (SSE done + job detail). */
+export type ApplyPackAts = {
+  alignment_pct: number;
+  matched: string[];
+  missing: string[];
+  fixes: string[];
+  unaudited?: boolean;
+  user_questions?: string[];
+  /** Set when humanizer was skipped: "integrity" | "timeout" */
+  humanizer_fallback?: "integrity" | "timeout" | string | null;
+};
+
+export type MasterCvProposal =
+  | { kind: "project"; name: string; description?: string; technologies?: string[] }
+  | {
+      kind: "experience";
+      title: string;
+      company?: string;
+      start?: string;
+      end?: string;
+      bullets?: string[];
+    }
+  | { kind: "skill"; category?: string; items: string[] };
 
 export type JobStatus =
   "NEW" | "SAVED" | "APPLIED" | "INTERVIEWING" | "OFFER" | "REJECTED" | "FOLLOWUP" | "HALF_APPLIED";

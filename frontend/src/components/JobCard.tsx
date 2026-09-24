@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { ExternalLink, Building2, MapPin, EyeOff, Maximize2, Clock } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { ExternalLink, Building2, MapPin, EyeOff, MessageSquare, Clock } from "lucide-react";
 import toast from "react-hot-toast";
 import { ScoreBadge } from "./ScoreBadge";
-import { JobDetailModal } from "./JobDetailModal";
 import { RejectReasonModal } from "./RejectReasonModal";
 import { jobsApi } from "../api/index";
 import type { Job, JobStatus, Props } from "../types";
 import { timeAgo } from "../utils/time";
+import { sourceLabel } from "../utils/jobLabels";
 
 function fullDate(dateStr?: string): string {
   if (!dateStr) return "";
@@ -87,8 +88,9 @@ function cleanTitle(job: Job): string {
 }
 
 export function JobCard({ job, onStatusChange, onHidden }: Props) {
-  const [showModal, setShowModal] = useState(false);
+  const navigate = useNavigate();
   const [showRejectPrompt, setShowRejectPrompt] = useState(false);
+  const openChat = () => navigate(`/jobs/${job.id}`);
 
   const [currentStatus, setCurrentStatus] = useState<JobStatus>(job.status);
 
@@ -152,7 +154,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
   return (
     <>
       <div
-        onClick={() => setShowModal(true)}
+        onClick={openChat}
         className="card card-hover job-card"
         style={{
           opacity: job.auto_reject ? 0.45 : 1,
@@ -173,17 +175,7 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                   color: "var(--text-muted)",
                 }}
               >
-                {job.source === "manual"
-                  ? "Manual"
-                  : job.source === "jooble"
-                    ? "Jooble"
-                    : job.source === "jobsapi-indeed"
-                      ? "Indeed"
-                      : job.source === "jobsapi-linkedin"
-                        ? "LinkedIn"
-                        : job.source === "adzuna"
-                          ? "Adzuna"
-                          : "Auto"}
+                {sourceLabel(job.source)}
               </span>
               {postedTime && (
                 <span
@@ -475,17 +467,19 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
               <EyeOff size={13} />
             </button>
             <button
-              onClick={() => setShowModal(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                openChat();
+              }}
               className="btn btn-ghost job-card-icon-btn"
-              title="View full details"
+              title="Open job chat"
             >
-              <Maximize2 size={13} />
+              <MessageSquare size={13} />
             </button>
           </div>
         </div>
       </div>
 
-      {showModal && <JobDetailModal job={job} onClose={() => setShowModal(false)} />}
       {showRejectPrompt && (
         <RejectReasonModal
           jobTitle={title}

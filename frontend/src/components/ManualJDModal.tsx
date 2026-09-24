@@ -3,11 +3,12 @@ import { X, Link, FileText, Loader } from "lucide-react";
 import toast from "react-hot-toast";
 import { jobsApi, scrapeApi } from "../api/index";
 import { ScoreBadge } from "./ScoreBadge";
+import { Overlay } from "./Modal";
 import { parseLimitKindFromDetail, type LimitKind } from "./LimitContactModal";
 
 interface Props {
   onClose: () => void;
-  onAdded: () => void;
+  onAdded: (id?: string) => void;
   onLimitReached?: (kind: LimitKind) => void;
   canRate?: boolean;
   ratingsRemaining?: number;
@@ -98,7 +99,7 @@ export function ManualJDModal({
             ? "Daily AI token limit reached. Job saved, try again tomorrow or contact support."
             : "Daily rating limit reached. Job saved, you can rate it later from your list.");
         toast.error(detail, { duration: 6000 });
-        onAdded();
+        onAdded(res.id);
         onClose();
         onLimitReached?.(isToken ? parseLimitKindFromDetail(detail) : "rating");
         return;
@@ -106,7 +107,7 @@ export function ManualJDModal({
 
       if (res.score == null || !res.verdict || !res.matched_strengths || !res.gaps) {
         toast.error(res.detail || "Could not rate this job. Try again later.");
-        onAdded();
+        onAdded(res.id);
         return;
       }
 
@@ -116,7 +117,7 @@ export function ManualJDModal({
         matched_strengths: res.matched_strengths,
         gaps: res.gaps,
       });
-      onAdded();
+      onAdded(res.id);
     } catch (err: any) {
       const detail = err.response?.data?.detail;
       if (detail === "Job already exists.") {
@@ -130,18 +131,7 @@ export function ManualJDModal({
   };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.5)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 50,
-        padding: "var(--space-4)",
-      }}
-    >
+    <Overlay zIndex={50} dim={0.5}>
       <div
         className="card"
         style={{
@@ -458,6 +448,6 @@ export function ManualJDModal({
           )}
         </div>
       </div>
-    </div>
+    </Overlay>
   );
 }

@@ -1,4 +1,5 @@
 import { AlertCircle, Mail } from "lucide-react";
+import { Overlay } from "./Modal";
 
 export type LimitKind = "rating" | "search" | "token_daily" | "token_monthly" | "apply_pack";
 
@@ -91,22 +92,13 @@ export function LimitContactModal({ kind, onClose }: { kind: LimitKind; onClose:
   const mailto = `mailto:${ADMIN_EMAIL}?subject=${encodeURIComponent(copy.subject)}&body=${encodeURIComponent(`Hi,\n\nI've reached my ${kind.replace("_", " ")} limit on JobRadar and would like more access.\n\nThank you!`)}`;
 
   return (
-    <div
+    <Overlay
       role="dialog"
       aria-modal="true"
       aria-labelledby="limit-modal-title"
       onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0, 0, 0, 0.72)",
-        backdropFilter: "blur(4px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-        padding: "var(--space-4)",
-      }}
+      dim={0.72}
+      blur
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -226,6 +218,6 @@ export function LimitContactModal({ kind, onClose }: { kind: LimitKind; onClose:
           Email: <strong style={{ color: "var(--text-secondary)" }}>{ADMIN_EMAIL}</strong>
         </div>
       </div>
-    </div>
+    </Overlay>
   );
 }
