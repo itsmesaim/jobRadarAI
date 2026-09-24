@@ -18,7 +18,7 @@ export function Navbar({ onHelpClick }: Props = {}) {
   const { user } = useAuthStore();
   const links = [
     { to: "/", label: "Jobs", icon: LayoutGrid },
-    { to: "/kanban", label: "Pipeline", icon: Kanban },
+    { to: "/kanban", label: "Track", icon: Kanban },
     { to: "/settings", label: "Settings", icon: Settings },
   ];
 

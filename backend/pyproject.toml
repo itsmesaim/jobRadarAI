@@ -27,6 +27,7 @@ dependencies = [
     "langsmith>=0.8.0",
     "faiss-cpu>=1.9.0",
     "apscheduler>=3.11.2",
+    "langgraph>=1.2.5",
 ]
 
 [tool.uv]

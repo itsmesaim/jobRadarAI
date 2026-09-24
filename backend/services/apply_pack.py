@@ -922,6 +922,9 @@ STAGE_FLAVOR = {
     "revising": [
         "Fixing what the ATS scan flagged...",
     ],
+    "humanize": [
+        "Smoothing the tone so it reads human...",
+    ],
     "brief": [
         "Writing your fit brief...",
         "Weighing strengths against gaps...",
@@ -1001,12 +1004,10 @@ async def generate_apply_pack_stream(
     previous: dict | None = None,
     confirm_low_score: bool = False,
 ):
-    """Async generator yielding ("stage", {"stage": key, "messages": [...]}) tuples as
-    each real step starts, then a final ("done", {"pack": str, "ats": {...}}) with the
-    finished apply pack. Lets the caller show live progress instead of one long blocking wait.
+    """Async generator yielding ("stage", ...) then ("done", {pack, ats, content}).
 
-    Real draft -> independent ATS critique -> bounded single revision (max 3 LLM
-    calls). part=cv|cover is one call on the existing pack. Python backstops run after.
+    Full pack (part=all) runs LangGraph: draft -> ats -> revise? -> humanize(stub).
+    part=cv|cover is one structured call on the existing pack. Python backstops after.
     """
     if is_incomplete_jd(job.get("full_text", "")):
         raise ValueError(
@@ -1176,117 +1177,45 @@ USER NOTE for this generation (follow it using MASTER CV facts only; ignore if e
             issues=[],
         )
     else:
-        draft_llm = llm.with_structured_output(
-            ApplyPackDraft, include_raw=True, method="function_calling", **kwargs
-        )
-        draft_human = f"""
-    {job_header}
+        # LangGraph: draft -> ats -> revise? -> humanize(stub)
+        from services.apply_pack_graph import stream_apply_pack_graph
 
-    {jd_block}
-
-    {master_cv}
-
-    CANDIDATE (JSON):
-    {_cv_context(user)}
-    """.strip()
-        yield "stage", {"stage": "drafting", "messages": STAGE_FLAVOR["drafting"]}
-        draft: ApplyPackDraft | None = await _run_structured(
-            draft_llm,
-            [
-                SystemMessage(content=DRAFT_SYSTEM_PROMPT),
-                HumanMessage(content=draft_human),
-            ],
-            step="draft",
-            **usage_kwargs,
-        )
-        if not draft:
+        graph_state: dict | None = None
+        async for kind, payload in stream_apply_pack_graph(
+            job_header=job_header,
+            jd_block=jd_block,
+            master_cv=master_cv,
+            cv_context=_cv_context(user),
+            llm=llm,
+            kwargs=kwargs,
+            usage_kwargs=usage_kwargs,
+        ):
+            if kind == "stage":
+                yield "stage", payload
+            elif kind == "graph_done":
+                graph_state = payload
+        if not graph_state:
             raise ValueError("Could not generate apply pack. Try again.")
 
-        # --- Call 2: independent ATS critique of the draft ---
-        critique_llm = llm.with_structured_output(
-            ATSCritique, include_raw=True, method="function_calling", **kwargs
+        final_summary = graph_state["final_summary"]
+        final_experience = [
+            TailoredRole(**r) for r in graph_state.get("final_experience") or []
+        ]
+        final_cover_letter = CoverLetterParts(**graph_state["final_cover_letter"])
+        final_notes = list(graph_state.get("final_notes") or [])
+        final_projects = [
+            SelectedProject(**p) for p in graph_state.get("final_projects") or []
+        ]
+        final_skills = [
+            SelectedSkillGroup(**s) for s in graph_state.get("final_skills") or []
+        ]
+        ats_fixes = list(graph_state.get("ats_fixes") or [])
+        critique = ATSCritique(
+            ats_alignment_pct=int(graph_state.get("ats_alignment_pct") or 0),
+            ats_keywords_matched=list(graph_state.get("ats_keywords_matched") or []),
+            ats_keywords_missing=list(graph_state.get("ats_keywords_missing") or []),
+            issues=[],
         )
-        critique_human = f"""
-    {job_header}
-
-    {jd_block}
-
-    {master_cv}
-
-    DRAFT (written by a separate pass, read it cold):
-    {_draft_dump(draft)}
-    """.strip()
-        yield "stage", {"stage": "screening", "messages": STAGE_FLAVOR["screening"]}
-        try:
-            critique = await _run_structured(
-                critique_llm,
-                [
-                    SystemMessage(content=ATS_CRITIQUE_SYSTEM_PROMPT),
-                    HumanMessage(content=critique_human),
-                ],
-                step="ats_critique",
-                **usage_kwargs,
-            )
-        except ValueError as exc:
-            if not _is_llm_timeout(exc):
-                raise
-            critique = None
-            _ap_log("ATS timed out, shipping draft")
-
-        # --- Call 3: bounded single revision, only if the critique found real issues ---
-        revision = None
-        if critique and critique.issues:
-            revision_llm = llm.with_structured_output(
-                ApplyPackRevision, include_raw=True, method="function_calling", **kwargs
-            )
-            revision_human = f"""
-    {job_header}
-
-    {master_cv}
-
-    ORIGINAL DRAFT:
-    {_draft_dump(draft)}
-
-    ISSUES FROM ATS SCREEN (fix these only):
-    {chr(10).join(f"- {issue}" for issue in critique.issues)}
-    """.strip()
-            yield "stage", {"stage": "revising", "messages": STAGE_FLAVOR["revising"]}
-            try:
-                revision = await _run_structured(
-                    revision_llm,
-                    [
-                        SystemMessage(content=ATS_REVISION_SYSTEM_PROMPT),
-                        HumanMessage(content=revision_human),
-                    ],
-                    step="revision",
-                    **usage_kwargs,
-                )
-            except ValueError as exc:
-                if not _is_llm_timeout(exc):
-                    raise
-                _ap_log("revision timed out, using ATS-screened draft")
-
-        if revision:
-            final_summary = revision.tailored_summary
-            final_experience = revision.tailored_experience
-            final_cover_letter = revision.cover_letter
-            final_notes = revision.honest_notes
-            final_projects = revision.selected_projects
-            final_skills = revision.selected_skills
-            ats_fixes = revision.ats_fixes
-        else:
-            final_summary = draft.tailored_summary
-            final_experience = draft.tailored_experience
-            final_cover_letter = draft.cover_letter
-            final_notes = draft.honest_notes
-            final_projects = draft.selected_projects
-            final_skills = draft.selected_skills
-            if critique is None:
-                ats_fixes = ["ATS screen timed out; shipping the draft as-is."]
-            elif critique.issues:
-                ats_fixes = ["Revision timed out; using ATS-screened draft."]
-            else:
-                ats_fixes = ["ATS screen passed cleanly, no revisions needed."]
 
     structured_cv = (user.get("cv") or {}).get("structured") or {}
     real_companies = {

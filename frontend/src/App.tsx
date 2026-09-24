@@ -22,15 +22,9 @@ import { useEffect, useState } from "react";
 function Layout({ children }: { children: React.ReactNode }) {
   const [showWelcome, setShowWelcome] = useState(false);
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "var(--bg)",
-        overflowX: "hidden",
-      }}
-    >
+    <div className="app-shell">
       <Navbar onHelpClick={() => setShowWelcome(true)} />
-      <main style={{ overflowX: "hidden" }}>{children}</main>
+      <main className="app-main">{children}</main>
       <WelcomeModal forceOpen={showWelcome} onClose={() => setShowWelcome(false)} />
     </div>
   );

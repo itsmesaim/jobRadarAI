@@ -135,7 +135,7 @@ export function JobDetailModal({ job, onClose }: Props) {
     if (!shouldShow) return;
     const hint = HINTS[count % HINTS.length];
     const t1 = setTimeout(() => {
-      toast(hint, { duration: 6000, icon: "💡" });
+      toast(hint, { duration: 6000 });
     }, 1000);
     return () => clearTimeout(t1);
   }, []);
