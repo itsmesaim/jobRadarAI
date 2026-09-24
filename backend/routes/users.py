@@ -93,6 +93,8 @@ class UserPreferences(BaseModel):
     # CV PDF look: classic | compact | technical (+ optional section toggles/order).
     cv_template_preset: str = "classic"
     cv_sections: dict = {}
+    # Company career boards: URLs or "greenhouse:stripe" / "ashby:openai" / "lever:slug".
+    ats_boards: list[str] = []
 
 
 class SkillOverride(BaseModel):
@@ -174,6 +176,11 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
         "cv_parsing_model": prefs["cv_parsing_model"],
         "cv_template_preset": _normalize_cv_preset(prefs.get("cv_template_preset")),
         "cv_sections": prefs.get("cv_sections") or {},
+        "ats_boards": [
+            s.strip()
+            for s in (prefs.get("ats_boards") or [])
+            if isinstance(s, str) and s.strip()
+        ][:40],
     }
     # Switching provider sends the user's CV/job data to a different company,
     # record when they last consented to that (surfaced as a confirm popup in
@@ -229,6 +236,7 @@ async def get_preferences(user=Depends(get_current_user)):
         "calibration_notes_source_count": user.get("calibration_notes_source_count", 0),
         "cv_template_preset": user.get("cv_template_preset", "classic") or "classic",
         "cv_sections": user.get("cv_sections") or {},
+        "ats_boards": user.get("ats_boards") or [],
     }
 
 

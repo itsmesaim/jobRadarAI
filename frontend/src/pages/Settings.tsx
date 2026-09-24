@@ -95,6 +95,7 @@ const DEFAULT_PREFS: UserPreferences = {
     projects: true,
     education: true,
   },
+  ats_boards: [],
 };
 
 const CV_TEMPLATE_PRESETS: { id: string; label: string; hint: string }[] = [
@@ -229,6 +230,7 @@ export function SettingsPage() {
   const [activeGroup, setActiveGroup] = useState(SETTINGS_GROUPS[0].id);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [newLocation, setNewLocation] = useState("");
+  const [newAtsBoard, setNewAtsBoard] = useState("");
   const [newShowcase, setNewShowcase] = useState("");
   const [newSkill, setNewSkill] = useState("");
   const [newRole, setNewRole] = useState("");
@@ -1110,7 +1112,7 @@ export function SettingsPage() {
                     Name the actual permit and what it currently allows, "EU citizen, no
                     restrictions" or "H-1B, transfer required" are both more useful than just naming
                     a country. "Visa held for" and "Visa type" are what actually print on your CV,
-                    e.g. "Indian national — eligible to work in Germany (EU Blue Card)".
+                    e.g. "Indian national - eligible to work in Germany (EU Blue Card)".
                   </p>
                 </div>
               </Section>
@@ -1223,6 +1225,57 @@ export function SettingsPage() {
                     ))}
                   </div>
                 </div>
+              </Section>
+
+              <Section
+                title="Company career boards"
+                subtitle="Optional. Paste Greenhouse / Lever / Ashby careers URLs (or greenhouse:stripe). Searched with Jooble + Indeed - free public feeds, no API key."
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "var(--space-2)",
+                    marginBottom: "var(--space-2)",
+                  }}
+                >
+                  {(localPrefs.ats_boards || []).map((b) => (
+                    <Tag
+                      key={b}
+                      label={b}
+                      onRemove={() =>
+                        update({
+                          ats_boards: (localPrefs.ats_boards || []).filter((x) => x !== b),
+                        })
+                      }
+                    />
+                  ))}
+                </div>
+                <TagInput
+                  value={newAtsBoard}
+                  onChange={setNewAtsBoard}
+                  onAdd={() => {
+                    const v = newAtsBoard.trim();
+                    if (!v) return;
+                    if ((localPrefs.ats_boards || []).includes(v)) {
+                      setNewAtsBoard("");
+                      return;
+                    }
+                    if ((localPrefs.ats_boards || []).length >= 40) return;
+                    update({ ats_boards: [...(localPrefs.ats_boards || []), v] });
+                    setNewAtsBoard("");
+                  }}
+                  placeholder="https://boards.greenhouse.io/stripe"
+                />
+                <p
+                  style={{
+                    fontSize: "var(--text-xs)",
+                    color: "var(--text-muted)",
+                    margin: "8px 0 0",
+                  }}
+                >
+                  Examples: boards.greenhouse.io/… · jobs.lever.co/… · jobs.ashbyhq.com/…
+                </p>
               </Section>
 
               {/* Work mode */}

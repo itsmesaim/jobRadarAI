@@ -1023,7 +1023,7 @@ async def get_job_apply_pack(
             status_code=400,
             detail=(
                 f"LOW_SCORE_CONFIRM: Fit is {score}/10 (below {MIN_APPLY_PACK_SCORE}). "
-                "Confirm to build anyway — gaps may be large and ATS alignment weaker."
+                "Confirm to build anyway - gaps may be large and ATS alignment weaker."
             ),
         )
 

@@ -296,7 +296,7 @@ def _header_links_line(user: dict) -> str:
 
 def _work_auth_line(user: dict) -> str:
     """Built only from what the user explicitly declared in Settings
-    (nationality, visa_country, visa_type) — never guessed from the CV's
+    (nationality, visa_country, visa_type) - never guessed from the CV's
     free-text location, which conflates city and country."""
     nationality = (user.get("nationality") or "").strip()
     country = (user.get("visa_country") or "").strip()
@@ -312,7 +312,7 @@ def _work_auth_line(user: dict) -> str:
     else:
         elig = ""
 
-    line = " — ".join(p for p in (lead, elig) if p)
+    line = " - ".join(p for p in (lead, elig) if p)
     return _latex_escape(line) if line else ""
 
 

@@ -26,7 +26,16 @@ export interface Job {
   rated_at?: string; // when this job was last rated for the current user
   rating_in_progress?: boolean; // a background worker is rating this job right now
   rated_by_model?: string | null; // "<provider>:<model>", or an "auto" label for the no-LLM cheap path
-  source: "tavily" | "manual" | "jooble" | "adzuna" | "jobsapi-indeed" | "jobsapi-linkedin";
+  source:
+    | "tavily"
+    | "manual"
+    | "jooble"
+    | "adzuna"
+    | "jobsapi-indeed"
+    | "jobsapi-linkedin"
+    | "greenhouse"
+    | "lever"
+    | "ashby";
   score: number | null;
   matched_strengths: string[];
   gaps: string[];
@@ -121,6 +130,8 @@ export interface UserPreferences {
     education?: boolean;
     order?: string[];
   };
+  /** Company ATS boards: careers URLs or greenhouse:slug / ashby:slug / lever:slug */
+  ats_boards: string[];
 }
 
 export type ModelPurpose = "rating" | "apply_pack" | "cv_parsing";

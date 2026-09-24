@@ -1017,7 +1017,7 @@ async def generate_apply_pack_stream(
     if score < MIN_APPLY_PACK_SCORE and not confirm_low_score:
         raise ValueError(
             f"LOW_SCORE_CONFIRM: Fit is {score}/10 (below {MIN_APPLY_PACK_SCORE}). "
-            "Confirm to build anyway — gaps may be large and ATS alignment weaker."
+            "Confirm to build anyway - gaps may be large and ATS alignment weaker."
         )
 
     yield "stage", {"stage": "gathering", "messages": STAGE_FLAVOR["gathering"]}

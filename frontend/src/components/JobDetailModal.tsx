@@ -215,7 +215,7 @@ export function JobDetailModal({ job, onClose }: Props) {
   const scoreOkForPack = (rating.score ?? 0) >= MIN_APPLY_PACK_SCORE;
   const canApplyPack = isPro || applyPacksRemaining > 0;
   const packHint = !scoreOkForPack
-    ? `Fit ${rating.score ?? "—"}/10 · you can still build a CV (we'll warn first)`
+    ? `Fit ${rating.score ?? "-"}/10 · you can still build a CV (we'll warn first)`
     : isPro
       ? "Unlimited · ATS keywords, full LaTeX CV boilerplate, MASTER CV + JD context"
       : applyPacksRemaining > 0

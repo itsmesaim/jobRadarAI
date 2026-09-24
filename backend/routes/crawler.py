@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from config import settings
 from database import get_database
 from deps import get_current_user
+from services.ats_boards_crawler import crawl_jobs_for_user_ats_boards
 from services.jooble_crawler import crawl_jobs_for_user_jooble
 from services.jobsapi_indeed_crawler import crawl_jobs_for_user_jobsapi
 from services.limits import check_and_increment_search, get_user_usage
@@ -121,17 +122,22 @@ async def manual_search(user=Depends(get_current_user)):
             detail=message,
         )
 
-    # Run both sources concurrently, they're independent network calls, no
-    # reason to make the user wait for Jooble to finish before Indeed starts.
-    result_jooble, result_jobsapi = await asyncio.gather(
+    # Jooble + Indeed + optional company ATS boards (Greenhouse/Lever/Ashby).
+    result_jooble, result_jobsapi, result_ats = await asyncio.gather(
         crawl_jobs_for_user_jooble(user),
         crawl_jobs_for_user_jobsapi(user),
+        crawl_jobs_for_user_ats_boards(user),
     )
 
     result = {
-        "found": result_jooble["found"] + result_jobsapi["found"],
-        "stored": result_jooble["stored"] + result_jobsapi["stored"],
-        "skipped": result_jooble["skipped"] + result_jobsapi["skipped"],
+        "found": result_jooble["found"] + result_jobsapi["found"] + result_ats["found"],
+        "stored": result_jooble["stored"]
+        + result_jobsapi["stored"]
+        + result_ats["stored"],
+        "skipped": result_jooble["skipped"]
+        + result_jobsapi["skipped"]
+        + result_ats["skipped"],
+        "ats_boards": result_ats.get("boards", 0),
     }
 
     await db.users.update_one(
@@ -145,6 +151,7 @@ async def manual_search(user=Depends(get_current_user)):
         "found": result["found"],
         "stored": result["stored"],
         "skipped": result["skipped"],
+        "ats_boards": result.get("ats_boards", 0),
         "searches_remaining": usage.get("search_limit", 0)
         - usage.get("searches_used", 0),
     }
