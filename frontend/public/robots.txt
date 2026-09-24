@@ -6,5 +6,6 @@ Disallow: /reset-password
 Disallow: /kanban
 Disallow: /settings
 Disallow: /admin
+Disallow: /jobs/
 
 Sitemap: https://jobradar.saimjs.com/sitemap.xml

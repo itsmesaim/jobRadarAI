@@ -522,7 +522,7 @@ export function KanbanPage() {
   };
 
   return (
-    <div className="kanban-page">
+    <div className="kanban-page page-enter">
       <div className="kanban-page-header">
         <div>
           <h1
@@ -532,12 +532,12 @@ export function KanbanPage() {
               margin: "0 0 var(--space-1)",
             }}
           >
-            Pipeline
+            Track
           </h1>
-          <p style={{ margin: 0, fontSize: "var(--text-base)", color: "var(--text-muted)" }}>
+          <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
             {isLoading
               ? "Loading your board..."
-              : `${jobs.length} job${jobs.length === 1 ? "" : "s"} on your board`}
+              : `${jobs.length} job${jobs.length === 1 ? "" : "s"} · drag to update status`}
           </p>
         </div>
         {!isLoading && jobs.length > 0 && (

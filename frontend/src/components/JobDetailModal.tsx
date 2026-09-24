@@ -16,7 +16,10 @@ import toast from "react-hot-toast";
 import { ScoreBadge } from "./ScoreBadge";
 import { StarRating } from "./StarRating";
 import { jobsApi, crawlerApi } from "../api/index";
+import { getErrorDetail } from "../api/client";
 import { LimitContactModal } from "./LimitContactModal";
+import { prettyRatedBy, sourceLabel } from "../utils/jobLabels";
+import { fullDate, timeAgo } from "../utils/time";
 import type { Job } from "../types";
 
 const MIN_APPLY_PACK_SCORE = 6;
@@ -41,51 +44,6 @@ const PACK_WAIT_LINES = [
   "Better days are called Saturday, Sunday, and “apply pack ready.” Almost.",
   "You can close this. Come back in a few minutes. It keeps cooking in the background.",
 ];
-
-function timeAgo(dateStr?: string): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return "";
-  const now = new Date();
-  const diff = now.getTime() - d.getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d ago`;
-  return `${Math.floor(days / 7)}w ago`;
-}
-
-function sourceLabel(source?: string): string {
-  if (source === "manual") return "Manual";
-  if (source === "jooble") return "Jooble";
-  if (source === "jobsapi-indeed") return "Indeed";
-  if (source === "jobsapi-linkedin") return "LinkedIn";
-  return "Auto";
-}
-
-function prettyRatedBy(raw?: string | null): string {
-  if (!raw) return "";
-  const s = raw.trim();
-  const i = s.indexOf(":");
-  if (i < 0) return s;
-  const provider = s.slice(0, i);
-  const model = s.slice(i + 1);
-  const stripped = model.toLowerCase().startsWith(provider.toLowerCase())
-    ? model.slice(provider.length).replace(/^[-:]/, "")
-    : model;
-  const prov = provider.charAt(0).toUpperCase() + provider.slice(1);
-  return stripped ? `${prov} ${stripped}` : prov;
-}
-
-function fullDate(dateStr?: string): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return "";
-  return d.toLocaleString();
-}
 
 interface Props {
   job: Job;
@@ -114,6 +72,8 @@ const HINTS = [
   "Download apply pack builds a ready CV + cover letter PDF. Copy apply pack instead if you'd rather hand the raw info to your own ChatGPT/Claude and build it yourself.",
   'Be specific in the rating note, e.g. "don\'t penalize freelance experience", it becomes a standing rule the AI applies to similar jobs, not just this one.',
   "Already applied to this one? Move it to Applied in Kanban so your pipeline stays accurate and follow-up reminders make sense.",
+  'Open a job to chat about it: ask why it scored the way it did, build the CV + cover, or say "add X to my CV" and review the proposed edit before it saves.',
+  "Found a role somewhere else? Paste the JD right from job chat (Tools → Paste JD → new job) instead of leaving the conversation.",
 ];
 
 export function JobDetailModal({ job, onClose }: Props) {
@@ -135,7 +95,7 @@ export function JobDetailModal({ job, onClose }: Props) {
     if (!shouldShow) return;
     const hint = HINTS[count % HINTS.length];
     const t1 = setTimeout(() => {
-      toast(hint, { duration: 6000, icon: "💡" });
+      toast(hint, { duration: 6000 });
     }, 1000);
     return () => clearTimeout(t1);
   }, []);
@@ -151,12 +111,16 @@ export function JobDetailModal({ job, onClose }: Props) {
     matched: string[];
     missing: string[];
     fixes: string[];
+    unaudited?: boolean;
+    user_questions?: string[];
+    humanizer_fallback?: string | null;
   } | null>(null);
   const [cvDownloading, setCvDownloading] = useState(false);
   const [coverDownloading, setCoverDownloading] = useState(false);
   const [cvOverflow, setCvOverflow] = useState(false);
   const [packError, setPackError] = useState<string | null>(null);
   const [packNote, setPackNote] = useState("");
+  const [showLowScoreConfirm, setShowLowScoreConfirm] = useState(false);
   const [atsExpanded, setAtsExpanded] = useState(false);
   const [showApplyPackLimit, setShowApplyPackLimit] = useState(false);
   const [reRating, setReRating] = useState(false);
@@ -211,13 +175,15 @@ export function JobDetailModal({ job, onClose }: Props) {
   const applyPacksRemaining = isPro
     ? 9999
     : Math.max(0, (usage?.apply_pack_limit ?? 0) - (usage?.apply_packs_used ?? 0));
-  const canApplyPack =
-    (rating.score ?? 0) >= MIN_APPLY_PACK_SCORE && (isPro || applyPacksRemaining > 0);
-  const packHint = isPro
-    ? "Unlimited · ATS keywords, full LaTeX CV boilerplate, MASTER CV + JD context"
-    : applyPacksRemaining > 0
-      ? `${applyPacksRemaining} free today · one prompt: tailored CV .tex + cover note`
-      : "Daily limit used, upgrade for unlimited apply packs";
+  const scoreOkForPack = (rating.score ?? 0) >= MIN_APPLY_PACK_SCORE;
+  const canApplyPack = isPro || applyPacksRemaining > 0;
+  const packHint = !scoreOkForPack
+    ? `Fit ${rating.score ?? "-"}/10 · you can still build a CV (we'll warn first)`
+    : isPro
+      ? "Unlimited · ATS keywords, full LaTeX CV boilerplate, MASTER CV + JD context"
+      : applyPacksRemaining > 0
+        ? `${applyPacksRemaining} free today · one prompt: tailored CV .tex + cover note`
+        : "Daily limit used, upgrade for unlimited apply packs";
 
   const handleCopyBrief = async () => {
     try {
@@ -277,8 +243,7 @@ export function JobDetailModal({ job, onClose }: Props) {
       setFeedbackText("");
       toast.success("Thanks, this will help calibrate future ratings on similar jobs");
     } catch (err: unknown) {
-      const ax = err as { response?: { data?: { detail?: string } } };
-      toast.error(ax.response?.data?.detail || "Could not save feedback");
+      toast.error(getErrorDetail(err) || "Could not save feedback");
     } finally {
       setFeedbackSubmitting(false);
     }
@@ -288,6 +253,7 @@ export function JobDetailModal({ job, onClose }: Props) {
     regenerate = false,
     part: "all" | "cv" | "cover" = "all",
     note = "",
+    confirmLowScore = false,
   ) => {
     if (packBusyRef.current) return;
     const joining = !!(job.apply_pack_in_progress || jobDetail?.apply_pack_in_progress);
@@ -295,7 +261,17 @@ export function JobDetailModal({ job, onClose }: Props) {
       setShowApplyPackLimit(true);
       return;
     }
+    if (
+      !joining &&
+      part === "all" &&
+      !confirmLowScore &&
+      (rating.score ?? 0) < MIN_APPLY_PACK_SCORE
+    ) {
+      setShowLowScoreConfirm(true);
+      return;
+    }
     packBusyRef.current = true;
+    setShowLowScoreConfirm(false);
     setPackLoading(true);
     if (part === "all") {
       setPackAts(null);
@@ -320,12 +296,32 @@ export function JobDetailModal({ job, onClose }: Props) {
         regenerate,
         part,
         note,
+        confirmLowScore || (rating.score ?? 0) < MIN_APPLY_PACK_SCORE,
       );
       setPackAts(ats);
       setPackReady(true);
-      toast.success(
-        cached ? "Apply pack ready (already had one for this CV/rating)" : "Apply pack ready",
-      );
+      if (ats?.humanizer_fallback) {
+        toast(
+          ats.humanizer_fallback === "timeout"
+            ? "Humanizer timed out, shipped pre-humanize draft"
+            : "Humanizer reverted (integrity), shipped pre-humanize draft",
+          { duration: 8000, icon: "⚠️" },
+        );
+      } else if (ats?.unaudited) {
+        toast("Apply pack ready, ATS screen timed out (unaudited)", {
+          duration: 7000,
+          icon: "⚠️",
+        });
+      } else if ((ats?.user_questions || []).length > 0) {
+        toast("Apply pack ready, some items need your input", {
+          duration: 6000,
+          icon: "ℹ️",
+        });
+      } else {
+        toast.success(
+          cached ? "Apply pack ready (already had one for this CV/rating)" : "Apply pack ready",
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ["crawl-status"] });
       queryClient.invalidateQueries({ queryKey: ["job-detail", job.id] });
     } catch (err: unknown) {
@@ -369,11 +365,13 @@ export function JobDetailModal({ job, onClose }: Props) {
   const handleDownloadCv = async () => {
     setCvDownloading(true);
     try {
-      const { overflow } = await jobsApi.downloadApplyPackCv(job.id);
+      const { overflow, warnings } = await jobsApi.downloadApplyPackCv(job.id);
       setCvOverflow(overflow);
+      if (warnings.length) {
+        toast(warnings.slice(0, 3).join(" · "), { duration: 7000, icon: "⚠️" });
+      }
     } catch (err: unknown) {
-      const ax = err as { response?: { data?: { detail?: string } } };
-      const detail = ax.response?.data?.detail || "Could not download CV";
+      const detail = getErrorDetail(err) || "Could not download CV";
       setPackError(detail);
       toast.error(detail);
     } finally {
@@ -386,8 +384,7 @@ export function JobDetailModal({ job, onClose }: Props) {
     try {
       await jobsApi.downloadApplyPackCoverLetter(job.id);
     } catch (err: unknown) {
-      const ax = err as { response?: { data?: { detail?: string } } };
-      const detail = ax.response?.data?.detail || "Could not download cover letter";
+      const detail = getErrorDetail(err) || "Could not download cover letter";
       setPackError(detail);
       toast.error(detail);
     } finally {
@@ -683,7 +680,7 @@ export function JobDetailModal({ job, onClose }: Props) {
 
         {/* Footer, always visible so a job can be re-rated even before it has a score */}
         <div className="job-modal-footer">
-          {(rating.score ?? 0) >= MIN_APPLY_PACK_SCORE && (
+          {rating.score != null && (
             <>
               {!packReady && (
                 <button
@@ -698,7 +695,11 @@ export function JobDetailModal({ job, onClose }: Props) {
                   ) : (
                     <Sparkles size={15} />
                   )}
-                  {packLoading ? "CV is on the way…" : "Build CV + cover letter"}
+                  {packLoading
+                    ? "CV is on the way…"
+                    : scoreOkForPack
+                      ? "Build CV + cover letter"
+                      : "Build CV anyway"}
                 </button>
               )}
               {packReady && (
@@ -767,7 +768,10 @@ export function JobDetailModal({ job, onClose }: Props) {
                 </p>
               )}
               {packReady && packAts && (
-                <div className="job-modal-ats-panel" style={{ transition: "opacity 0.2s" }}>
+                <div
+                  className={`job-modal-ats-panel${packAts.unaudited ? " is-unaudited" : ""}`}
+                  style={{ transition: "opacity 0.2s" }}
+                >
                   <button
                     type="button"
                     onClick={() => setAtsExpanded((v) => !v)}
@@ -781,9 +785,19 @@ export function JobDetailModal({ job, onClose }: Props) {
                       alignItems: "center",
                       gap: "var(--space-1)",
                       width: "100%",
+                      flexWrap: "wrap",
                     }}
                   >
-                    ATS alignment: <strong>{packAts.alignment_pct}%</strong>
+                    {packAts.unaudited ? (
+                      <>
+                        <span className="job-modal-ats-badge">Unaudited</span>
+                        <span>ATS screen did not finish</span>
+                      </>
+                    ) : (
+                      <>
+                        ATS alignment: <strong>{packAts.alignment_pct}%</strong>
+                      </>
+                    )}
                     <span
                       style={{
                         marginLeft: "auto",
@@ -794,6 +808,26 @@ export function JobDetailModal({ job, onClose }: Props) {
                       {atsExpanded ? "Hide details" : "Show details"}
                     </span>
                   </button>
+                  {packAts.humanizer_fallback && (
+                    <div className="job-modal-ats-list job-modal-ats-fallback">
+                      <span className="job-modal-ats-list-label">Humanizer fallback</span>
+                      <p className="job-modal-ats-fallback-text">
+                        {packAts.humanizer_fallback === "timeout"
+                          ? "Humanizer timed out. This pack uses the pre-humanize draft."
+                          : "Humanizer failed integrity checks (facts/bullets/dashes). This pack uses the pre-humanize draft."}
+                      </p>
+                    </div>
+                  )}
+                  {(packAts.user_questions || []).length > 0 && (
+                    <div className="job-modal-ats-list job-modal-ats-needs-input">
+                      <span className="job-modal-ats-list-label">Needs your input</span>
+                      <ul>
+                        {(packAts.user_questions || []).slice(0, 8).map((q, i) => (
+                          <li key={i}>{q}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {atsExpanded && (
                     <>
                       {packAts.fixes.length > 0 && (
@@ -806,7 +840,7 @@ export function JobDetailModal({ job, onClose }: Props) {
                           </ul>
                         </div>
                       )}
-                      {packAts.missing.length > 0 && (
+                      {!packAts.unaudited && packAts.missing.length > 0 && (
                         <div className="job-modal-ats-list">
                           <span className="job-modal-ats-list-label">Still missing:</span>
                           <ul>
@@ -909,6 +943,53 @@ export function JobDetailModal({ job, onClose }: Props) {
 
       {showApplyPackLimit && (
         <LimitContactModal kind="apply_pack" onClose={() => setShowApplyPackLimit(false)} />
+      )}
+
+      {showLowScoreConfirm && (
+        <div
+          className="job-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="low-score-title"
+          style={{ zIndex: 80 }}
+          onClick={() => setShowLowScoreConfirm(false)}
+        >
+          <div
+            className="card"
+            style={{ maxWidth: 420, margin: "10vh auto", padding: 20 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="low-score-title" className="text-display" style={{ marginBottom: 8 }}>
+              Fit is {rating.score}/10
+            </h3>
+            <p
+              style={{
+                color: "var(--text-secondary)",
+                fontSize: "var(--text-sm)",
+                marginBottom: 16,
+              }}
+            >
+              Below our usual {MIN_APPLY_PACK_SCORE}+ bar. You can still build a CV and cover
+              letter, but gaps may be large and ATS alignment weaker.
+            </p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setShowLowScoreConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void handleApplyPack(false, "all", "", true)}
+              >
+                Continue anyway
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

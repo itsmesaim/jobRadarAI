@@ -9,8 +9,6 @@ import {
   AlertCircle,
   X,
   Loader,
-  Zap,
-  Cpu,
   ChevronLeft,
   ChevronRight,
   Briefcase,
@@ -18,7 +16,6 @@ import {
 import toast from "react-hot-toast";
 import { JobCard } from "../components/JobCard";
 import { ManualJDModal } from "../components/ManualJDModal";
-import { ProgressBar } from "../components/ProgressBar";
 import { StatTile } from "../components/StatTile";
 import {
   LimitContactModal,
@@ -43,7 +40,7 @@ const SCORE_FILTER_OPTS: {
   {
     id: "6plus",
     label: "6+",
-    hint: "Score 6–10",
+    hint: "Score 6-10",
     score_min: 6,
     score_max: 10,
     rating: "rated",
@@ -51,7 +48,7 @@ const SCORE_FILTER_OPTS: {
   {
     id: "7plus",
     label: "7+",
-    hint: "Score 7–10, strong matches",
+    hint: "Score 7-10, strong matches",
     score_min: 7,
     score_max: 10,
     rating: "rated",
@@ -59,7 +56,7 @@ const SCORE_FILTER_OPTS: {
   {
     id: "8plus",
     label: "8+",
-    hint: "Score 8–10, top picks",
+    hint: "Score 8-10, top picks",
     score_min: 8,
     score_max: 10,
     rating: "rated",
@@ -67,7 +64,7 @@ const SCORE_FILTER_OPTS: {
   {
     id: "below6",
     label: "Below 6",
-    hint: "Score 1–5",
+    hint: "Score 1-5",
     score_min: 1,
     score_max: 5,
     rating: "rated",
@@ -549,10 +546,6 @@ export function Dashboard() {
   const activeAccountCount = usage?.active_count ?? data?.account_total ?? 0;
   const lastCrawlLabel = formatLastCrawl(usage?.last_crawl_at);
   const firstName = user?.name?.trim().split(/\s+/)[0] || "there";
-  const searchUsedPct = isFull ? 0 : Math.round((searchesUsed / Math.max(searchesLimit, 1)) * 100);
-  const ratingUsedPct = isFull ? 0 : Math.round((ratingsUsed / Math.max(ratingsLimit, 1)) * 100);
-  const tokenUsedPct =
-    dailyTokenLimit > 0 ? Math.round((dailyTokensUsed / dailyTokenLimit) * 100) : 0;
 
   const handleStatusFilter = (val: string | undefined) => {
     setStatusFilter(val);
@@ -593,6 +586,26 @@ export function Dashboard() {
     setPage(1);
   };
 
+  const packsUsed = usage?.apply_packs_used ?? 0;
+  const packsLimit = usage?.apply_pack_limit ?? 0;
+  const packsRemaining = isFull
+    ? 999
+    : Math.max(0, (usage?.apply_packs_remaining ?? packsLimit - packsUsed) || 0);
+  const packsUnlimited = isFull || packsLimit >= 9999;
+  const dailyTokensLeft = dailyTokensRemaining ?? 0;
+  const searchesNearLimit = !isFull && searchesRemaining <= 1;
+  const ratingsNearLimit = !isFull && (isRatingsLimited || ratingsRemaining <= 2);
+  const tokensNearLimit =
+    !tokensUnlimited &&
+    dailyTokenLimit > 0 &&
+    (isTokensLimited || dailyTokensLeft <= dailyTokenLimit * 0.2);
+  const packsNearLimit = !packsUnlimited && packsRemaining <= 1;
+  const showLimitWarning =
+    !!usage &&
+    !user?.isAdmin &&
+    !isFull &&
+    (searchesNearLimit || ratingsNearLimit || tokensNearLimit || packsNearLimit);
+
   return (
     <div className="page-shell dash-page">
       <div className="dash-hero">
@@ -600,11 +613,11 @@ export function Dashboard() {
           <p className="dash-greeting">
             {timeGreeting()}, {firstName}
           </p>
-          <h1 className="page-title">Your job pipeline</h1>
+          <h1 className="page-title text-display">Your jobs</h1>
           <p className="page-subtitle">
             {viewMode === "active"
-              ? "Active opportunities. Applied and rejected roles are hidden unless you switch to All."
-              : "All saved jobs, filter by score, status, or keyword."}
+              ? "Active opportunities. Applied and rejected stay in Track unless you show All."
+              : "Everything you have saved. Filter by score, status, or keyword."}
             {lastCrawlLabel && <span className="dash-last-crawl"> · {lastCrawlLabel}</span>}
           </p>
         </div>
@@ -612,11 +625,11 @@ export function Dashboard() {
         {usage && (
           <div className="dash-metrics">
             <StatTile
-              label={hasActiveFilters ? "Matching filters" : "Active pipeline"}
+              label={hasActiveFilters ? "Matching" : "Active"}
               value={hasActiveFilters ? (data?.total ?? "-") : activeAccountCount}
               hint={
                 hasActiveFilters
-                  ? `of ${activeAccountCount} active in account`
+                  ? `of ${activeAccountCount} active`
                   : `${usage.my_jobs ?? 0} total saved`
               }
             />
@@ -644,149 +657,68 @@ export function Dashboard() {
             />
           </div>
         )}
+
+        {applySoonCount > 0 && (
+          <div className="dash-apply-banner" role="status">
+            <div className="dash-apply-banner-copy">
+              <strong>Apply soon</strong>
+              <span>
+                {applySoonCount} role{applySoonCount === 1 ? "" : "s"} scoring 8+ still marked New
+              </span>
+            </div>
+            <button type="button" className="btn btn-primary" onClick={showApplySoon}>
+              View top matches
+            </button>
+          </div>
+        )}
       </div>
 
-      {usage && !user?.isAdmin && (
-        <div className="dash-usage">
-          <div className="dash-usage-grid">
-            <div
-              className={`dash-usage-item${searchesRemaining <= 1 && !isFull ? " is-warn" : ""}`}
-            >
-              <div className="dash-usage-label">
-                <Search size={12} /> Searches
-              </div>
-              <div className="dash-usage-value">
-                {isFull ? "Unlimited" : `${searchesRemaining} left`}
-              </div>
-              {!isFull && (
-                <ProgressBar
-                  pct={searchUsedPct}
-                  color={searchesRemaining <= 1 ? "var(--warning)" : undefined}
-                />
-              )}
-            </div>
-
-            <div
-              className={`dash-usage-item${
-                isRatingsLimited ? " is-limit" : ratingsRemaining <= 2 && !isFull ? " is-warn" : ""
-              }`}
-            >
-              <div className="dash-usage-label">
-                <Zap size={12} /> Ratings
-              </div>
-              <div className="dash-usage-value">
-                {isFull ? "Unlimited" : `${ratingsRemaining} left`}
-              </div>
-              {!isFull && (
-                <ProgressBar
-                  pct={ratingUsedPct}
-                  color={
-                    isRatingsLimited
-                      ? "var(--danger)"
-                      : ratingsRemaining <= 2
-                        ? "var(--warning)"
-                        : undefined
-                  }
-                />
-              )}
-              {isRatingsLimited && (
-                <button
-                  onClick={() => openLimitModal("rating")}
-                  className="btn btn-danger"
-                  style={{
-                    marginTop: "var(--space-2)",
-                    width: "100%",
-                    justifyContent: "center",
-                    fontSize: "var(--text-xs)",
-                    padding: "var(--space-1) var(--space-2)",
-                  }}
-                >
-                  Request more
-                </button>
-              )}
-            </div>
-
-            {!tokensUnlimited && dailyTokenLimit > 0 && (
-              <div
-                className={`dash-usage-item${
-                  isTokensLimited
-                    ? " is-limit"
-                    : (dailyTokensRemaining ?? 0) <= dailyTokenLimit * 0.2
-                      ? " is-warn"
-                      : ""
-                }`}
-              >
-                <div className="dash-usage-label">
-                  <Cpu size={12} /> AI tokens today
-                </div>
-                <div className="dash-usage-value">
-                  {formatTokens(dailyTokensUsed)} / {formatTokens(dailyTokenLimit)}
-                </div>
-                <ProgressBar
-                  pct={tokenUsedPct}
-                  color={
-                    isTokensLimited
-                      ? "var(--danger)"
-                      : (dailyTokensRemaining ?? 0) <= dailyTokenLimit * 0.2
-                        ? "var(--warning)"
-                        : undefined
-                  }
-                />
-                {isTokensLimited && (
-                  <button
-                    onClick={() => openLimitModal(tokenLimitKind)}
-                    className="btn btn-danger"
-                    style={{
-                      marginTop: "var(--space-2)",
-                      width: "100%",
-                      justifyContent: "center",
-                      fontSize: "var(--text-xs)",
-                      padding: "var(--space-1) var(--space-2)",
-                    }}
-                  >
-                    Request more
-                  </button>
-                )}
-              </div>
-            )}
+      {showLimitWarning && (
+        <div
+          className={`dash-limit-warning${isRatingsLimited || isTokensLimited || packsRemaining <= 0 ? " is-limit" : ""}`}
+          role="status"
+        >
+          <AlertCircle size={14} />
+          <div className="dash-limit-warning-copy">
+            <strong>Running low</strong>
+            <span>
+              {[
+                searchesNearLimit
+                  ? `${searchesRemaining} search${searchesRemaining === 1 ? "" : "es"} left`
+                  : null,
+                ratingsNearLimit
+                  ? `${ratingsRemaining} rating${ratingsRemaining === 1 ? "" : "s"} left`
+                  : null,
+                tokensNearLimit
+                  ? isTokensLimited
+                    ? "AI tokens used up"
+                    : `${formatTokens(dailyTokensLeft)} AI tokens left`
+                  : null,
+                packsNearLimit
+                  ? `${packsRemaining} CV pack${packsRemaining === 1 ? "" : "s"} left`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
           </div>
-
-          {isRatingsLimited && !isFull && !isTokensLimited && (
-            <div
-              onClick={() => openLimitModal("rating")}
-              style={{
-                marginTop: "var(--space-3)",
-                fontSize: "var(--text-xs)",
-                color: "var(--danger)",
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-1)",
-                cursor: "pointer",
-              }}
-            >
-              <AlertCircle size={12} /> Rating limit reached, click to request more access
-            </div>
-          )}
-
-          {isTokensLimited && !isFull && (
-            <div
-              onClick={() => openLimitModal(tokenLimitKind)}
-              style={{
-                marginTop: "var(--space-3)",
-                fontSize: "var(--text-xs)",
-                color: "var(--danger)",
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-1)",
-                cursor: "pointer",
-              }}
-            >
-              <AlertCircle size={12} />
-              {isMonthlyTokensLimited
-                ? "Monthly AI limit reached, resets on the 1st, or contact admin for credits"
-                : "Daily AI limit reached, resets at midnight local time, or contact admin for credits"}
-            </div>
-          )}
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() =>
+              openLimitModal(
+                isTokensLimited || tokensNearLimit
+                  ? tokenLimitKind
+                  : isRatingsLimited || ratingsNearLimit
+                    ? "rating"
+                    : packsNearLimit
+                      ? "apply_pack"
+                      : "search",
+              )
+            }
+          >
+            Request more
+          </button>
         </div>
       )}
 

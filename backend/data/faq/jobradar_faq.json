@@ -1,0 +1,185 @@
+[
+  {
+    "id": "who-built",
+    "question": "Who built JobRadar?",
+    "aliases": [
+      "who made this",
+      "who created jobradar",
+      "who is the founder",
+      "who developed this app",
+      "author of jobradar",
+      "who created this",
+      "who created",
+      "creator",
+      "made by whom",
+      "who owns this"
+    ],
+    "answer": "JobRadar was built by **Saim** ([saimjs.com](https://saimjs.com)) as a personal job-search cockpit: crawl roles, rate them against your CV with AI, and generate tailored apply packs.\n\n**Next:** open Help anytime from the top bar, or ask how to use Search / Rate / Job chat."
+  },
+  {
+    "id": "why-built",
+    "question": "Why was JobRadar built?",
+    "aliases": [
+      "why build this",
+      "why does this exist",
+      "purpose of jobradar",
+      "what problem does this solve"
+    ],
+    "answer": "Job hunting is noisy: too many boards, weak fit signals, and CV rewriting by hand. JobRadar pulls jobs into **your** account, scores them against **your** MASTER CV, and helps you ship a tailored CV + cover letter per role - without inventing experience.\n\n**Next:** upload your CV in Settings, set your target role, then hit Search jobs."
+  },
+  {
+    "id": "what-is",
+    "question": "What is JobRadar?",
+    "aliases": [
+      "what is this app",
+      "explain jobradar",
+      "what does jobradar do"
+    ],
+    "answer": "JobRadar is an AI job radar for **you**:\n- Search Jooble + Indeed + optional company ATS boards (Greenhouse / Lever / Ashby)\n- Rate jobs 1-10 against your CV\n- Open a per-job chat for rating explainers, form answers, and apply packs\n- Track applications on the **Track** board\n\n**Next:** complete Settings (CV + preferences), then Search → Rate → open a job card."
+  },
+  {
+    "id": "how-to-use",
+    "question": "How do I use JobRadar?",
+    "aliases": [
+      "how does this work",
+      "getting started",
+      "tutorial",
+      "how to start",
+      "best way to use"
+    ],
+    "answer": "**Best path:**\n1. Settings → upload CV, set role / location / skills\n2. Dashboard → **Search jobs** (or Paste JD, on the dashboard or from any job chat)\n3. **Rate now** so scores appear\n4. Click a job → its chat opens: read the rating summary\n5. Say **make a CV and cover** or tap Build CV + cover\n6. Download CV / cover from the left rail\n7. Paste employer form questions for draft answers\n8. Switch to another job from the Jobs list in the same chat panel, no need to go back\n9. Move the job on **Track** when you apply\n\n**Next:** if something is missing, finish the red checklist items in Settings."
+  },
+  {
+    "id": "job-chat",
+    "question": "What can I ask in job chat?",
+    "aliases": [
+      "job chat allowed",
+      "what can i ask here",
+      "chat rules",
+      "off topic"
+    ],
+    "answer": "Per-job chat is for **this role**, plus a few things that touch your account:\n- Why this score / gaps / next steps\n- CV or cover tips from your MASTER CV (no invented facts)\n- Employer application form answers\n- Re-rate or build / download apply pack\n- Paste a new job description to add another job, right from this chat\n- Switch to another job from the Jobs list in the Tools panel\n- Mention a project, role, or skill (\"I worked as X at Y\", \"add Python as a skill\") to propose a MASTER CV edit - you review and Accept before anything is saved\n\nProduct questions (who built this, how to use JobRadar) are answered from our FAQ.\nWeather, code homework, and random chat get refused with allowed options.\n\n**Next:** ask about gaps, or say make a CV and cover."
+  },
+  {
+    "id": "master-cv-chat-edit",
+    "question": "Can I update my MASTER CV from chat?",
+    "aliases": [
+      "add project to cv from chat",
+      "update cv in chat",
+      "add skill from chat",
+      "add experience from chat",
+      "edit master cv in chat"
+    ],
+    "answer": "Yes. In any job chat, say something like \"I have a project called X\", \"I worked as Y at Z\", or \"add Rust as a skill\" and it proposes the exact addition as a card. You can **Edit** the fields before saving, **Accept into MASTER CV** to write it, or **Keep chat-only** to dismiss it - nothing is written until you Accept.\n\n**Next:** mention a project, role, or skill in any job chat."
+  },
+  {
+    "id": "apply-pack",
+    "question": "How do apply packs / tailored CVs work?",
+    "aliases": [
+      "what is apply pack",
+      "how cv generation works",
+      "tailored cv",
+      "cover letter how"
+    ],
+    "answer": "An apply pack drafts a tailored CV + cover letter for **one job** from your MASTER CV and the JD (draft → ATS screen → optional revise). It will not invent employers or metrics.\n\nAfter it finishes, use **Download CV** and **Download cover** on the job chat left rail. Rebuild only if you changed models or want a fresh draft.\n\n**Next:** open a scored job and tap Build CV + cover."
+  },
+  {
+    "id": "sources",
+    "question": "Where do jobs come from?",
+    "aliases": [
+      "job sources",
+      "which boards",
+      "jooble",
+      "indeed",
+      "greenhouse",
+      "company boards"
+    ],
+    "answer": "Search pulls **Jooble** and **Indeed** (JobsAPI). You can also add company career boards in Settings → Search → Company career boards (Greenhouse, Lever, Ashby public feeds - free, no API key).\n\nYou can still paste a JD manually from the dashboard.\n\n**Next:** add a board URL like boards.greenhouse.io/… then Search jobs."
+  },
+  {
+    "id": "models",
+    "question": "How do AI models and tokens work?",
+    "aliases": [
+      "which model",
+      "token limit",
+      "change model",
+      "ai allowance"
+    ],
+    "answer": "You can pick separate models for **rating**, **CV parsing**, and **apply packs** in Settings → AI (and on the job chat page). Usage limits (searches, ratings, AI tokens, CV packs) apply unless you have full access. The dashboard only warns when you are running low; full allowance details will live in Settings.\n\n**Next:** open Settings → AI to confirm your defaults."
+  },
+  {
+    "id": "privacy",
+    "question": "Is my CV and data private?",
+    "aliases": [
+      "privacy",
+      "who sees my cv",
+      "data safety",
+      "is my data shared"
+    ],
+    "answer": "Jobs and CV data stay in **your** account (per-user ownership). Ratings and apply packs use the models you configure; we do not share your CV as a public profile. You can export or delete data from Settings → Account & data.\n\n**Next:** review Settings → Account & data if you want an export."
+  },
+  {
+    "id": "track",
+    "question": "What is Track?",
+    "aliases": [
+      "what is track",
+      "kanban",
+      "pipeline board",
+      "application tracker"
+    ],
+    "answer": "**Track** (formerly Pipeline) is your application board: New → Saved → Applied → Interviewing → Offer (and related statuses). Drag jobs as you progress.\n\n**Next:** open Track from the top nav after you have a few scored roles."
+  },
+  {
+    "id": "wrong-seniority",
+    "question": "Why am I seeing junior roles when I want senior?",
+    "aliases": [
+      "junior roles",
+      "showing juniors",
+      "want senior roles",
+      "wrong level",
+      "too junior",
+      "internship instead of senior",
+      "not getting proper roles",
+      "roles are too junior",
+      "i need senior jobs"
+    ],
+    "answer": "Search follows **your Settings**, not the chat.\n\nFix it like this:\n- Settings → Search → set **Experience level** to Senior / Lead (whatever matches you)\n- Set **Primary role** and **Key skills** to the titles you actually want\n- Turn off internship / junior-leaning job types if those are enabled\n- Run **Search jobs** again, then **Rate now**\n\nRatings also use your MASTER CV. If the CV reads mid-level, senior scores stay low even when senior jobs appear.\n\n**Next:** update Experience level + Primary role, Search again, then open a job chat if a score still looks wrong."
+  },
+  {
+    "id": "wrong-roles",
+    "question": "Search is showing the wrong kind of jobs",
+    "aliases": [
+      "wrong jobs",
+      "irrelevant jobs",
+      "not my field",
+      "bad search results",
+      "jobs do not match"
+    ],
+    "answer": "Results come from Jooble + Indeed (+ optional company boards) using your preferences.\n\nTighten the net:\n- Primary role and optional role keywords\n- Preferred locations\n- Key skills (these drive matching)\n- Company career boards only if you want those employers\n\nThen Search again. Use score filters (7+, 8+) on the dashboard so weak fits stay out of the way.\n\n**Next:** Settings → Search, save, then Search jobs."
+  },
+  {
+    "id": "faq-no-llm",
+    "question": "Which AI model answers FAQ questions?",
+    "aliases": [
+      "faq model",
+      "which model for help",
+      "does faq use tokens",
+      "free model faq"
+    ],
+    "answer": "FAQ / Help answers come from a **fixed knowledge base** (RAG over curated Q&A). They do **not** burn your job-chat or apply-pack model quota.\n\nJob chat still uses your selected rating / apply-pack models only for role-specific asks (fit explainers, form answers, CV packs).\n\n**Next:** ask a product question here, or open a job card for role-specific help."
+  },
+  {
+    "id": "master-cv",
+    "question": "What is a MASTER CV and how should I write mine?",
+    "aliases": [
+      "master cv",
+      "master resume",
+      "sample cv",
+      "how to write my cv",
+      "one cv for everything",
+      "source of truth cv",
+      "what cv should i upload"
+    ],
+    "answer": "Upload **one MASTER CV** that tells the full story of you - every role, project, skill, and metric you can honestly claim. JobRadar never invents experience. Tailored CVs and cover letters are built **only** from that MASTER CV plus the job description.\n\n**How to write it:**\n- Put all real experience in one place (even roles you will not show every time)\n- Prefer concrete tools, scope, and numbers you can defend in an interview\n- Keep honesty: do not pad titles or invent outcomes\n- Update it when you gain a new project or skill (Settings → Profile & CV)\n\n**Sample shape (plain text):**\nName · City · email · links\nSummary: 3-4 lines about your senior focus\nSkills: languages, frameworks, infra you actually used\nExperience: Company | Title | dates\n  - Built X using Y; cut Z by N%\nProjects: name, stack, outcome\nEducation: degree, school, year\n\n**Next:** Settings → Profile & CV → upload that file. Then Search and Rate jobs."
+  }
+]

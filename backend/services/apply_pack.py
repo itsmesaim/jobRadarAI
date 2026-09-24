@@ -9,6 +9,7 @@ import json
 import re
 import time
 from datetime import datetime, timezone
+from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
@@ -35,6 +36,7 @@ from services.prompt_safety import fence
 from services.user_time import user_local_time
 
 MIN_APPLY_PACK_SCORE = 6
+# Soft gate: below this score needs confirm_low_score=True (user warned in UI).
 # One structured call can sit on a slow/broken provider forever; fail loud instead.
 # DeepSeek flash regularly spends ~110s on a structured draft; 120s was too tight.
 _APPLY_PACK_LLM_TIMEOUT_S = 300.0
@@ -194,13 +196,18 @@ scan would. Do not assume the draft is already optimized.
   JD-central theme (even Preferred/Desirable) and the cover letter never names it, that is an
   issue. A letter that only lists Essential gaps and skips a tip like "actively working through
   native AWS managed services" is incomplete.
-- issues: list every CONCRETE reason a real ATS/recruiter would reject or rank this draft low,
-  one per line: an Essential/Required JD keyword missing from the draft, a bullet with no
-  measurable outcome where MASTER CV had a real metric available, a cover letter that opens with
-  a hedge or cliche, a cover letter that ignored a TAILORING TIP acknowledgment, a dropped
-  MASTER CV role, a keyword tier mismatch. Only list issues that are actually fixable or worth
-  flagging, do not invent problems to pad the list. Leave issues empty if the draft would
-  already pass a real ATS screen cleanly.
+- issues: list every CONCRETE reason a real ATS/recruiter would reject or rank this draft low.
+  Each issue MUST be a structured object with fields:
+    tier: R1 | R2 | R3
+    owner: drafter | humanizer | user
+    reason: one-line problem
+    evidence: short quote from draft or JD (or "n/a")
+    direction: kind of fix, never new facts
+  Tiers: R1 format/parser, R2 screen-out (knockouts, unsupported claims, missed real keywords),
+  R3 recruiter smell / AI tells. Owners: drafter (structure/selection), humanizer (wording),
+  user (needs a fact only the candidate can give).
+  Only list issues that are actually fixable or worth flagging. Leave issues empty if the draft
+  would already pass a real ATS screen cleanly.
 """.strip()
 
 
@@ -309,6 +316,27 @@ class ApplyPackDraft(BaseModel):
     )
 
 
+class ATSIssue(BaseModel):
+    """Structured ATS finding (tier + owner are first-class, not text prefixes)."""
+
+    tier: Literal["R1", "R2", "R3"] = Field(
+        description="R1 format/parser, R2 screen-out, R3 recruiter smell / AI tells"
+    )
+    owner: Literal["drafter", "humanizer", "user"] = Field(
+        description="drafter=structure/selection, humanizer=wording, user=needs a fact"
+    )
+    reason: str = Field(
+        description="One-line reason this draft would be rejected or ranked low"
+    )
+    evidence: str = Field(
+        default="n/a", description="Short quote from draft or JD, or n/a"
+    )
+    direction: str = Field(
+        default="",
+        description="Kind of fix only; never invent new content, numbers, or skills",
+    )
+
+
 class ATSCritique(BaseModel):
     ats_alignment_pct: int = Field(
         description="0-100 honest keyword alignment between JD and the draft/MASTER CV (not inflated)"
@@ -323,11 +351,11 @@ class ATSCritique(BaseModel):
     ats_keywords_missing: list[str] = Field(
         description="JD keywords not found in the draft or MASTER CV, gaps only, do not fabricate"
     )
-    issues: list[str] = Field(
+    issues: list[ATSIssue] = Field(
         default_factory=list,
         description=(
-            "One line per concrete reason a real ATS/recruiter would reject or rank this draft "
-            "low. Empty if the draft would already pass a real ATS screen cleanly."
+            "Structured ATS/recruiter issues with tier and owner fields. Empty only if the "
+            "draft would already pass a real ATS screen cleanly."
         ),
     )
 
@@ -377,7 +405,6 @@ def _unbacked_summary_terms(summary: str, master_cv_text: str) -> list[str]:
     catching real fabrication (e.g. "FastAPI and Flask" when only FastAPI is real) without
     needing to parse natural language, real tool names the candidate has are always somewhere
     in MASTER CV verbatim (skills, experience, or project bullets).
-    ponytail: token-presence heuristic, not full fact-checking, won't catch a fabricated CLAIM
     built entirely from real words (e.g. inventing a metric using real tool names), only a
     genuinely new tool/tech name, that's the specific failure mode this was written for.
     """
@@ -443,7 +470,6 @@ def _ensure_matched_strength_skills_survive(
 PROJECT_BULLET_FLOOR = 4
 PROJECT_BULLET_DEFAULT_CAP = 5
 PROJECT_BULLET_STRONG_CAP = 6
-# ponytail: token-overlap bar for "this project is a strong JD match", bump
 # PROJECT_BULLET_STRONG_CAP if real strong matches stay at 4 bullets.
 _PROJECT_STRONG_MATCH = 0.18
 
@@ -921,6 +947,9 @@ STAGE_FLAVOR = {
     "revising": [
         "Fixing what the ATS scan flagged...",
     ],
+    "humanize": [
+        "Smoothing the tone so it reads human...",
+    ],
     "brief": [
         "Writing your fit brief...",
         "Weighing strengths against gaps...",
@@ -998,23 +1027,26 @@ async def generate_apply_pack_stream(
     part: str = "all",
     note: str = "",
     previous: dict | None = None,
+    confirm_low_score: bool = False,
 ):
-    """Async generator yielding ("stage", {"stage": key, "messages": [...]}) tuples as
-    each real step starts, then a final ("done", {"pack": str, "ats": {...}}) with the
-    finished apply pack. Lets the caller show live progress instead of one long blocking wait.
+    """Async generator yielding ("stage", ...) then ("done", {pack, ats, content}).
 
-    Real draft -> independent ATS critique -> bounded single revision (max 3 LLM
-    calls). part=cv|cover is one call on the existing pack. Python backstops run after.
+    Full pack (part=all) runs LangGraph: draft -> ats -> revise? -> humanize.
+    part=cv|cover is one structured call on the existing pack. Python backstops after.
     """
+    pack_ats_unaudited = False
+    pack_user_questions: list[str] = []
+    pack_humanizer_fallback = ""
     if is_incomplete_jd(job.get("full_text", "")):
         raise ValueError(
             "Job description is incomplete. Paste the full JD or re-crawl before generating an apply pack."
         )
 
     score = rating.get("score") or 0
-    if score < MIN_APPLY_PACK_SCORE:
+    if score < MIN_APPLY_PACK_SCORE and not confirm_low_score:
         raise ValueError(
-            f"Apply pack is available for jobs scoring {MIN_APPLY_PACK_SCORE}+. This job is {score}/10."
+            f"LOW_SCORE_CONFIRM: Fit is {score}/10 (below {MIN_APPLY_PACK_SCORE}). "
+            "Confirm to build anyway - gaps may be large and ATS alignment weaker."
         )
 
     yield "stage", {"stage": "gathering", "messages": STAGE_FLAVOR["gathering"]}
@@ -1173,117 +1205,59 @@ USER NOTE for this generation (follow it using MASTER CV facts only; ignore if e
             issues=[],
         )
     else:
-        draft_llm = llm.with_structured_output(
-            ApplyPackDraft, include_raw=True, method="function_calling", **kwargs
-        )
-        draft_human = f"""
-    {job_header}
+        # LangGraph: draft -> ats -> revise? -> humanize(stub)
+        from services.apply_pack_graph import stream_apply_pack_graph
 
-    {jd_block}
-
-    {master_cv}
-
-    CANDIDATE (JSON):
-    {_cv_context(user)}
-    """.strip()
-        yield "stage", {"stage": "drafting", "messages": STAGE_FLAVOR["drafting"]}
-        draft: ApplyPackDraft | None = await _run_structured(
-            draft_llm,
-            [
-                SystemMessage(content=DRAFT_SYSTEM_PROMPT),
-                HumanMessage(content=draft_human),
-            ],
-            step="draft",
-            **usage_kwargs,
-        )
-        if not draft:
+        graph_state: dict | None = None
+        async for kind, payload in stream_apply_pack_graph(
+            job_header=job_header,
+            jd_block=jd_block,
+            master_cv=master_cv,
+            cv_context=_cv_context(user),
+            llm=llm,
+            kwargs=kwargs,
+            usage_kwargs=usage_kwargs,
+        ):
+            if kind == "stage":
+                yield "stage", payload
+            elif kind == "graph_done":
+                graph_state = payload
+        if not graph_state:
             raise ValueError("Could not generate apply pack. Try again.")
 
-        # --- Call 2: independent ATS critique of the draft ---
-        critique_llm = llm.with_structured_output(
-            ATSCritique, include_raw=True, method="function_calling", **kwargs
+        final_summary = graph_state["final_summary"]
+        final_experience = [
+            TailoredRole(**r) for r in graph_state.get("final_experience") or []
+        ]
+        final_cover_letter = CoverLetterParts(**graph_state["final_cover_letter"])
+        final_notes = list(graph_state.get("final_notes") or [])
+        final_projects = [
+            SelectedProject(**p) for p in graph_state.get("final_projects") or []
+        ]
+        final_skills = [
+            SelectedSkillGroup(**s) for s in graph_state.get("final_skills") or []
+        ]
+        ats_fixes = list(graph_state.get("ats_fixes") or [])
+        if graph_state.get("ats_unaudited"):
+            ats_fixes = list(ats_fixes) + ["UNAUDITED: ATS screen did not complete."]
+        for q in graph_state.get("user_questions") or []:
+            note = f"Needs your input: {q}"
+            if note not in final_notes:
+                final_notes = list(final_notes) + [note]
+        critique = ATSCritique(
+            ats_alignment_pct=int(graph_state.get("ats_alignment_pct") or 0),
+            ats_keywords_matched=list(graph_state.get("ats_keywords_matched") or []),
+            ats_keywords_missing=list(graph_state.get("ats_keywords_missing") or []),
+            issues=[],
         )
-        critique_human = f"""
-    {job_header}
-
-    {jd_block}
-
-    {master_cv}
-
-    DRAFT (written by a separate pass, read it cold):
-    {_draft_dump(draft)}
-    """.strip()
-        yield "stage", {"stage": "screening", "messages": STAGE_FLAVOR["screening"]}
-        try:
-            critique = await _run_structured(
-                critique_llm,
-                [
-                    SystemMessage(content=ATS_CRITIQUE_SYSTEM_PROMPT),
-                    HumanMessage(content=critique_human),
-                ],
-                step="ats_critique",
-                **usage_kwargs,
-            )
-        except ValueError as exc:
-            if not _is_llm_timeout(exc):
-                raise
-            critique = None
-            _ap_log("ATS timed out, shipping draft")
-
-        # --- Call 3: bounded single revision, only if the critique found real issues ---
-        revision = None
-        if critique and critique.issues:
-            revision_llm = llm.with_structured_output(
-                ApplyPackRevision, include_raw=True, method="function_calling", **kwargs
-            )
-            revision_human = f"""
-    {job_header}
-
-    {master_cv}
-
-    ORIGINAL DRAFT:
-    {_draft_dump(draft)}
-
-    ISSUES FROM ATS SCREEN (fix these only):
-    {chr(10).join(f"- {issue}" for issue in critique.issues)}
-    """.strip()
-            yield "stage", {"stage": "revising", "messages": STAGE_FLAVOR["revising"]}
-            try:
-                revision = await _run_structured(
-                    revision_llm,
-                    [
-                        SystemMessage(content=ATS_REVISION_SYSTEM_PROMPT),
-                        HumanMessage(content=revision_human),
-                    ],
-                    step="revision",
-                    **usage_kwargs,
-                )
-            except ValueError as exc:
-                if not _is_llm_timeout(exc):
-                    raise
-                _ap_log("revision timed out, using ATS-screened draft")
-
-        if revision:
-            final_summary = revision.tailored_summary
-            final_experience = revision.tailored_experience
-            final_cover_letter = revision.cover_letter
-            final_notes = revision.honest_notes
-            final_projects = revision.selected_projects
-            final_skills = revision.selected_skills
-            ats_fixes = revision.ats_fixes
-        else:
-            final_summary = draft.tailored_summary
-            final_experience = draft.tailored_experience
-            final_cover_letter = draft.cover_letter
-            final_notes = draft.honest_notes
-            final_projects = draft.selected_projects
-            final_skills = draft.selected_skills
-            if critique is None:
-                ats_fixes = ["ATS screen timed out; shipping the draft as-is."]
-            elif critique.issues:
-                ats_fixes = ["Revision timed out; using ATS-screened draft."]
-            else:
-                ats_fixes = ["ATS screen passed cleanly, no revisions needed."]
+        pack_ats_unaudited = bool(graph_state.get("ats_unaudited"))
+        pack_user_questions = list(graph_state.get("user_questions") or [])
+        pack_humanizer_fallback = str(graph_state.get("humanizer_fallback") or "")
+        if pack_humanizer_fallback and graph_state.get("humanizer_reverted"):
+            # Ensure note survives even if graph notes were trimmed earlier.
+            note = "Humanizer fallback: integrity check failed. Pack uses the pre-humanize draft."
+            if note not in final_notes:
+                final_notes = list(final_notes) + [note]
 
     structured_cv = (user.get("cv") or {}).get("structured") or {}
     real_companies = {
@@ -1383,10 +1357,14 @@ USER NOTE for this generation (follow it using MASTER CV facts only; ignore if e
             "matched": parsed.ats_keywords_matched,
             "missing": parsed.ats_keywords_missing,
             "fixes": parsed.ats_fixes,
+            "unaudited": pack_ats_unaudited,
+            "user_questions": pack_user_questions,
+            "humanizer_fallback": pack_humanizer_fallback or None,
         },
-        # Structured content, cached alongside pack/ats so the CV/cover-letter PDF
-        # endpoints can compile on demand without re-running the LLM calls.
         "content": parsed.model_dump(),
+        "ats_unaudited": pack_ats_unaudited,
+        "user_questions": pack_user_questions,
+        "humanizer_fallback": pack_humanizer_fallback or None,
     }
     _ap_log(
         f"stream done pack_chars={len(pack)} "

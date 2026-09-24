@@ -18,6 +18,7 @@ from bson import ObjectId
 
 from database import get_database
 from services.job_reminders import send_job_apply_reminders
+from services.ats_boards_crawler import crawl_jobs_for_user_ats_boards
 from services.jooble_crawler import crawl_jobs_for_user_jooble
 from services.jobsapi_indeed_crawler import crawl_jobs_for_user_jobsapi
 from services.rating import rate_all_jobs_for_user
@@ -98,18 +99,31 @@ async def _auto_crawl_and_rate():
 
         try:
             max_stored = settings.auto_crawl_max_stored_per_cycle
-            # Jooble + Indeed only (LinkedIn API has no JD text).
-            jooble_cap = max_stored // 2
-            indeed_cap = max_stored - jooble_cap
+            # Jooble + Indeed + company ATS boards (when user configured any).
+            has_ats = bool(user.get("ats_boards"))
+            if has_ats:
+                jooble_cap = max_stored // 3
+                indeed_cap = max_stored // 3
+                ats_cap = max_stored - jooble_cap - indeed_cap
+            else:
+                jooble_cap = max_stored // 2
+                indeed_cap = max_stored - jooble_cap
+                ats_cap = 0
             print(
                 f"[scheduler] [{email}] → Starting crawl "
-                f"(cap {max_stored}/cycle: jooble={jooble_cap}, indeed={indeed_cap})..."
+                f"(cap {max_stored}/cycle: jooble={jooble_cap}, indeed={indeed_cap}, "
+                f"ats={ats_cap})..."
             )
-            res_j, res_i = await asyncio.gather(
+            res_j, res_i, res_a = await asyncio.gather(
                 crawl_jobs_for_user_jooble(user, max_stored=jooble_cap),
                 crawl_jobs_for_user_jobsapi(user, max_stored=indeed_cap),
+                crawl_jobs_for_user_ats_boards(user, max_stored=ats_cap or None),
             )
-            stored = (res_j or {}).get("stored", 0) + (res_i or {}).get("stored", 0)
+            stored = (
+                (res_j or {}).get("stored", 0)
+                + (res_i or {}).get("stored", 0)
+                + (res_a or {}).get("stored", 0)
+            )
             print(f"[scheduler] [{email}] Crawl done: stored={stored} new jobs")
 
             await db.users.update_one(

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
+  Bot,
   Building2,
   Briefcase,
   Check,
@@ -12,11 +13,13 @@ import {
   ExternalLink,
   Eraser,
   FileCheck2,
+  FileText,
   Kanban,
   LayoutGrid,
   Lock,
   MapPin,
   Menu,
+  MessageSquare,
   Plus,
   RefreshCw,
   Scale,
@@ -38,6 +41,7 @@ import { StatTile } from "../components/StatTile";
 import { Reveal } from "../components/Reveal";
 import { FlowDiagram, type FlowStep } from "../components/FlowDiagram";
 import { RadarSweep } from "../components/RadarSweep";
+import { Overlay } from "../components/Modal";
 
 const FEATURES = [
   {
@@ -69,6 +73,11 @@ const FEATURES = [
     title: "Apply packs",
     desc: "Download a tailored CV PDF and cover letter from your real CV for jobs that score well. Rebuild the letter without touching the CV. You pick which projects lead.",
     Icon: Briefcase,
+  },
+  {
+    title: "Chat about each job",
+    desc: "Every job has its own chat: ask why it scored the way it did, build or rebuild the CV + cover letter, or paste employer form questions. Paste a JD right from chat to add a new job and switch between jobs without leaving the conversation. Mention a project, role, or skill and it proposes an edit to your CV for you to accept.",
+    Icon: MessageSquare,
   },
   {
     title: "You pick the AI, we host the app",
@@ -287,6 +296,49 @@ const HERO_STATS: { label: string; value: string; tone?: "accent" | "success" }[
 const heroWords = "Stop scrolling job boards. Let the radar find your matches.".split(" ");
 const HERO_HIGHLIGHT = new Set(["radar", "matches."]);
 
+/** The agent's name throughout the product surface: job chat, the hero's live
+ * demo, and the mock conversation later on this page. One consistent identity
+ * instead of a faceless "AI" or the product name doing double duty. */
+const AGENT_NAME = "Scout";
+
+function AgentAvatar({ size = 30 }: { size?: number }) {
+  return (
+    <span className="landing-agent-avatar" style={{ width: size, height: size }}>
+      <Bot size={Math.round(size * 0.55)} strokeWidth={2.2} />
+    </span>
+  );
+}
+
+/** Hero's second signature moment, next to the radar: a live look at what the
+ * radar's blips turn into once you open one, Scout actually reading the JD
+ * and landing on a verdict. Two lines cross-fade on a loop (pure CSS, see
+ * .landing-agent-line in index.css); freezes on the first line under
+ * prefers-reduced-motion. */
+function AgentPulse() {
+  return (
+    <div className="landing-agent-card" aria-hidden="true">
+      <div className="landing-agent-card-head">
+        <AgentAvatar />
+        <div>
+          <div className="landing-agent-card-name">{AGENT_NAME}</div>
+          <div className="landing-agent-card-status">
+            <span className="landing-agent-dot" /> reading a listing
+          </div>
+        </div>
+      </div>
+      <div className="landing-agent-card-body">
+        <span className="landing-agent-line landing-agent-line-1">
+          Cross-checking Senior Frontend Engineer against your CV
+          <span className="landing-agent-caret" />
+        </span>
+        <span className="landing-agent-line landing-agent-line-2">
+          Fit 9/10 - strong React and TypeScript match.
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function PreviewJobCard({
   source,
   title,
@@ -426,8 +478,6 @@ const DEMO_STRENGTHS = [
   "Shipped and maintained CI/CD pipelines end to end, exactly what this listing asks for.",
 ];
 const DEMO_GAPS = ["No hands-on GraphQL experience yet, this role lists it as required."];
-const DEMO_VERDICT =
-  "Strong overall fit. Your frontend and DevOps background covers most of this listing, the GraphQL gap is worth addressing in your cover letter.";
 
 function DemoJobDetailModal({
   job,
@@ -437,19 +487,7 @@ function DemoJobDetailModal({
   onClose: () => void;
 }) {
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 200,
-        padding: 16,
-      }}
-    >
+    <Overlay onClick={onClose} zIndex={200} padding={16}>
       <div
         onClick={(e) => e.stopPropagation()}
         className="card job-detail-modal"
@@ -502,111 +540,88 @@ function DemoJobDetailModal({
         <div style={{ padding: "0 var(--space-6) var(--space-6)" }}>
           <p
             style={{
-              fontSize: "var(--text-base)",
-              color: "var(--text-secondary)",
-              lineHeight: 1.65,
-              margin: "0 0 var(--space-5)",
-              padding: "var(--space-3) var(--space-4)",
-              background: "var(--bg-secondary)",
-              borderRadius: "var(--radius)",
-              border: "1px solid var(--border)",
+              fontSize: "var(--text-xs)",
+              fontWeight: 600,
+              color: "var(--text-muted)",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              margin: "0 0 var(--space-3)",
             }}
           >
-            {DEMO_VERDICT}
+            This is what job chat looks like
           </p>
 
-          <div style={{ marginBottom: "var(--space-5)" }}>
-            <p
-              style={{
-                fontSize: "var(--text-xs)",
-                fontWeight: 600,
-                color: "var(--success)",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-                marginBottom: "var(--space-3)",
-              }}
-            >
-              Strengths
-            </p>
-            {DEMO_STRENGTHS.map((s) => (
-              <div
-                key={s}
-                style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}
-              >
-                <span style={{ color: "var(--success)", fontWeight: 700, flexShrink: 0 }}>+</span>
-                <span
-                  style={{
-                    fontSize: "var(--text-base)",
-                    color: "var(--text-secondary)",
-                    lineHeight: 1.6,
-                  }}
-                >
-                  {s}
-                </span>
+          <div className="job-chat-messages" style={{ padding: 0, marginBottom: "var(--space-5)" }}>
+            <div className="job-chat-row is-bot">
+              <div className="job-chat-avatar is-bot">
+                <Bot size={16} />
               </div>
-            ))}
-          </div>
-
-          <div style={{ marginBottom: "var(--space-6)" }}>
-            <p
-              style={{
-                fontSize: "var(--text-xs)",
-                fontWeight: 600,
-                color: "#f97316",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-                marginBottom: "var(--space-3)",
-              }}
-            >
-              Gaps
-            </p>
-            {DEMO_GAPS.map((g) => (
-              <div
-                key={g}
-                style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}
-              >
-                <span style={{ color: "#f97316", fontWeight: 700, flexShrink: 0 }}>−</span>
-                <span
-                  style={{
-                    fontSize: "var(--text-base)",
-                    color: "var(--text-secondary)",
-                    lineHeight: 1.6,
-                  }}
-                >
-                  {g}
-                </span>
+              <div className="job-chat-bubble is-bot is-brief">
+                <div className="job-chat-who">JobRadar · rating summary</div>
+                <div className="job-chat-body">
+                  <p style={{ margin: "0 0 8px" }}>
+                    <strong>Fit {job.score}/10</strong> for {job.title} at {job.company}.
+                  </p>
+                  {DEMO_STRENGTHS.map((s) => (
+                    <div key={s} style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+                      <span style={{ color: "var(--success)", fontWeight: 700 }}>+</span>
+                      <span>{s}</span>
+                    </div>
+                  ))}
+                  {DEMO_GAPS.map((g) => (
+                    <div key={g} style={{ display: "flex", gap: 6 }}>
+                      <span style={{ color: "#f97316", fontWeight: 700 }}>−</span>
+                      <span>{g}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
+            </div>
 
-          <p
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--space-2)",
-              fontSize: "var(--text-sm)",
-              color: "var(--text-secondary)",
-              background: "var(--accent-light)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius)",
-              padding: "var(--space-3) var(--space-4)",
-              margin: "0 0 var(--space-5)",
-            }}
-          >
-            <Sparkles size={14} style={{ flexShrink: 0, color: "var(--accent)" }} />
-            Download apply pack builds a ready CV + cover letter PDF from this fit analysis. Copy
-            apply pack instead if you'd rather hand the raw info to your own ChatGPT/Claude and
-            build it yourself.
-          </p>
+            <div className="job-chat-row is-user">
+              <div className="job-chat-avatar is-user">Y</div>
+              <div className="job-chat-bubble is-user">
+                <div className="job-chat-body">Build CV + cover for this role</div>
+              </div>
+            </div>
+
+            <div className="job-chat-row is-bot">
+              <div className="job-chat-avatar is-bot">
+                <Bot size={16} />
+              </div>
+              <div className="job-chat-bubble is-bot">
+                <div className="job-chat-who">JobRadar</div>
+                <div className="job-chat-body">
+                  <p style={{ margin: "0 0 4px" }}>
+                    <strong>CV + cover letter are ready.</strong>
+                  </p>
+                  <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+                    Tailored from your MASTER CV and this job description, both from scratch.
+                  </p>
+                </div>
+                <div className="job-chat-inline-chips">
+                  <Link to="/login" className="chip chip-primary">
+                    <FileText size={13} /> cv.pdf
+                  </Link>
+                  <Link to="/login" className="chip chip-primary">
+                    <FileText size={13} /> cover-letter.pdf
+                  </Link>
+                  <Link to="/login" className="chip">
+                    <ClipboardCopy size={13} /> Copy pack
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <div className="job-modal-footer">
             <Link
               to="/login"
               className="btn btn-primary job-modal-apply-pack"
-              title="Generates a tailored CV + cover letter PDF from your real CV and this job"
+              title="Sign up to build a real tailored CV + cover letter from your own CV"
             >
-              <Download size={15} />
-              Download apply pack
+              <Sparkles size={15} />
+              Try it on your own CV
             </Link>
 
             <div className="job-modal-footer-actions">
@@ -624,18 +639,11 @@ function DemoJobDetailModal({
               >
                 <RefreshCw size={14} /> Re-rate
               </Link>
-              <Link
-                to="/login"
-                className="btn btn-ghost job-modal-action-btn"
-                title="Copies job + CV context, paste into ChatGPT/Claude/Grok to build your own CV"
-              >
-                <ClipboardCopy size={14} /> Copy apply pack
-              </Link>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </Overlay>
   );
 }
 
@@ -758,6 +766,7 @@ export function LandingPage() {
 
           <div className="landing-hero-radar-wrap">
             <RadarSweep />
+            <AgentPulse />
           </div>
         </section>
 

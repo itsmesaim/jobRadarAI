@@ -10,6 +10,7 @@ import { LoginPage } from "./pages/Login";
 import { ForgotPasswordPage } from "./pages/ForgotPassword";
 import { ResetPasswordPage } from "./pages/ResetPassword";
 import { Dashboard } from "./pages/Dashboard";
+import { JobChatPage } from "./pages/JobChatPage";
 import { KanbanPage } from "./pages/Kanban";
 import { SettingsPage } from "./pages/Settings";
 import { AdminPage } from "./pages/Admin";
@@ -22,15 +23,9 @@ import { useEffect, useState } from "react";
 function Layout({ children }: { children: React.ReactNode }) {
   const [showWelcome, setShowWelcome] = useState(false);
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "var(--bg)",
-        overflowX: "hidden",
-      }}
-    >
+    <div className="app-shell">
       <Navbar onHelpClick={() => setShowWelcome(true)} />
-      <main style={{ overflowX: "hidden" }}>{children}</main>
+      <main className="app-main">{children}</main>
       <WelcomeModal forceOpen={showWelcome} onClose={() => setShowWelcome(false)} />
     </div>
   );
@@ -76,6 +71,14 @@ export default function App() {
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/cookies" element={<CookiesPage />} />
           <Route path="/" element={<Home />} />
+          <Route
+            path="/jobs/:jobId"
+            element={
+              <Protected>
+                <JobChatPage />
+              </Protected>
+            }
+          />
           <Route
             path="/kanban"
             element={

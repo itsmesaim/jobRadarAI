@@ -189,24 +189,34 @@ Settings (tabs: Profile & CV, AI models, Job search, Notifications, Account, Dat
 - **Rate the rating**: every job's detail view has an always-visible star (1-5) + comment panel, feeding directly into the calibration loop above.
 
 ### 6. Apply Packs (premium)
-Two ways to turn a rated job into an application, from the job detail view, gated by score (6+), daily quota, and AI token quota:
+Two ways to turn a rated job into an application, from a job's chat, gated by score (6+), daily quota, and AI token quota:
 
-- **Download apply pack**: streams progress over SSE. First generation is a real three-call loop (draft → independent ATS critique → one revision if ATS found issues). Each LLM call is capped at 5 minutes; if ATS or revision times out, the draft is still cached instead of throwing the wait away. Generation runs in a background task: closing the tab does not cancel it. Come back and the card shows "CV on the way", or Download if it finished. Server compiles CV + cover-letter PDFs with a **Tectonic** binary at `backend/bin/tectonic` (gitignored; install on the VPS, warm `.tectonic_cache/`). No Overleaf on the user side.
+- **Build / download apply pack**: streams progress over SSE through a LangGraph pipeline - **draft** (tailor from MASTER CV) → **ATS critique** (structured issues, each tiered R1/R2/R3 and owned by drafter/humanizer/user) → **revise once** only for R1/R2 drafter-owned issues (R3/humanizer-owned go straight to the humanizer brief; user-owned surface as "Needs your input", no revision spent) → **humanize** (strip AI-tell wording, facts locked; reverts to the pre-humanize draft if a deterministic integrity check catches a bullet/number/fact drift, or if the pass times out). Each LLM call is capped at 5 minutes; an ATS timeout still ships the draft, marked **Unaudited**. Generation runs in a background task: closing the tab does not cancel it. Server compiles CV + cover-letter PDFs with a **Tectonic** binary at `backend/bin/tectonic` (gitignored; install on the VPS, warm `.tectonic_cache/`). No Overleaf on the user side.
   - CV: per-role XYZ bullets only where a real metric exists in that MASTER CV bullet; flagship projects from Settings lead Key Projects when those names exist on the CV; fake measured-by clauses are stripped in code; em dashes are stripped (they read as AI-default).
   - Cover letter: 4 parts (strongest match, concrete examples, Essential gaps named-then-pivoted, specific close). Preferred gaps the JD leans on still get one acknowledgment if a tailoring tip asked for it. Body is real paragraphs, not one run-on sentence.
-  - Cache is **not** a 12-hour TTL. It stays until this job is re-rated or the CV is replaced. Rebuild **CV**, **letter**, or **both**, with an optional note ("lead with X, mention AWS as learning"). CV-only / letter-only is one LLM call on the existing pack and does not burn another daily pack. Rebuild both does.
+  - Cache is **not** a 12-hour TTL. It stays until this job is re-rated or the CV is replaced. Rebuild **CV**, **letter**, or **both**, with an optional note ("lead with X, mention AWS as learning"). CV-only / letter-only is one LLM call on the existing pack, merges the prior build's Unaudited/Humanizer-fallback/Needs-your-input flags forward instead of clearing them, and does not burn another daily pack. Rebuild both does.
+  - Quality flags (**Unaudited**, **Humanizer fallback**, **Needs your input**) persist on the job and show in job chat's Tools panel on reload, not just right after a build.
 - **Copy apply pack**: zero extra LLM for the handoff doc (fit + MASTER CV + JD + LaTeX boilerplate) to paste into your own ChatGPT/Claude/Grok.
 
-### 7. Freemium & Admin
+### 7. Job Chat & MASTER CV editing
+Every job has its own chat (`/jobs/:id`), fenced to that role plus product FAQ - not a free-form assistant:
+- **Rating Q&A**: why this score, gaps, next steps, straight from the stored rating, no LLM needed for the initial summary.
+- **Build / rebuild the apply pack** from a chat phrase ("make a CV and cover") or the Tools panel; downloads land back in the same reply.
+- **Employer form questions**: paste them in, get draft answers grounded in the MASTER CV.
+- **Paste a JD to add a new job** without leaving the conversation (Tools → Paste JD → new job), then it opens straight into that job's own chat.
+- **Jobs rail**: switch between recent jobs from the same Tools panel; the panel remembers per-job Run steps and quality flags.
+- **MASTER CV propose / confirm**: mention a project, role, or skill in plain language ("I worked as X at Y", "add Rust as a skill") and chat proposes the exact addition as a card - **Edit** the fields, **Accept into MASTER CV**, or **Keep chat-only** to dismiss it. Nothing is written until you Accept.
+
+### 8. Freemium & Admin
 Four-layer quota, enforced server-side with atomic Mongo increments: searches (default 3/day), ratings (10/day, reserved before the LLM call and refunded on failure), apply packs (1/day free), AI tokens (250k/day). Admin panel (`/{ADMIN_SECRET_PATH}/`) lists users, sets per-user overrides (including separate rating / apply-pack / CV-parse models), grants temporary/permanent full access, and shows a platform-wide AI cost summary. Admin bypasses all limits. Models without an API key on the server are hidden from Settings.
 
-### 8. Kanban & Freshness
+### 9. Kanban & Freshness
 Each job carries a per-user pipeline status. Dashboard shows relative post/crawl time ("2d ago"); Kanban gives desktop drag-and-drop and a mobile tabbed view.
 
-### 9. Notifications
+### 10. Notifications
 A small bell in the navbar, not a full notification history - computed live from signals that already exist rather than a separate stored event log: top matches ready to apply to, stale follow-ups, and new AI models added to the admin-managed catalog since you last checked (`GET /users/notifications`, `POST /users/notifications/seen`).
 
-### 10. Privacy & Data Rights
+### 11. Privacy & Data Rights
 Settings → Data & privacy: a live inventory of what's stored, a full JSON export (`GET /users/data-export`), CV-only deletion, and full account deletion (hard delete of the user doc + every job they crawled, password re-entry required). The Privacy Policy names every third party data actually goes to (Jooble, JobsAPI, your configured LLM provider, MongoDB) and states retention/rights. CV parsing and job rating default to Mistral, an EU-hosted provider, and the app itself is hosted on EU infrastructure - CV/JD content doesn't leave the EU for processing by default. Users can opt into OpenAI or DeepSeek per model (CV parsing / rating independently) from an admin-managed catalog in Settings; doing so sends that data outside the EU to that provider instead, and is treated as a consent action (confirmed in the UI, timestamped server-side). Server logs auto-rotate within 30 days (`pm2-logrotate`). **Not legal advice** - known gap: no formal DPA on file with any LLM provider.
 
 ---
@@ -235,7 +245,12 @@ JobRadar/
 │       ├── rating.py                  # Prefilter + RAG + calibration + brief/roast
 │       ├── vectorstore.py             # FAISS chunking/embedding/retrieval helpers
 │       ├── text_cleanup.py            # LLM cleanup for about_me / feedback text
-│       ├── apply_pack.py              # Draft / ATS / revision + partial CV or letter regen
+│       ├── apply_pack_graph.py        # LangGraph: draft → ATS critique → revise (R1/R2 only) → humanize
+│       ├── apply_pack_backstops.py    # Deterministic checks: dashes, bullet/number drift, cover fields
+│       ├── apply_pack.py              # Streams the graph, packages PDFs, partial CV/letter regen
+│       ├── job_chat.py                # Per-job chat: fencing, refuse off-topic, MASTER CV propose/edit
+│       ├── faq_rag.py                 # Product-question FAQ (canned + retrieve, no LLM)
+│       ├── skill_prompts.py           # Loads backend/skills/*.md, appends to system prompts
 │       ├── cv_latex_boilerplate.py    # LaTeX CV/cover-letter templates, URL validation
 │       ├── pdf_compile.py             # Tectonic subprocess wrapper, page-count check
 │       ├── ai_models.py               # Admin-managed catalog per purpose (rating/apply_pack/cv_parsing)
@@ -247,26 +262,29 @@ JobRadar/
 │       ├── ai_usage.py                # Per-user token tracking + platform summary
 │       ├── scheduler.py               # Auto crawl + rate (respects limits)
 │       ├── email.py / job_reminders.py
-│       ├── jooble_crawler.py
-│       └── jobsapi_indeed_crawler.py
+│       ├── jooble_crawler.py / jobsapi_indeed_crawler.py
+│       └── ats_boards_crawler.py      # Greenhouse / Lever / Ashby public feeds
 ├── frontend/
 │   └── src/
 │       ├── pages/
 │       │   ├── Landing.tsx / Login.tsx / ForgotPassword.tsx / ResetPassword.tsx
 │       │   ├── Dashboard.tsx          # Jobs, quotas, search, rate, Paste JD
+│       │   ├── JobChatPage.tsx        # Per-job chat: rating Q&A, build/rebuild pack, MASTER CV propose/edit, Jobs rail
 │       │   ├── Kanban.tsx
 │       │   ├── Settings.tsx           # CV, flagship work, prefs, privacy, skill overrides
 │       │   ├── Admin.tsx
 │       │   └── Privacy.tsx / Terms.tsx
 │       ├── components/
 │       │   ├── JobCard.tsx / JobDetailModal.tsx / ScoreBadge.tsx / StarRating.tsx
-│       │   ├── RejectReasonModal.tsx / RadarSweep.tsx
-│       │   ├── ManualJDModal.tsx / WelcomeModal.tsx / LimitContactModal.tsx
+│       │   ├── RejectReasonModal.tsx / RadarSweep.tsx / FaqRichText.tsx
+│       │   ├── ManualJDModal.tsx / WelcomeModal.tsx / LimitContactModal.tsx / Modal.tsx (Overlay)
 │       │   ├── ProgressBar.tsx / StatTile.tsx      # shared dashboard/admin primitives
-│       │   ├── ui/                    # Button / TextField / Card / ClearanceStamp - shared kit
 │       │   └── Navbar.tsx / AuthPageShell.tsx / ThemeToggle.tsx / Logo.tsx
 │       ├── utils/profileCompleteness.ts  # Shared "what's still missing" check (Dashboard gating + Settings)
 │       └── api/                       # fetch-based client + API helpers
+├── docs/
+│   ├── build-status.md                # Handoff notes, done/remaining by feature
+│   └── apply-pack-workflow.md         # Draft → ATS → revise? → humanize, in detail
 ├── README.md
 ```
 
@@ -292,14 +310,17 @@ JobRadar/
 | POST | `/jobs/rate-all` | Rate all unrated jobs (background) |
 | POST | `/jobs/{id}/rate` | Re-rate a single job |
 | POST | `/jobs/{id}/rating-feedback` | Star rating (1-5) + comment on a job's AI rating |
-| POST | `/jobs/manual` | Add & rate a pasted JD |
+| POST | `/jobs/manual` | Add & rate a pasted JD (also the paste-JD-from-chat endpoint) |
 | POST | `/jobs/fetch-url` | Server-side JD URL fetch (SSRF-guarded) |
 | GET | `/jobs/{id}/brief` | Zero-LLM handoff doc (fit summary + CV + JD + LaTeX boilerplate) to paste into your own AI chat |
-| GET | `/jobs/{id}/apply-pack` | Generate tailored CV + cover letter (SSE). Cached until re-rate or CV change. `?regenerate=true`, optional `part=cv\|cover` + `note=` |
+| GET | `/jobs/{id}/apply-pack` | Generate tailored CV + cover letter (SSE) through the draft → ATS → revise? → humanize graph. Cached until re-rate or CV change. `?regenerate=true`, optional `part=cv\|cover` + `note=` |
 | GET | `/jobs/{id}/apply-pack/cv.pdf` | Download the compiled tailored CV PDF (requires a prior apply-pack generation) |
 | GET | `/jobs/{id}/apply-pack/cover-letter.pdf` | Download the compiled cover-letter PDF |
 | PATCH | `/jobs/{id}/status` | Update Kanban status |
 | POST/DELETE | `/jobs/cleanup/preview`, `/jobs/cleanup` | Preview/delete jobs by filter (current user) |
+| GET/POST | `/jobs/{id}/chat` | Per-job chat thread: rating Q&A, build-pack trigger, form answers, MASTER CV propose |
+| POST | `/users/cv/projects` / `/users/cv/experience` / `/users/cv/skills` | Accept a MASTER CV addition proposed in job chat |
+| GET/POST/PATCH/DELETE | `/{ADMIN_SECRET_PATH}/ai-models` | Manage the per-purpose (rating/apply_pack/cv_parsing) model catalog |
 | GET/PATCH/DELETE | `/{ADMIN_SECRET_PATH}/users[...]` | List, adjust access/limits, suspend/delete users |
 | GET | `/{ADMIN_SECRET_PATH}/ai-summary` | Platform-wide AI token/cost summary |
 | POST | `/{ADMIN_SECRET_PATH}/jobs/cleanup` | Admin: delete jobs for any user, scoped to `crawled_by` |
@@ -324,7 +345,7 @@ cp .env.example .env
 uv sync
 uv run uvicorn main:app --reload
 ```
-API runs at `http://localhost:8000`. `backend/test_llms.py` and `backend/test_rag.py` test the LLM/RAG pieces directly, bypassing the app.
+API runs at `http://localhost:8000`.
 
 ### Frontend
 ```bash

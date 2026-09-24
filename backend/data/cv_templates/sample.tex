@@ -1,0 +1,47 @@
+% JobRadar sample MASTER-CV LaTeX template
+% Keep these placeholders exactly - apply-pack fills them from your MASTER CV + the job.
+% Safe subset only (no shell escape, no \write18, no \input{|...}).
+
+\documentclass[10pt, a4paper]{article}
+\usepackage[a4paper, top=1.1cm, bottom=1.1cm, left=1.35cm, right=1.35cm]{geometry}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{fontspec}
+\IfFontExistsTF{Latin Modern Roman}{\setmainfont{Latin Modern Roman}}{\setmainfont{DejaVu Serif}}
+\usepackage[ligatures=false]{microtype}
+\usepackage{parskip}
+
+\hypersetup{colorlinks=true, urlcolor=black, linkcolor=black}
+\titleformat{\section}{\bfseries\normalsize}{}{0em}{}[\titlerule]
+\titlespacing{\section}{0pt}{6pt}{4pt}
+\pagestyle{empty}
+\setlist[itemize]{leftmargin=1.4em, topsep=2pt, itemsep=1pt, parsep=0pt}
+\renewcommand{\labelitemi}{\tiny\textbullet}
+
+\begin{document}
+
+\begin{center}
+  {\LARGE \textbf{NAME_PLACEHOLDER}}\\[4pt]
+  {{{CONTACT_LINE}}}\\[2pt]
+  {{{LINKS_LINE}}}
+\end{center}
+
+\vspace{-2pt}
+
+\section{Summary}
+{{{SUMMARY_PLACEHOLDER}}}
+
+\section{Technical Skills}
+{{{SKILLS_PLACEHOLDER}}}
+
+\section{Professional Experience}
+{{{EXPERIENCE_PLACEHOLDER}}}
+
+\section{Key Projects}
+{{{PROJECTS_PLACEHOLDER}}}
+
+\section{Education}
+{{{EDUCATION_PLACEHOLDER}}}
+
+\end{document}

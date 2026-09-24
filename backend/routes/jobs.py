@@ -161,6 +161,23 @@ def _apply_pack_cache_fresh(cached: dict | None, rating: dict, cv_uploaded_at) -
     ) == _stamp(cv_uploaded_at)
 
 
+_PARTIAL_ATS_META_KEYS = ("unaudited", "user_questions", "humanizer_fallback")
+
+
+def _merge_partial_ats(prev_ats: dict | None, new_ats: dict) -> dict:
+    """A CV-only/cover-only rebuild doesn't re-run the ATS/humanize graph, so
+    `new_ats` always carries the field defaults (unaudited=False, no
+    questions, no fallback) rather than what the last full build actually
+    found. Keep those 3 quality-meta fields from the prior cached ATS blob;
+    `alignment_pct`/`matched`/`missing`/`fixes` still come fresh from `new_ats`."""
+    if not prev_ats:
+        return new_ats
+    merged = dict(new_ats)
+    for key in _PARTIAL_ATS_META_KEYS:
+        merged[key] = prev_ats.get(key, new_ats.get(key))
+    return merged
+
+
 VALID_STATUSES = [
     "NEW",
     "SAVED",
@@ -997,6 +1014,7 @@ async def get_job_apply_pack(
     regenerate: bool = False,
     part: str = "all",
     note: str = "",
+    confirm_low_score: bool = False,
     user=Depends(get_current_user),
 ):
     db = get_database()
@@ -1017,10 +1035,13 @@ async def get_job_apply_pack(
         )
 
     score = rating.get("score") or 0
-    if score < MIN_APPLY_PACK_SCORE:
+    if score < MIN_APPLY_PACK_SCORE and not confirm_low_score:
         raise HTTPException(
             status_code=400,
-            detail=f"Apply pack is for jobs scoring {MIN_APPLY_PACK_SCORE}+. This job is {score}/10.",
+            detail=(
+                f"LOW_SCORE_CONFIRM: Fit is {score}/10 (below {MIN_APPLY_PACK_SCORE}). "
+                "Confirm to build anyway - gaps may be large and ATS alignment weaker."
+            ),
         )
 
     from services.jd_text import enrich_jd_from_url, is_incomplete_jd
@@ -1139,12 +1160,17 @@ async def get_job_apply_pack(
                             if part in ("cv", "cover")
                             else None
                         ),
+                        confirm_low_score=confirm_low_score,
                     ):
                         if kind == "done":
                             result = payload
                     if not result or not result.get("content"):
                         raise ValueError(
                             "Apply pack generation finished with no content."
+                        )
+                    if part in ("cv", "cover") and cached:
+                        result["ats"] = _merge_partial_ats(
+                            cached.get("ats"), result["ats"]
                         )
                     await db.jobs.update_one(
                         {"_id": ObjectId(job_id)},
@@ -1268,23 +1294,34 @@ async def get_apply_pack_cv_pdf(job_id: str, user=Depends(get_current_user)):
     print(f"[apply_pack] CV PDF requested job={job_id}", flush=True)
     job, parsed = await _get_cached_apply_pack_content(job_id, user)
     try:
-        pdf_bytes, overflow, _dropped = compile_apply_pack_cv_pdf(user, job, parsed)
+        pdf_bytes, overflow, _dropped, pdf_warns = compile_apply_pack_cv_pdf(
+            user, job, parsed
+        )
     except PdfCompileError as exc:
         print(f"[apply_pack] CV PDF compile failed job={job_id}: {exc}", flush=True)
         raise HTTPException(
             status_code=500, detail="Could not compile the CV PDF. Try again."
         )
     print(
-        f"[apply_pack] CV PDF ok job={job_id} bytes={len(pdf_bytes)} overflow={overflow}",
+        f"[apply_pack] CV PDF ok job={job_id} bytes={len(pdf_bytes)} "
+        f"overflow={overflow} warns={pdf_warns}",
         flush=True,
     )
     filename = suggested_pdf_filename(user, job)
+    # Short ASCII codes only (em_dash, empty_extract, …); FE maps to copy.
+    from services.apply_pack_backstops import PDF_WARN_CODES
+
+    warn_header = ",".join(c for c in (pdf_warns or []) if c in PDF_WARN_CODES)[:200]
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
             "X-Apply-Pack-Overflow": "true" if overflow else "false",
+            "X-Apply-Pack-Warnings": warn_header,
+            "Access-Control-Expose-Headers": (
+                "Content-Disposition, X-Apply-Pack-Overflow, X-Apply-Pack-Warnings"
+            ),
         },
     )
 
@@ -1342,6 +1379,139 @@ async def update_status(
 
     await db.jobs.update_one({"_id": ObjectId(job_id)}, {"$set": update})
     return {"message": "Status updated.", "status": payload.status}
+
+
+class JobChatMessage(BaseModel):
+    message: str = ""
+
+
+@router.get("/{job_id}/chat")
+async def get_job_chat(job_id: str, user=Depends(get_current_user)):
+    db = get_database()
+    user_id = str(user["_id"])
+    try:
+        job = await db.jobs.find_one({"_id": ObjectId(job_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid job ID.")
+    if not job or job.get("crawled_by") != user_id:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    thread = ((job.get("job_threads") or {}).get(user_id)) or []
+    return {"messages": thread}
+
+
+@router.post("/{job_id}/chat")
+async def post_job_chat(
+    job_id: str,
+    payload: JobChatMessage,
+    request: Request,
+    user=Depends(get_current_user),
+):
+    """Fenced per-job assistant. Ownership + token quota + rate limit required."""
+    from services.job_chat import (
+        append_thread_messages,
+        reply_to_job_chat,
+        sanitize_user_message,
+    )
+    from services.limits import check_ai_token_quota
+
+    enforce_rate_limit(request, "job_chat")
+
+    db = get_database()
+    user_id = str(user["_id"])
+    try:
+        job = await db.jobs.find_one({"_id": ObjectId(job_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid job ID.")
+    if not job or job.get("crawled_by") != user_id:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    msg = sanitize_user_message(payload.message)
+    if not msg:
+        raise HTTPException(status_code=400, detail="Message required.")
+
+    rating = (job.get("ratings") or {}).get(user_id) or {}
+    # Local / FAQ paths are free; only LLM replies need token quota.
+    from services.job_chat import local_match_reply
+
+    from services.job_chat import (
+        _looks_add_to_cv,
+        _looks_build_pack,
+        _looks_ontopic,
+        _propose_entry_from_message,
+    )
+
+    result = local_match_reply(msg)
+    if not result and _looks_build_pack(msg):
+        result = {
+            "refuse": False,
+            "reply": (
+                "Starting your tailored **CV + cover** for this job.\n\n"
+                "**Next:** wait for the run steps, then use the download buttons in this reply "
+                "(or Tools anytime)."
+            ),
+            "answers": [],
+            "action": "build_pack",
+            "source": "local_match",
+        }
+    if not result and _looks_add_to_cv(msg):
+        proposal = _propose_entry_from_message(msg)
+        if proposal["kind"] == "skill":
+            label = ", ".join(proposal["items"])
+        elif proposal["kind"] == "experience":
+            label = (
+                f"{proposal['title']} at {proposal['company']}"
+                if proposal["company"]
+                else proposal["title"]
+            )
+        else:
+            label = proposal["name"]
+        result = {
+            "refuse": False,
+            "reply": (
+                f"I can add **{label}** to your MASTER CV if you confirm - "
+                "edit it first if anything's off. Nothing is saved until you Accept.\n\n"
+                "**Next:** Accept to update MASTER CV, or keep it chat-only."
+            ),
+            "answers": [],
+            "action": "propose_master_cv",
+            "proposal": proposal,
+            "source": "local_match",
+        }
+    if not result:
+        from services.faq_rag import answer_from_faq, looks_like_product_question
+
+        if looks_like_product_question(msg) or not _looks_ontopic(msg):
+            result = answer_from_faq(msg)
+    if not result:
+        token_ok, token_msg = await check_ai_token_quota(user)
+        if not token_ok:
+            raise HTTPException(status_code=429, detail=token_msg)
+        result = await reply_to_job_chat(job=job, user=user, rating=rating, message=msg)
+    thread = append_thread_messages(
+        job,
+        user_id,
+        [
+            {"role": "user", "content": msg},
+            {
+                "role": "assistant",
+                "content": result["reply"],
+                "refuse": result.get("refuse"),
+            },
+        ],
+    )
+    await db.jobs.update_one(
+        {"_id": ObjectId(job_id)},
+        {"$set": {f"job_threads.{user_id}": thread}},
+    )
+    return {
+        "reply": result["reply"],
+        "refuse": result.get("refuse", False),
+        "answers": result.get("answers") or [],
+        "action": result.get("action"),
+        "proposal": result.get("proposal"),
+        "source": result.get("source"),
+        "messages": thread,
+    }
 
 
 # ── SINGLE JOB, must be last ────────────────────────────

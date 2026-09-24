@@ -95,7 +95,6 @@ _SALARY_NUMBER_PATTERN = re.compile(r"[\d,]{3,}")
 
 
 _GAP_TAG_RE = re.compile(r"^\[(essential|preferred)\]\s*", re.IGNORECASE)
-# ponytail: length ceiling separating mechanical "X not evidenced" gaps from
 # long narrative ones, tune if real mechanical gaps start getting missed.
 _SKILL_GAP_TOKEN_CEILING = 10
 _PAREN_RE = re.compile(r"\([^)]*\)")
@@ -184,8 +183,6 @@ def _clean_rating_lists(
     umbrella label instead of checking the named alternatives individually,
     the model's own gap text still names the specific tech, that's enough to
     catch it here without needing it in matched_strengths first).
-
-    ponytail: gap/strength overlap is a token-overlap heuristic (at least
     half the gap's meaningful words also present in one strength), not
     semantic matching, upgrade to embedding similarity if paraphrased
     dupes start slipping through. Skill matching uses a stricter full-subset
@@ -877,7 +874,6 @@ Education: {json.dumps(structured.get("education", []))}
             except Exception as e:
                 if not _is_rate_limit_error(e) or attempt == max_attempts:
                     raise
-                # ponytail: flat default backoff doesn't scale with attempts;
                 # exponential covers per-minute limits better when the
                 # provider doesn't name a wait time in its error.
                 wait_s = _retry_after_seconds(e, default=1.5 * (2 ** (attempt - 1)))
@@ -1179,7 +1175,6 @@ JD_CHUNK_SIZE = 800
 JD_CHUNK_OVERLAP = 100
 
 # How many of the user's own past-rated jobs to consider as calibration
-# candidates. ponytail: bounds the FAISS rebuild cost to a small in-memory
 # index; move to a persistent index if a power user's rated-job count makes
 # this rebuild show up in latency.
 SIMILAR_JOBS_LOOKBACK = 200

@@ -18,10 +18,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from config import settings
+from core.rate_limit import enforce_rate_limit
 from core.security import verify_password
 from database import get_database
 from deps import get_current_user
@@ -90,11 +91,21 @@ class UserPreferences(BaseModel):
     # Same idea, for the model that parses an uploaded CV into structured JSON.
     cv_parsing_provider: str = ""
     cv_parsing_model: str = ""
+    # CV PDF look: classic | compact | technical (+ optional section toggles/order).
+    cv_template_preset: str = "classic"
+    cv_sections: dict = {}
+    # Company career boards: URLs or "greenhouse:stripe" / "ashby:openai" / "lever:slug".
+    ats_boards: list[str] = []
 
 
 class SkillOverride(BaseModel):
     skill: str  # key e.g. "plotly"
     context: str  # candidate's description e.g. "used in BEng for ML visualisation"
+
+
+def _normalize_cv_preset(value: str | None) -> str:
+    p = (value or "classic").strip().lower()
+    return p if p in ("classic", "compact", "technical") else "classic"
 
 
 # ── Preferences ───────────────────────────────────────────────────────────────
@@ -164,6 +175,13 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
         "apply_pack_model": prefs["apply_pack_model"],
         "cv_parsing_provider": prefs["cv_parsing_provider"],
         "cv_parsing_model": prefs["cv_parsing_model"],
+        "cv_template_preset": _normalize_cv_preset(prefs.get("cv_template_preset")),
+        "cv_sections": prefs.get("cv_sections") or {},
+        "ats_boards": [
+            s.strip()
+            for s in (prefs.get("ats_boards") or [])
+            if isinstance(s, str) and s.strip()
+        ][:40],
     }
     # Switching provider sends the user's CV/job data to a different company,
     # record when they last consented to that (surfaced as a confirm popup in
@@ -180,6 +198,37 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
 
     await db.users.update_one({"_id": ObjectId(user["_id"])}, {"$set": updates})
     return {"message": "Preferences updated.", "preferences": prefs}
+
+
+@router.get("/faq")
+async def get_faq(q: str = "", user=Depends(get_current_user)):
+    """Product FAQ list, or RAG-ranked answers when ?q= is set.
+
+    FAQ answers are canned corpus text (no LLM / no token burn).
+    """
+    from services.faq_rag import (
+        answer_from_faq,
+        list_faq,
+        retrieve_faq,
+        sanitize_faq_query,
+    )
+
+    q = sanitize_faq_query(q)
+    if q:
+        ans = answer_from_faq(q)
+        hits = retrieve_faq(q, k=5)
+        return {
+            "query": q,
+            "answer": ans,
+            "hits": [
+                {"id": h["id"], "question": h["question"], "answer": h["answer"]}
+                for h in hits
+            ],
+            "items": list_faq(),
+            "model": "none",
+            "note": "FAQ uses curated RAG answers only - no chat model.",
+        }
+    return {"items": list_faq(), "model": "none"}
 
 
 @router.get("/preferences")
@@ -217,6 +266,9 @@ async def get_preferences(user=Depends(get_current_user)):
         "calibration_notes": user.get("calibration_notes", ""),
         "calibration_notes_updated_at": user.get("calibration_notes_updated_at"),
         "calibration_notes_source_count": user.get("calibration_notes_source_count", 0),
+        "cv_template_preset": user.get("cv_template_preset", "classic") or "classic",
+        "cv_sections": user.get("cv_sections") or {},
+        "ats_boards": user.get("ats_boards") or [],
     }
 
 
@@ -245,6 +297,263 @@ async def get_available_ai_models(
     """Active catalog entries for a Settings picker (admin-managed, see
     routes/admin.py ai-models CRUD)."""
     return {"models": await list_models(purpose, active_only=True)}
+
+
+@router.get("/cv-latex-template")
+async def get_cv_latex_template(user=Depends(get_current_user)):
+    return {
+        "has_custom": bool((user.get("cv_latex_template") or "").strip()),
+        "name": user.get("cv_latex_template_name") or "",
+        "updated_at": user.get("cv_latex_template_updated_at"),
+        # Do not echo full tex in list views; client fetches sample separately.
+        "preview": (
+            ((user.get("cv_latex_template") or "")[:400] + "…")
+            if (user.get("cv_latex_template") or "").strip()
+            else ""
+        ),
+    }
+
+
+@router.get("/cv-latex-template/sample")
+async def download_sample_cv_latex(user=Depends(get_current_user)):
+    from pathlib import Path
+    from fastapi.responses import PlainTextResponse
+
+    path = (
+        Path(__file__).resolve().parent.parent / "data" / "cv_templates" / "sample.tex"
+    )
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Sample template missing.")
+    return PlainTextResponse(
+        path.read_text(encoding="utf-8"),
+        media_type="application/x-tex",
+        headers={
+            "Content-Disposition": 'attachment; filename="jobradar-sample-cv.tex"'
+        },
+    )
+
+
+@router.put("/cv-latex-template")
+async def put_cv_latex_template(
+    request: Request,
+    user=Depends(get_current_user),
+):
+    """Upload or paste a custom .tex template. Validated against shell-escape."""
+    from services.latex_template_safe import sanitize_and_validate_latex
+
+    enforce_rate_limit(request, "cv_upload")
+    content_type = (request.headers.get("content-type") or "").lower()
+    name = "custom.tex"
+    raw: bytes | str
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        upload = form.get("file")
+        if upload is None:
+            raise HTTPException(status_code=400, detail="file is required.")
+        raw = await upload.read()  # type: ignore[attr-defined]
+        name = getattr(upload, "filename", None) or name
+    else:
+        body = await request.json()
+        raw = body.get("tex") or ""
+        name = (body.get("name") or name).strip() or name
+
+    try:
+        tex = sanitize_and_validate_latex(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not name.lower().endswith(".tex"):
+        name = f"{name}.tex"
+    # Strip path tricks from filename
+    name = name.replace("\\", "/").split("/")[-1][:120]
+
+    db = get_database()
+    now = datetime.now(timezone.utc)
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {
+            "$set": {
+                "cv_latex_template": tex,
+                "cv_latex_template_name": name,
+                "cv_latex_template_updated_at": now,
+            }
+        },
+    )
+    return {"ok": True, "name": name}
+
+
+@router.delete("/cv-latex-template")
+async def delete_cv_latex_template(user=Depends(get_current_user)):
+    db = get_database()
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {
+            "$unset": {
+                "cv_latex_template": "",
+                "cv_latex_template_name": "",
+                "cv_latex_template_updated_at": "",
+            }
+        },
+    )
+    return {"ok": True}
+
+
+def _clean_text(s: str | None, n: int, *, allow_newlines: bool = False) -> str:
+    """Strip control chars / injection noise from free text, cap length."""
+    allowed = "\n\t" if allow_newlines else " "
+    return "".join(ch for ch in (s or "").strip() if ch in allowed or ord(ch) >= 32)[:n]
+
+
+async def _patch_cv_structured(user: dict, mutate) -> dict:
+    """Fetch this user's fresh cv.structured, apply `mutate(structured)` in
+    place, persist, and return the mutated dict. `mutate` may raise
+    HTTPException (e.g. a dedupe conflict) before anything is written."""
+    db = get_database()
+    fresh = await db.users.find_one({"_id": user["_id"]})
+    cv = (fresh or {}).get("cv") or {}
+    structured = dict(cv.get("structured") or {})
+    mutate(structured)
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"cv.structured": structured}},
+    )
+    return structured
+
+
+class MasterCvProjectPatch(BaseModel):
+    name: str
+    description: str = ""
+    technologies: list[str] = []
+
+
+@router.post("/cv/projects")
+async def add_master_cv_project(
+    payload: MasterCvProjectPatch,
+    request: Request,
+    user=Depends(get_current_user),
+):
+    """Append a confirmed project to MASTER CV structured data (chat Accept)."""
+    enforce_rate_limit(request, "cv_upload")
+    name = _clean_text(payload.name, 200)
+    description = _clean_text(payload.description, 2000, allow_newlines=True)
+    if not name:
+        raise HTTPException(status_code=400, detail="Project name is required.")
+    techs = [
+        _clean_text(t, 60) for t in (payload.technologies or [])[:20] if str(t).strip()
+    ]
+
+    def mutate(structured: dict) -> None:
+        projects = list(structured.get("projects") or [])
+        if any((p.get("name") or "").strip().lower() == name.lower() for p in projects):
+            raise HTTPException(
+                status_code=400, detail="That project is already on your MASTER CV."
+            )
+        projects.append(
+            {
+                "name": name,
+                "description": description,
+                "technologies": techs,
+                "added_via": "chat_confirm",
+            }
+        )
+        structured["projects"] = projects
+
+    structured = await _patch_cv_structured(user, mutate)
+    return {"ok": True, "projects_count": len(structured["projects"])}
+
+
+class MasterCvExperiencePatch(BaseModel):
+    title: str
+    company: str = ""
+    start: str = ""
+    end: str = ""
+    bullets: list[str] = []
+
+
+@router.post("/cv/experience")
+async def add_master_cv_experience(
+    payload: MasterCvExperiencePatch,
+    request: Request,
+    user=Depends(get_current_user),
+):
+    """Append a confirmed role to MASTER CV structured data (chat Accept)."""
+    enforce_rate_limit(request, "cv_upload")
+    title = _clean_text(payload.title, 200)
+    company = _clean_text(payload.company, 200)
+    start = _clean_text(payload.start, 40)
+    end = _clean_text(payload.end, 40)
+    if not title:
+        raise HTTPException(status_code=400, detail="Role title is required.")
+    bullets = [
+        _clean_text(b, 300) for b in (payload.bullets or [])[:20] if str(b).strip()
+    ]
+
+    def mutate(structured: dict) -> None:
+        experience = list(structured.get("experience") or [])
+        if any(
+            (e.get("title") or "").strip().lower() == title.lower()
+            and (e.get("company") or "").strip().lower() == company.lower()
+            for e in experience
+        ):
+            raise HTTPException(
+                status_code=400, detail="That role is already on your MASTER CV."
+            )
+        experience.append(
+            {
+                "title": title,
+                "company": company,
+                "start": start,
+                "end": end,
+                "bullets": bullets,
+                "added_via": "chat_confirm",
+            }
+        )
+        structured["experience"] = experience
+
+    structured = await _patch_cv_structured(user, mutate)
+    return {"ok": True, "experience_count": len(structured["experience"])}
+
+
+class MasterCvSkillPatch(BaseModel):
+    category: str = "Other"
+    items: list[str] = []
+
+
+@router.post("/cv/skills")
+async def add_master_cv_skills(
+    payload: MasterCvSkillPatch,
+    request: Request,
+    user=Depends(get_current_user),
+):
+    """Merge confirmed skills into MASTER CV structured data (chat Accept)."""
+    enforce_rate_limit(request, "cv_upload")
+    category = _clean_text(payload.category or "Other", 60) or "Other"
+    items = [_clean_text(s, 60) for s in (payload.items or [])[:20] if str(s).strip()]
+    if not items:
+        raise HTTPException(status_code=400, detail="At least one skill is required.")
+
+    def mutate(structured: dict) -> None:
+        skills = list(structured.get("skills") or [])
+        group = next(
+            (
+                g
+                for g in skills
+                if isinstance(g, dict)
+                and (g.get("category") or "").strip().lower() == category.lower()
+            ),
+            None,
+        )
+        if group is None:
+            skills.append({"category": category, "items": items})
+        else:
+            existing = {i.strip().lower() for i in (group.get("items") or [])}
+            group["items"] = list(group.get("items") or []) + [
+                i for i in items if i.strip().lower() not in existing
+            ]
+        structured["skills"] = skills
+
+    structured = await _patch_cv_structured(user, mutate)
+    return {"ok": True, "skills_count": len(flatten_skills(structured["skills"]))}
 
 
 class ModelRequest(BaseModel):
@@ -630,6 +939,7 @@ async def export_my_data(user=Depends(get_current_user)):
     exported_jobs = []
     for job in jobs:
         rating = job.get("ratings", {}).get(user_id, {})
+        thread = (job.get("job_threads") or {}).get(user_id) or []
         exported_jobs.append(
             {
                 "id": str(job["_id"]),
@@ -643,6 +953,7 @@ async def export_my_data(user=Depends(get_current_user)):
                 "verdict": rating.get("verdict"),
                 "matched_strengths": rating.get("matched_strengths", []),
                 "gaps": rating.get("gaps", []),
+                "chat_thread": thread,
             }
         )
 

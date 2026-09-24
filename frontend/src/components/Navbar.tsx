@@ -18,7 +18,7 @@ export function Navbar({ onHelpClick }: Props = {}) {
   const { user } = useAuthStore();
   const links = [
     { to: "/", label: "Jobs", icon: LayoutGrid },
-    { to: "/kanban", label: "Pipeline", icon: Kanban },
+    { to: "/kanban", label: "Track", icon: Kanban },
     { to: "/settings", label: "Settings", icon: Settings },
   ];
 
@@ -144,7 +144,10 @@ export function Navbar({ onHelpClick }: Props = {}) {
         keeps every destination always visible instead. */}
       <nav className="mobile-bottom-nav" aria-label="Primary">
         {bottomNavLinks.map(({ to, label, icon: Icon }) => {
-          const active = location.pathname === to;
+          const active =
+            to === "/"
+              ? location.pathname === "/" || location.pathname.startsWith("/jobs/")
+              : location.pathname === to;
           return (
             <Link
               key={to}
