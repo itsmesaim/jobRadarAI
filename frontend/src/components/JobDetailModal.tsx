@@ -157,6 +157,7 @@ export function JobDetailModal({ job, onClose }: Props) {
   const [cvOverflow, setCvOverflow] = useState(false);
   const [packError, setPackError] = useState<string | null>(null);
   const [packNote, setPackNote] = useState("");
+  const [showLowScoreConfirm, setShowLowScoreConfirm] = useState(false);
   const [atsExpanded, setAtsExpanded] = useState(false);
   const [showApplyPackLimit, setShowApplyPackLimit] = useState(false);
   const [reRating, setReRating] = useState(false);
@@ -211,13 +212,15 @@ export function JobDetailModal({ job, onClose }: Props) {
   const applyPacksRemaining = isPro
     ? 9999
     : Math.max(0, (usage?.apply_pack_limit ?? 0) - (usage?.apply_packs_used ?? 0));
-  const canApplyPack =
-    (rating.score ?? 0) >= MIN_APPLY_PACK_SCORE && (isPro || applyPacksRemaining > 0);
-  const packHint = isPro
-    ? "Unlimited · ATS keywords, full LaTeX CV boilerplate, MASTER CV + JD context"
-    : applyPacksRemaining > 0
-      ? `${applyPacksRemaining} free today · one prompt: tailored CV .tex + cover note`
-      : "Daily limit used, upgrade for unlimited apply packs";
+  const scoreOkForPack = (rating.score ?? 0) >= MIN_APPLY_PACK_SCORE;
+  const canApplyPack = isPro || applyPacksRemaining > 0;
+  const packHint = !scoreOkForPack
+    ? `Fit ${rating.score ?? "—"}/10 · you can still build a CV (we'll warn first)`
+    : isPro
+      ? "Unlimited · ATS keywords, full LaTeX CV boilerplate, MASTER CV + JD context"
+      : applyPacksRemaining > 0
+        ? `${applyPacksRemaining} free today · one prompt: tailored CV .tex + cover note`
+        : "Daily limit used, upgrade for unlimited apply packs";
 
   const handleCopyBrief = async () => {
     try {
@@ -288,6 +291,7 @@ export function JobDetailModal({ job, onClose }: Props) {
     regenerate = false,
     part: "all" | "cv" | "cover" = "all",
     note = "",
+    confirmLowScore = false,
   ) => {
     if (packBusyRef.current) return;
     const joining = !!(job.apply_pack_in_progress || jobDetail?.apply_pack_in_progress);
@@ -295,7 +299,17 @@ export function JobDetailModal({ job, onClose }: Props) {
       setShowApplyPackLimit(true);
       return;
     }
+    if (
+      !joining &&
+      part === "all" &&
+      !confirmLowScore &&
+      (rating.score ?? 0) < MIN_APPLY_PACK_SCORE
+    ) {
+      setShowLowScoreConfirm(true);
+      return;
+    }
     packBusyRef.current = true;
+    setShowLowScoreConfirm(false);
     setPackLoading(true);
     if (part === "all") {
       setPackAts(null);
@@ -320,6 +334,7 @@ export function JobDetailModal({ job, onClose }: Props) {
         regenerate,
         part,
         note,
+        confirmLowScore || (rating.score ?? 0) < MIN_APPLY_PACK_SCORE,
       );
       setPackAts(ats);
       setPackReady(true);
@@ -683,7 +698,7 @@ export function JobDetailModal({ job, onClose }: Props) {
 
         {/* Footer, always visible so a job can be re-rated even before it has a score */}
         <div className="job-modal-footer">
-          {(rating.score ?? 0) >= MIN_APPLY_PACK_SCORE && (
+          {rating.score != null && (
             <>
               {!packReady && (
                 <button
@@ -698,7 +713,11 @@ export function JobDetailModal({ job, onClose }: Props) {
                   ) : (
                     <Sparkles size={15} />
                   )}
-                  {packLoading ? "CV is on the way…" : "Build CV + cover letter"}
+                  {packLoading
+                    ? "CV is on the way…"
+                    : scoreOkForPack
+                      ? "Build CV + cover letter"
+                      : "Build CV anyway"}
                 </button>
               )}
               {packReady && (
@@ -909,6 +928,53 @@ export function JobDetailModal({ job, onClose }: Props) {
 
       {showApplyPackLimit && (
         <LimitContactModal kind="apply_pack" onClose={() => setShowApplyPackLimit(false)} />
+      )}
+
+      {showLowScoreConfirm && (
+        <div
+          className="job-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="low-score-title"
+          style={{ zIndex: 80 }}
+          onClick={() => setShowLowScoreConfirm(false)}
+        >
+          <div
+            className="card"
+            style={{ maxWidth: 420, margin: "10vh auto", padding: 20 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="low-score-title" className="text-display" style={{ marginBottom: 8 }}>
+              Fit is {rating.score}/10
+            </h3>
+            <p
+              style={{
+                color: "var(--text-secondary)",
+                fontSize: "var(--text-sm)",
+                marginBottom: 16,
+              }}
+            >
+              Below our usual {MIN_APPLY_PACK_SCORE}+ bar. You can still build a CV and cover
+              letter, but gaps may be large and ATS alignment weaker.
+            </p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setShowLowScoreConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void handleApplyPack(false, "all", "", true)}
+              >
+                Continue anyway
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

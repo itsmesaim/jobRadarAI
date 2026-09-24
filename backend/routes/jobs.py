@@ -997,6 +997,7 @@ async def get_job_apply_pack(
     regenerate: bool = False,
     part: str = "all",
     note: str = "",
+    confirm_low_score: bool = False,
     user=Depends(get_current_user),
 ):
     db = get_database()
@@ -1017,10 +1018,13 @@ async def get_job_apply_pack(
         )
 
     score = rating.get("score") or 0
-    if score < MIN_APPLY_PACK_SCORE:
+    if score < MIN_APPLY_PACK_SCORE and not confirm_low_score:
         raise HTTPException(
             status_code=400,
-            detail=f"Apply pack is for jobs scoring {MIN_APPLY_PACK_SCORE}+. This job is {score}/10.",
+            detail=(
+                f"LOW_SCORE_CONFIRM: Fit is {score}/10 (below {MIN_APPLY_PACK_SCORE}). "
+                "Confirm to build anyway — gaps may be large and ATS alignment weaker."
+            ),
         )
 
     from services.jd_text import enrich_jd_from_url, is_incomplete_jd
@@ -1139,6 +1143,7 @@ async def get_job_apply_pack(
                             if part in ("cv", "cover")
                             else None
                         ),
+                        confirm_low_score=confirm_low_score,
                     ):
                         if kind == "done":
                             result = payload

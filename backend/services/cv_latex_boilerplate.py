@@ -6,9 +6,43 @@ import re
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
+# Geometry skins for cv_template_preset (classic | compact | technical).
+_TEMPLATE_GEOMETRY = {
+    "classic": r"\usepackage[a4paper, top=1.1cm, bottom=1.1cm, left=1.35cm, right=1.35cm]{geometry}",
+    "compact": r"\usepackage[a4paper, top=0.85cm, bottom=0.85cm, left=1.1cm, right=1.1cm]{geometry}",
+    "technical": r"\usepackage[a4paper, top=1.0cm, bottom=1.0cm, left=1.2cm, right=1.2cm]{geometry}",
+}
+_TEMPLATE_TITLE_SPACING = {
+    "classic": r"\titlespacing{\section}{0pt}{6pt}{4pt}",
+    "compact": r"\titlespacing{\section}{0pt}{4pt}{2pt}",
+    "technical": r"\titlespacing{\section}{0pt}{5pt}{3pt}",
+}
+_DEFAULT_SECTIONS = (
+    "summary",
+    "skills",
+    "experience",
+    "projects",
+    "education",
+)
+_SECTION_TITLES = {
+    "summary": "Summary",
+    "skills": "Technical Skills",
+    "experience": "Professional Experience",
+    "projects": "Key Projects",
+    "education": "Education",
+}
+_SECTION_PLACEHOLDERS = {
+    "summary": "{{{SUMMARY_PLACEHOLDER}}}",
+    "skills": "{{{SKILLS_PLACEHOLDER}}}",
+    "experience": "{{{EXPERIENCE_PLACEHOLDER}}}",
+    "projects": "{{{PROJECTS_PLACEHOLDER}}}",
+    "education": "{{{EDUCATION_PLACEHOLDER}}}",
+}
+
 # Default structure, external LLM tailors body sections from MASTER CV; keep preamble intact.
+# {{{GEOMETRY}}} / {{{TITLE_SPACING}}} / {{{BODY_SECTIONS}}} filled by _boilerplate_for_user.
 CV_LATEX_BOILERPLATE = r"""\documentclass[10pt, a4paper]{article}
-\usepackage[a4paper, top=1.1cm, bottom=1.1cm, left=1.35cm, right=1.35cm]{geometry}
+{{{GEOMETRY}}}
 \usepackage{enumitem}
 \usepackage{titlesec}
 \usepackage{hyperref}
@@ -21,7 +55,7 @@ CV_LATEX_BOILERPLATE = r"""\documentclass[10pt, a4paper]{article}
 \hypersetup{colorlinks=true, urlcolor=black, linkcolor=black}
 
 \titleformat{\section}{\bfseries\normalsize}{}{0em}{}[\titlerule]
-\titlespacing{\section}{0pt}{6pt}{4pt}
+{{{TITLE_SPACING}}}
 
 \pagestyle{empty}
 
@@ -38,34 +72,53 @@ CV_LATEX_BOILERPLATE = r"""\documentclass[10pt, a4paper]{article}
 
 \vspace{-2pt}
 
-\section{Summary}
-
-% Tailor this paragraph for the target role using MASTER CV summary + JD keywords.
-{{{SUMMARY_PLACEHOLDER}}}
-
-\section{Technical Skills}
-
-{{{SKILLS_PLACEHOLDER}}}
-
-\section{Professional Experience}
-
-% Reorder and reword bullets for this JD. Use only facts from MASTER CV experience.
-{{{EXPERIENCE_PLACEHOLDER}}}
-
-\section{Key Projects}
-
-% Prefer Production-tier (deployed/real users) over Academic over Toy projects; match diversity
-% to what the JD asks for; never bundle unrelated small projects into one bullet. Use only facts
-% from MASTER CV projects.
-{{{PROJECTS_PLACEHOLDER}}}
-
-\section{Education}
-
-% Copy ALL education entries from MASTER CV, do not omit.
-{{{EDUCATION_PLACEHOLDER}}}
+{{{BODY_SECTIONS}}}
 
 \end{document}
 """
+
+
+def _normalize_template_prefs(user: dict) -> tuple[str, list[str]]:
+    """Return (preset, ordered visible section keys)."""
+    preset = (user.get("cv_template_preset") or "classic").strip().lower()
+    if preset not in _TEMPLATE_GEOMETRY:
+        preset = "classic"
+    raw = user.get("cv_sections") or {}
+    # Technical defaults to skills-forward unless user set an order.
+    if preset == "technical":
+        order = ("skills", "summary", "experience", "projects", "education")
+    else:
+        order = list(_DEFAULT_SECTIONS)
+    if isinstance(raw, dict) and isinstance(raw.get("order"), list) and raw["order"]:
+        cleaned = [
+            s for s in raw["order"] if isinstance(s, str) and s in _SECTION_TITLES
+        ]
+        for s in _DEFAULT_SECTIONS:
+            if s not in cleaned:
+                cleaned.append(s)
+        order = cleaned
+    visible = []
+    for key in order:
+        if isinstance(raw, dict) and key in raw and raw[key] is False:
+            continue
+        visible.append(key)
+    if not visible:
+        visible = list(_DEFAULT_SECTIONS)
+    return preset, visible
+
+
+def _boilerplate_for_user(user: dict) -> str:
+    preset, sections = _normalize_template_prefs(user)
+    body_parts = []
+    for key in sections:
+        title = _SECTION_TITLES[key]
+        ph = _SECTION_PLACEHOLDERS[key]
+        body_parts.append(f"\\section{{{title}}}\n\n{ph}\n")
+    tex = CV_LATEX_BOILERPLATE
+    tex = tex.replace("{{{GEOMETRY}}}", _TEMPLATE_GEOMETRY[preset])
+    tex = tex.replace("{{{TITLE_SPACING}}}", _TEMPLATE_TITLE_SPACING[preset])
+    tex = tex.replace("{{{BODY_SECTIONS}}}", "\n".join(body_parts))
+    return tex
 
 
 def _de_emdash(text: str) -> str:
@@ -415,7 +468,7 @@ def personalize_boilerplate(
         )
     education = "\n".join(edu_lines) if edu_lines else "% Add education from MASTER CV"
 
-    tex = CV_LATEX_BOILERPLATE
+    tex = _boilerplate_for_user(user)
     replacements = {
         "NAME_PLACEHOLDER": _latex_escape(name),
         "{{{CONTACT_LINE}}}": _contact_line(user),

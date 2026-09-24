@@ -90,11 +90,19 @@ class UserPreferences(BaseModel):
     # Same idea, for the model that parses an uploaded CV into structured JSON.
     cv_parsing_provider: str = ""
     cv_parsing_model: str = ""
+    # CV PDF look: classic | compact | technical (+ optional section toggles/order).
+    cv_template_preset: str = "classic"
+    cv_sections: dict = {}
 
 
 class SkillOverride(BaseModel):
     skill: str  # key e.g. "plotly"
     context: str  # candidate's description e.g. "used in BEng for ML visualisation"
+
+
+def _normalize_cv_preset(value: str | None) -> str:
+    p = (value or "classic").strip().lower()
+    return p if p in ("classic", "compact", "technical") else "classic"
 
 
 # ── Preferences ───────────────────────────────────────────────────────────────
@@ -164,6 +172,8 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
         "apply_pack_model": prefs["apply_pack_model"],
         "cv_parsing_provider": prefs["cv_parsing_provider"],
         "cv_parsing_model": prefs["cv_parsing_model"],
+        "cv_template_preset": _normalize_cv_preset(prefs.get("cv_template_preset")),
+        "cv_sections": prefs.get("cv_sections") or {},
     }
     # Switching provider sends the user's CV/job data to a different company,
     # record when they last consented to that (surfaced as a confirm popup in
@@ -217,6 +227,8 @@ async def get_preferences(user=Depends(get_current_user)):
         "calibration_notes": user.get("calibration_notes", ""),
         "calibration_notes_updated_at": user.get("calibration_notes_updated_at"),
         "calibration_notes_source_count": user.get("calibration_notes_source_count", 0),
+        "cv_template_preset": user.get("cv_template_preset", "classic") or "classic",
+        "cv_sections": user.get("cv_sections") or {},
     }
 
 

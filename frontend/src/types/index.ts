@@ -110,6 +110,17 @@ export interface UserPreferences {
   calibration_notes: string;
   calibration_notes_updated_at: string | null;
   calibration_notes_source_count: number;
+  /** classic | compact | technical */
+  cv_template_preset: string;
+  /** Section visibility + optional order for tailored CV PDF */
+  cv_sections: {
+    summary?: boolean;
+    skills?: boolean;
+    experience?: boolean;
+    projects?: boolean;
+    education?: boolean;
+    order?: string[];
+  };
 }
 
 export type ModelPurpose = "rating" | "apply_pack" | "cv_parsing";

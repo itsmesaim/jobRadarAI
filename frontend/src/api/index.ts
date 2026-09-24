@@ -169,6 +169,7 @@ export const jobsApi = {
     regenerate = false,
     part: "all" | "cv" | "cover" = "all",
     note = "",
+    confirmLowScore = false,
   ): Promise<{
     pack: string;
     apply_packs_remaining: number;
@@ -179,6 +180,7 @@ export const jobsApi = {
     if (regenerate) qs.set("regenerate", "true");
     if (part !== "all") qs.set("part", part);
     if (note.trim()) qs.set("note", note.trim().slice(0, 400));
+    if (confirmLowScore) qs.set("confirm_low_score", "true");
     const q = qs.toString();
     const res = await fetch(buildUrl(`/jobs/${id}/apply-pack${q ? `?${q}` : ""}`), {
       headers: authHeaders(),

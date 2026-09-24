@@ -35,6 +35,7 @@ from services.prompt_safety import fence
 from services.user_time import user_local_time
 
 MIN_APPLY_PACK_SCORE = 6
+# Soft gate: below this score needs confirm_low_score=True (user warned in UI).
 # One structured call can sit on a slow/broken provider forever; fail loud instead.
 # DeepSeek flash regularly spends ~110s on a structured draft; 120s was too tight.
 _APPLY_PACK_LLM_TIMEOUT_S = 300.0
@@ -998,6 +999,7 @@ async def generate_apply_pack_stream(
     part: str = "all",
     note: str = "",
     previous: dict | None = None,
+    confirm_low_score: bool = False,
 ):
     """Async generator yielding ("stage", {"stage": key, "messages": [...]}) tuples as
     each real step starts, then a final ("done", {"pack": str, "ats": {...}}) with the
@@ -1012,9 +1014,10 @@ async def generate_apply_pack_stream(
         )
 
     score = rating.get("score") or 0
-    if score < MIN_APPLY_PACK_SCORE:
+    if score < MIN_APPLY_PACK_SCORE and not confirm_low_score:
         raise ValueError(
-            f"Apply pack is available for jobs scoring {MIN_APPLY_PACK_SCORE}+. This job is {score}/10."
+            f"LOW_SCORE_CONFIRM: Fit is {score}/10 (below {MIN_APPLY_PACK_SCORE}). "
+            "Confirm to build anyway — gaps may be large and ATS alignment weaker."
         )
 
     yield "stage", {"stage": "gathering", "messages": STAGE_FLAVOR["gathering"]}

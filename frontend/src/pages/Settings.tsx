@@ -26,10 +26,13 @@ import {
   DatabaseZap,
   Menu,
   ChevronDown,
+  FileText,
+  Sun,
+  Moon,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { authApi, cvApi, userApi, jobsApi } from "../api/index";
-import { useAuthStore } from "../hooks/useStores";
+import { useAuthStore, useThemeStore } from "../hooks/useStores";
 import {
   LimitContactModal,
   parseLimitKindFromDetail,
@@ -84,7 +87,32 @@ const DEFAULT_PREFS: UserPreferences = {
   calibration_notes: "",
   calibration_notes_updated_at: null,
   calibration_notes_source_count: 0,
+  cv_template_preset: "classic",
+  cv_sections: {
+    summary: true,
+    skills: true,
+    experience: true,
+    projects: true,
+    education: true,
+  },
 };
+
+const CV_TEMPLATE_PRESETS: { id: string; label: string; hint: string }[] = [
+  { id: "classic", label: "Classic", hint: "Balanced spacing (default)" },
+  { id: "compact", label: "Compact", hint: "Tighter margins, 1-page bias" },
+  { id: "technical", label: "Technical", hint: "Skills-forward section order" },
+];
+
+const CV_SECTION_KEYS: {
+  id: "summary" | "skills" | "experience" | "projects" | "education";
+  label: string;
+}[] = [
+  { id: "summary", label: "Summary" },
+  { id: "skills", label: "Skills" },
+  { id: "experience", label: "Experience" },
+  { id: "projects", label: "Projects" },
+  { id: "education", label: "Education" },
+];
 
 const DEFAULT_MODEL_VALUE = "__default__";
 
@@ -132,12 +160,10 @@ const SETTINGS_GROUPS: {
   icon: React.ElementType;
   label: string;
 }[] = [
-  { id: "profile", icon: UserCircle, label: "Profile & CV" },
-  { id: "ai-models", icon: Brain, label: "AI models" },
-  { id: "preferences", icon: SlidersHorizontal, label: "Job search" },
-  { id: "notifications", icon: Bell, label: "Notifications" },
-  { id: "account", icon: KeyRound, label: "Account" },
-  { id: "data", icon: DatabaseZap, label: "Data & privacy" },
+  { id: "you", icon: UserCircle, label: "You" },
+  { id: "search", icon: SlidersHorizontal, label: "Search" },
+  { id: "ai", icon: Brain, label: "AI" },
+  { id: "account", icon: KeyRound, label: "Account & data" },
 ];
 
 const AUTOFILL_LABELS: Record<string, string> = {
@@ -454,19 +480,18 @@ export function SettingsPage() {
     setDirty(false);
   };
 
-  // Only "profile" (CV) and "preferences" (role/location/experience/nationality/
-  // visa) map to fields that are actually required elsewhere (search gating),
-  // the other tabs have no equivalent "required" concept, so no stamp for them.
+  // "you" (CV) and "search" (role/location/experience/nationality/visa) map to
+  // fields required elsewhere (search gating); AI / Account have no stamps.
   const missingFields = getMissingProfileFields(cv, localPrefs);
   const TOTAL_REQUIRED_FIELDS = 6;
   const sectionComplete: Record<string, boolean | null> = {
-    profile: !missingFields.some((f) => f.group === "profile"),
-    "ai-models": null,
-    preferences: !missingFields.some((f) => f.group === "preferences"),
-    notifications: null,
+    you: !missingFields.some((f) => f.group === "you"),
+    search: !missingFields.some((f) => f.group === "search"),
+    ai: null,
     account: null,
-    data: null,
   };
+
+  const { dark, toggle: toggleTheme } = useThemeStore();
 
   return (
     <div className={`settings-page${dirty ? " has-unsaved" : ""}`}>
@@ -534,8 +559,8 @@ export function SettingsPage() {
       />
 
       <div className="settings-content">
-        {activeGroup === "profile" && (
-          <SectionGroup id="profile" icon={UserCircle} label="Profile & CV">
+        {activeGroup === "you" && (
+          <SectionGroup id="you" icon={UserCircle} label="You">
             <AiModelPicker
               purpose="cv_parsing"
               title="CV parsing model"
@@ -669,7 +694,7 @@ export function SettingsPage() {
                 <span>
                   We updated {autofilledFields.map((f) => AUTOFILL_LABELS[f] || f).join(", ")} from
                   your CV. Role and locations stay as you set them unless they were empty. Review
-                  the <strong>Job search</strong> tab before saving.
+                  the <strong>Search</strong> tab before saving.
                 </span>
                 <button
                   type="button"
@@ -827,11 +852,76 @@ export function SettingsPage() {
                 style={{ resize: "vertical", lineHeight: 1.6 }}
               />
             </Section>
+
+            <Section
+              title="CV template"
+              subtitle="Look of tailored CV PDFs. Three presets; turn sections off if you want a shorter pack."
+            >
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                {CV_TEMPLATE_PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`btn ${
+                      (localPrefs.cv_template_preset || "classic") === p.id
+                        ? "btn-primary"
+                        : "btn-secondary"
+                    }`}
+                    title={p.hint}
+                    onClick={() => update({ cv_template_preset: p.id })}
+                  >
+                    <FileText size={14} /> {p.label}
+                  </button>
+                ))}
+              </div>
+              <p
+                style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", marginBottom: 10 }}
+              >
+                Sections on the PDF
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {CV_SECTION_KEYS.map(({ id, label }) => {
+                  const on = localPrefs.cv_sections?.[id] !== false;
+                  return (
+                    <label
+                      key={id}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "6px 10px",
+                        borderRadius: "var(--radius-pill)",
+                        border: "1px solid var(--border)",
+                        background: on ? "var(--accent-light)" : "var(--bg-secondary)",
+                        cursor: "pointer",
+                        fontSize: "var(--text-sm)",
+                        fontWeight: 600,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={(e) =>
+                          update({
+                            cv_sections: {
+                              ...(localPrefs.cv_sections || {}),
+                              [id]: e.target.checked,
+                            },
+                          })
+                        }
+                        style={{ accentColor: "var(--accent)" }}
+                      />
+                      {label}
+                    </label>
+                  );
+                })}
+              </div>
+            </Section>
           </SectionGroup>
         )}
 
-        {activeGroup === "ai-models" && (
-          <SectionGroup id="ai-models" icon={Brain} label="AI models">
+        {activeGroup === "ai" && (
+          <SectionGroup id="ai" icon={Brain} label="AI models">
             <p className="settings-pick-why">
               Split by job so you can cut cost. Rating hits hundreds of listings. Apply pack runs a
               few times a day. CV parse runs once per upload. Pick from the list. Switching one
@@ -861,20 +951,213 @@ export function SettingsPage() {
           </SectionGroup>
         )}
 
-        {activeGroup === "preferences" && (
-          <SectionGroup id="preferences" icon={SlidersHorizontal} label="Job search preferences">
-            {/* Role */}
-            <Section title="Role" subtitle="What roles should we search for?">
-              <div style={{ marginBottom: "var(--space-3)" }}>
-                <label className="label">Primary role</label>
+        {activeGroup === "search" && (
+          <>
+            <SectionGroup id="search" icon={SlidersHorizontal} label="Job search preferences">
+              {/* Role */}
+              <Section title="Role" subtitle="What roles should we search for?">
+                <div style={{ marginBottom: "var(--space-3)" }}>
+                  <label className="label">Primary role</label>
+                  <input
+                    className="input settings-field-narrow"
+                    value={localPrefs.primary_role}
+                    onChange={(e) => update({ primary_role: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="label">Also search for</label>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "var(--space-2)",
+                      marginBottom: "var(--space-2)",
+                    }}
+                  >
+                    {localPrefs.secondary_roles.map((r) => (
+                      <Tag
+                        key={r}
+                        label={r}
+                        onRemove={() =>
+                          update({
+                            secondary_roles: localPrefs.secondary_roles.filter((x) => x !== r),
+                          })
+                        }
+                      />
+                    ))}
+                  </div>
+                  <TagInput
+                    value={newRole}
+                    onChange={setNewRole}
+                    onAdd={addRole}
+                    placeholder="e.g. AI Engineer"
+                  />
+                </div>
+              </Section>
+
+              {/* Experience level */}
+              <Section
+                title="Experience level"
+                subtitle="Helps the rating engine catch seniority mismatches (e.g. a role requiring 'lead a team' when you're IC)."
+              >
+                <div className="settings-exp-levels">
+                  {EXPERIENCE_LEVELS.map((lvl) => {
+                    const active = localPrefs.experience_level === lvl.value;
+                    return (
+                      <button
+                        key={lvl.value}
+                        onClick={() => update({ experience_level: lvl.value })}
+                        style={{
+                          flex: 1,
+                          padding: "10px 14px",
+                          borderRadius: "var(--radius-sm)",
+                          cursor: "pointer",
+                          border: active ? "1.5px solid var(--accent)" : "1px solid var(--border)",
+                          background: active ? "var(--accent-light)" : "var(--bg-secondary)",
+                          textAlign: "left",
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: "var(--text-sm)",
+                            fontWeight: 600,
+                            color: active ? "var(--accent)" : "var(--text)",
+                          }}
+                        >
+                          {lvl.label}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "var(--text-xs)",
+                            color: "var(--text-muted)",
+                            marginTop: 2,
+                          }}
+                        >
+                          {lvl.hint}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </Section>
+
+              {/* Nationality + visa status */}
+              <Section
+                title="Nationality & visa status"
+                subtitle="Lets the rating engine reason about whether you can legally work in a job's country and auto-reject listings that need sponsorship you don't have. Nationality and visa country/type also print on your generated CV and cover letter."
+              >
+                <div style={{ marginBottom: "var(--space-3)" }}>
+                  <label className="label">Nationality</label>
+                  <input
+                    className="input"
+                    placeholder="e.g. Indian"
+                    value={localPrefs.nationality}
+                    onChange={(e) => update({ nationality: e.target.value })}
+                  />
+                </div>
+                <div style={{ marginBottom: "var(--space-3)" }}>
+                  <label className="label">Visa / permit status</label>
+                  <input
+                    className="input"
+                    placeholder="e.g. H-1B, Skilled Worker visa, Stamp 1G, PR, name yours + what it allows"
+                    value={localPrefs.visa_status}
+                    onChange={(e) => update({ visa_status: e.target.value })}
+                  />
+                </div>
+                <div
+                  style={{ display: "flex", gap: "var(--space-3)", marginBottom: "var(--space-2)" }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <label className="label">Visa held for (country)</label>
+                    <input
+                      className="input"
+                      placeholder="e.g. Germany"
+                      value={localPrefs.visa_country}
+                      onChange={(e) => update({ visa_country: e.target.value })}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label className="label">Visa type</label>
+                    <input
+                      className="input"
+                      placeholder="e.g. EU Blue Card"
+                      value={localPrefs.visa_type}
+                      onChange={(e) => update({ visa_type: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "var(--space-2)",
+                    marginTop: "var(--space-2)",
+                  }}
+                >
+                  <Info
+                    size={13}
+                    style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }}
+                  />
+                  <p
+                    style={{
+                      fontSize: "var(--text-xs)",
+                      color: "var(--text-muted)",
+                      margin: 0,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Name the actual permit and what it currently allows, "EU citizen, no
+                    restrictions" or "H-1B, transfer required" are both more useful than just naming
+                    a country. "Visa held for" and "Visa type" are what actually print on your CV,
+                    e.g. "Indian national — eligible to work in Germany (EU Blue Card)".
+                  </p>
+                </div>
+              </Section>
+
+              {/* Work authorization */}
+              <Section
+                title="Visa exceptions & timing"
+                subtitle="Only for legal nuances your visa status above can't capture by itself, not a place to repeat it."
+              >
                 <input
-                  className="input settings-field-narrow"
-                  value={localPrefs.primary_role}
-                  onChange={(e) => update({ primary_role: e.target.value })}
+                  className="input"
+                  placeholder="e.g. Stamp 1G expires March 2027, need renewal before start date"
+                  value={localPrefs.work_authorization}
+                  onChange={(e) => update({ work_authorization: e.target.value })}
                 />
-              </div>
-              <div>
-                <label className="label">Also search for</label>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "var(--space-2)",
+                    marginTop: "var(--space-2)",
+                  }}
+                >
+                  <Info
+                    size={13}
+                    style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }}
+                  />
+                  <p
+                    style={{
+                      fontSize: "var(--text-xs)",
+                      color: "var(--text-muted)",
+                      margin: 0,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Most people leave this blank. Use it only for something with an expiry date or a
+                    contract-type restriction (e.g. "full-time only, can't contract") that your visa
+                    status above doesn't already say.
+                  </p>
+                </div>
+              </Section>
+
+              {/* Locations */}
+              <Section
+                title="Locations"
+                subtitle="Every location gets its own separate search. Add as many as you want."
+              >
                 <div
                   style={{
                     display: "flex",
@@ -883,300 +1166,74 @@ export function SettingsPage() {
                     marginBottom: "var(--space-2)",
                   }}
                 >
-                  {localPrefs.secondary_roles.map((r) => (
+                  {localPrefs.preferred_locations.map((l) => (
                     <Tag
-                      key={r}
-                      label={r}
+                      key={l}
+                      label={l}
                       onRemove={() =>
                         update({
-                          secondary_roles: localPrefs.secondary_roles.filter((x) => x !== r),
+                          preferred_locations: localPrefs.preferred_locations.filter(
+                            (x) => x !== l,
+                          ),
                         })
                       }
                     />
                   ))}
                 </div>
                 <TagInput
-                  value={newRole}
-                  onChange={setNewRole}
-                  onAdd={addRole}
-                  placeholder="e.g. AI Engineer"
+                  value={newLocation}
+                  onChange={setNewLocation}
+                  onAdd={addLocation}
+                  placeholder="e.g. Dublin Ireland"
                 />
-              </div>
-            </Section>
-
-            {/* Experience level */}
-            <Section
-              title="Experience level"
-              subtitle="Helps the rating engine catch seniority mismatches (e.g. a role requiring 'lead a team' when you're IC)."
-            >
-              <div className="settings-exp-levels">
-                {EXPERIENCE_LEVELS.map((lvl) => {
-                  const active = localPrefs.experience_level === lvl.value;
-                  return (
-                    <button
-                      key={lvl.value}
-                      onClick={() => update({ experience_level: lvl.value })}
-                      style={{
-                        flex: 1,
-                        padding: "10px 14px",
-                        borderRadius: "var(--radius-sm)",
-                        cursor: "pointer",
-                        border: active ? "1.5px solid var(--accent)" : "1px solid var(--border)",
-                        background: active ? "var(--accent-light)" : "var(--bg-secondary)",
-                        textAlign: "left",
-                        transition: "all 0.15s",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: "var(--text-sm)",
-                          fontWeight: 600,
-                          color: active ? "var(--accent)" : "var(--text)",
-                        }}
-                      >
-                        {lvl.label}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: "var(--text-xs)",
-                          color: "var(--text-muted)",
-                          marginTop: 2,
-                        }}
-                      >
-                        {lvl.hint}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </Section>
-
-            {/* Nationality + visa status */}
-            <Section
-              title="Nationality & visa status"
-              subtitle="Lets the rating engine reason about whether you can legally work in a job's country and auto-reject listings that need sponsorship you don't have. Nationality and visa country/type also print on your generated CV and cover letter."
-            >
-              <div style={{ marginBottom: "var(--space-3)" }}>
-                <label className="label">Nationality</label>
-                <input
-                  className="input"
-                  placeholder="e.g. Indian"
-                  value={localPrefs.nationality}
-                  onChange={(e) => update({ nationality: e.target.value })}
-                />
-              </div>
-              <div style={{ marginBottom: "var(--space-3)" }}>
-                <label className="label">Visa / permit status</label>
-                <input
-                  className="input"
-                  placeholder="e.g. H-1B, Skilled Worker visa, Stamp 1G, PR, name yours + what it allows"
-                  value={localPrefs.visa_status}
-                  onChange={(e) => update({ visa_status: e.target.value })}
-                />
-              </div>
-              <div
-                style={{ display: "flex", gap: "var(--space-3)", marginBottom: "var(--space-2)" }}
-              >
-                <div style={{ flex: 1 }}>
-                  <label className="label">Visa held for (country)</label>
-                  <input
-                    className="input"
-                    placeholder="e.g. Germany"
-                    value={localPrefs.visa_country}
-                    onChange={(e) => update({ visa_country: e.target.value })}
-                  />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label className="label">Visa type</label>
-                  <input
-                    className="input"
-                    placeholder="e.g. EU Blue Card"
-                    value={localPrefs.visa_type}
-                    onChange={(e) => update({ visa_type: e.target.value })}
-                  />
-                </div>
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: "var(--space-2)",
-                  marginTop: "var(--space-2)",
-                }}
-              >
-                <Info
-                  size={13}
-                  style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }}
-                />
-                <p
-                  style={{
-                    fontSize: "var(--text-xs)",
-                    color: "var(--text-muted)",
-                    margin: 0,
-                    lineHeight: 1.5,
-                  }}
-                >
-                  Name the actual permit and what it currently allows, "EU citizen, no restrictions"
-                  or "H-1B, transfer required" are both more useful than just naming a country.
-                  "Visa held for" and "Visa type" are what actually print on your CV, e.g. "Indian
-                  national — eligible to work in Germany (EU Blue Card)".
-                </p>
-              </div>
-            </Section>
-
-            {/* Work authorization */}
-            <Section
-              title="Visa exceptions & timing"
-              subtitle="Only for legal nuances your visa status above can't capture by itself, not a place to repeat it."
-            >
-              <input
-                className="input"
-                placeholder="e.g. Stamp 1G expires March 2027, need renewal before start date"
-                value={localPrefs.work_authorization}
-                onChange={(e) => update({ work_authorization: e.target.value })}
-              />
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: "var(--space-2)",
-                  marginTop: "var(--space-2)",
-                }}
-              >
-                <Info
-                  size={13}
-                  style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }}
-                />
-                <p
-                  style={{
-                    fontSize: "var(--text-xs)",
-                    color: "var(--text-muted)",
-                    margin: 0,
-                    lineHeight: 1.5,
-                  }}
-                >
-                  Most people leave this blank. Use it only for something with an expiry date or a
-                  contract-type restriction (e.g. "full-time only, can't contract") that your visa
-                  status above doesn't already say.
-                </p>
-              </div>
-            </Section>
-
-            {/* Locations */}
-            <Section
-              title="Locations"
-              subtitle="Every location gets its own separate search. Add as many as you want."
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "var(--space-2)",
-                  marginBottom: "var(--space-2)",
-                }}
-              >
-                {localPrefs.preferred_locations.map((l) => (
-                  <Tag
-                    key={l}
-                    label={l}
-                    onRemove={() =>
-                      update({
-                        preferred_locations: localPrefs.preferred_locations.filter((x) => x !== l),
-                      })
-                    }
-                  />
-                ))}
-              </div>
-              <TagInput
-                value={newLocation}
-                onChange={setNewLocation}
-                onAdd={addLocation}
-                placeholder="e.g. Dublin Ireland"
-              />
-              {/* quick-add examples */}
-              <div style={{ marginTop: "var(--space-3)" }}>
-                <p
-                  style={{
-                    fontSize: "var(--text-xs)",
-                    color: "var(--text-muted)",
-                    margin: "0 0 6px",
-                  }}
-                >
-                  Quick add:
-                </p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
-                  {LOCATION_EXAMPLES.filter(
-                    (ex) => !localPrefs.preferred_locations.includes(ex),
-                  ).map((ex) => (
-                    <button
-                      key={ex}
-                      onClick={() =>
-                        update({
-                          preferred_locations: [...localPrefs.preferred_locations, ex],
-                        })
-                      }
-                      style={{
-                        fontSize: "var(--text-xs)",
-                        padding: "3px 9px",
-                        borderRadius: "var(--radius-pill)",
-                        cursor: "pointer",
-                        border: "1px dashed var(--border)",
-                        background: "transparent",
-                        color: "var(--text-muted)",
-                      }}
-                    >
-                      + {ex}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </Section>
-
-            {/* Work mode */}
-            <Section
-              title="Work mode"
-              subtitle="Onsite-only roles will be flagged as a mismatch if not selected here."
-            >
-              <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
-                {(["remote", "hybrid", "onsite"] as const).map((mode) => (
-                  <label
-                    key={mode}
+                {/* quick-add examples */}
+                <div style={{ marginTop: "var(--space-3)" }}>
+                  <p
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "var(--space-2)",
-                      cursor: "pointer",
-                      fontSize: "var(--text-sm)",
+                      fontSize: "var(--text-xs)",
+                      color: "var(--text-muted)",
+                      margin: "0 0 6px",
                     }}
                   >
-                    <input
-                      type="checkbox"
-                      checked={localPrefs.work_mode[mode]}
-                      onChange={(e) =>
-                        update({
-                          work_mode: {
-                            ...localPrefs.work_mode,
-                            [mode]: e.target.checked,
-                          },
-                        })
-                      }
-                    />
-                    <span style={{ color: "var(--text)", textTransform: "capitalize" }}>
-                      {mode}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </Section>
+                    Quick add:
+                  </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
+                    {LOCATION_EXAMPLES.filter(
+                      (ex) => !localPrefs.preferred_locations.includes(ex),
+                    ).map((ex) => (
+                      <button
+                        key={ex}
+                        onClick={() =>
+                          update({
+                            preferred_locations: [...localPrefs.preferred_locations, ex],
+                          })
+                        }
+                        style={{
+                          fontSize: "var(--text-xs)",
+                          padding: "3px 9px",
+                          borderRadius: "var(--radius-pill)",
+                          cursor: "pointer",
+                          border: "1px dashed var(--border)",
+                          background: "transparent",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        + {ex}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </Section>
 
-            {/* Job types */}
-            <Section title="Job types" subtitle="What types of roles to include?">
-              <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
-                {(Object.keys(localPrefs.job_types) as (keyof typeof localPrefs.job_types)[])
-                  .filter((key) => key !== "remote")
-                  .map((key) => (
+              {/* Work mode */}
+              <Section
+                title="Work mode"
+                subtitle="Onsite-only roles will be flagged as a mismatch if not selected here."
+              >
+                <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
+                  {(["remote", "hybrid", "onsite"] as const).map((mode) => (
                     <label
-                      key={key}
+                      key={mode}
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -1187,525 +1244,584 @@ export function SettingsPage() {
                     >
                       <input
                         type="checkbox"
-                        checked={localPrefs.job_types[key]}
+                        checked={localPrefs.work_mode[mode]}
                         onChange={(e) =>
                           update({
-                            job_types: {
-                              ...localPrefs.job_types,
-                              [key]: e.target.checked,
+                            work_mode: {
+                              ...localPrefs.work_mode,
+                              [mode]: e.target.checked,
                             },
                           })
                         }
                       />
                       <span style={{ color: "var(--text)", textTransform: "capitalize" }}>
-                        {key.replace("_", " ")}
+                        {mode}
                       </span>
                     </label>
                   ))}
-              </div>
-            </Section>
+                </div>
+              </Section>
 
-            {/* Avoid industries */}
-            <Section
-              title="Industries to avoid"
-              subtitle="Jobs in these sectors will be flagged even if technically a skills fit."
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "var(--space-2)",
-                  marginBottom: "var(--space-2)",
-                }}
-              >
-                {localPrefs.avoid_industries.map((ind) => (
-                  <Tag
-                    key={ind}
-                    label={ind}
-                    onRemove={() =>
-                      update({
-                        avoid_industries: localPrefs.avoid_industries.filter((x) => x !== ind),
-                      })
-                    }
-                    color="var(--danger-bg)"
-                    textColor="var(--danger)"
-                  />
-                ))}
-              </div>
-              <TagInput
-                value={newIndustry}
-                onChange={setNewIndustry}
-                onAdd={addIndustry}
-                placeholder="e.g. Payments, Healthcare compliance"
-              />
-            </Section>
+              {/* Job types */}
+              <Section title="Job types" subtitle="What types of roles to include?">
+                <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
+                  {(Object.keys(localPrefs.job_types) as (keyof typeof localPrefs.job_types)[])
+                    .filter((key) => key !== "remote")
+                    .map((key) => (
+                      <label
+                        key={key}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "var(--space-2)",
+                          cursor: "pointer",
+                          fontSize: "var(--text-sm)",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={localPrefs.job_types[key]}
+                          onChange={(e) =>
+                            update({
+                              job_types: {
+                                ...localPrefs.job_types,
+                                [key]: e.target.checked,
+                              },
+                            })
+                          }
+                        />
+                        <span style={{ color: "var(--text)", textTransform: "capitalize" }}>
+                          {key.replace("_", " ")}
+                        </span>
+                      </label>
+                    ))}
+                </div>
+              </Section>
 
-            {/* Key skills */}
-            <Section
-              title="Key skills"
-              subtitle="Search queries only, keep this to about 8 short names (Python, FastAPI, React). The full skill list on your CV is already used for rating. Re-upload refreshes this list from the new CV."
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "var(--space-2)",
-                  marginBottom: "var(--space-2)",
-                }}
+              {/* Avoid industries */}
+              <Section
+                title="Industries to avoid"
+                subtitle="Jobs in these sectors will be flagged even if technically a skills fit."
               >
-                {localPrefs.key_skills.map((s) => (
-                  <Tag
-                    key={s}
-                    label={s}
-                    onRemove={() =>
-                      update({
-                        key_skills: localPrefs.key_skills.filter((x) => x !== s),
-                      })
-                    }
-                    color="var(--accent-light)"
-                    textColor="var(--accent)"
-                  />
-                ))}
-              </div>
-              <TagInput
-                value={newSkill}
-                onChange={setNewSkill}
-                onAdd={addSkill}
-                placeholder="e.g. React"
-              />
-            </Section>
-
-            {/* Minimum salary */}
-            <Section
-              title="Minimum salary"
-              subtitle="Jobs below this are flagged. Pick the currency that matches your target market."
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "var(--space-3)",
-                  flexWrap: "wrap",
-                }}
-              >
-                <select
-                  value={salaryCurrency}
-                  onChange={(e) => setSalaryCurrency(e.target.value)}
-                  className="input"
-                  style={{ maxWidth: 90, cursor: "pointer" }}
-                >
-                  {CURRENCIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  className="input"
-                  type="number"
-                  value={minSalaryInput}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    setMinSalaryInput(raw);
-                    if (raw !== "") update({ min_salary: parseInt(raw, 10) || 0 });
-                  }}
-                  onBlur={() => {
-                    if (minSalaryInput === "") {
-                      setMinSalaryInput("0");
-                      update({ min_salary: 0 });
-                    }
-                  }}
-                  style={{ maxWidth: 140 }}
-                />
-                <span style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
-                  per year
-                </span>
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: "var(--space-2)",
-                  marginTop: "var(--space-2)",
-                }}
-              >
-                <Info
-                  size={13}
-                  style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }}
-                />
-                <p
-                  style={{
-                    fontSize: "var(--text-xs)",
-                    color: "var(--text-muted)",
-                    margin: 0,
-                    lineHeight: 1.5,
-                  }}
-                >
-                  €40-70k is mid-level in Ireland · ₹20-40 LPA is strong in India · AED 15-25k/mo is
-                  good in UAE (tax-free, higher real value than EUR equivalent).
-                </p>
-              </div>
-            </Section>
-
-            {/* Skill overrides */}
-            <Section
-              title="Skill overrides"
-              subtitle="Skills you have that aren't on your CV. Injected into every rating call so the LLM stops flagging them as gaps."
-            >
-              {overrides.length > 0 && (
                 <div
                   style={{
                     display: "flex",
-                    flexDirection: "column",
+                    flexWrap: "wrap",
                     gap: "var(--space-2)",
-                    marginBottom: "var(--space-4)",
+                    marginBottom: "var(--space-2)",
                   }}
                 >
-                  {overrides.map((o) => (
-                    <div
-                      key={o.skill}
-                      style={{
-                        display: "flex",
-                        alignItems: "flex-start",
-                        gap: "var(--space-3)",
-                        background: "var(--purple-bg)",
-                        borderRadius: "var(--radius-sm)",
-                        padding: "10px 12px",
-                        border: "1px solid var(--border)",
-                      }}
-                    >
-                      <Brain
-                        size={13}
-                        style={{
-                          color: "var(--purple)",
-                          flexShrink: 0,
-                          marginTop: 1,
-                        }}
-                      />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{
-                            fontSize: "var(--text-xs)",
-                            fontWeight: 600,
-                            color: "var(--purple)",
-                            marginBottom: 2,
-                          }}
-                        >
-                          {o.skill}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "var(--text-xs)",
-                            color: "var(--text-secondary)",
-                            lineHeight: 1.5,
-                          }}
-                        >
-                          {o.context}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => deleteOverrideMutation.mutate(o.skill)}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          color: "var(--text-muted)",
-                          display: "flex",
-                          padding: 2,
-                          flexShrink: 0,
-                        }}
-                        title="Remove override"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
+                  {localPrefs.avoid_industries.map((ind) => (
+                    <Tag
+                      key={ind}
+                      label={ind}
+                      onRemove={() =>
+                        update({
+                          avoid_industries: localPrefs.avoid_industries.filter((x) => x !== ind),
+                        })
+                      }
+                      color="var(--danger-bg)"
+                      textColor="var(--danger)"
+                    />
                   ))}
                 </div>
-              )}
-
-              {!addingOverride ? (
-                <button
-                  onClick={() => setAddingOverride(true)}
-                  className="btn btn-ghost"
-                  style={{ fontSize: "var(--text-xs)" }}
-                >
-                  <Plus size={13} /> Add skill override
-                </button>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-                  <div style={{ display: "flex", gap: "var(--space-2)" }}>
-                    <input
-                      className="input"
-                      placeholder="Skill (e.g. plotly)"
-                      value={newOverrideSkill}
-                      onChange={(e) => setNewOverrideSkill(e.target.value)}
-                      style={{ maxWidth: 160 }}
-                      autoFocus
-                    />
-                    <input
-                      className="input"
-                      placeholder="Your experience with it..."
-                      value={newOverrideContext}
-                      onChange={(e) => setNewOverrideContext(e.target.value)}
-                      onKeyDown={(e) =>
-                        e.key === "Enter" &&
-                        newOverrideSkill &&
-                        newOverrideContext &&
-                        addOverrideMutation.mutate()
-                      }
-                    />
-                  </div>
-                  <p style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", margin: 0 }}>
-                    e.g. "plotly" → "used in BEng for ML model visualisation across 3 projects"
-                  </p>
-                  <div style={{ display: "flex", gap: "var(--space-2)" }}>
-                    <button
-                      onClick={() => addOverrideMutation.mutate()}
-                      disabled={
-                        !newOverrideSkill.trim() ||
-                        !newOverrideContext.trim() ||
-                        addOverrideMutation.isPending
-                      }
-                      className="btn btn-primary"
-                      style={{ fontSize: "var(--text-xs)" }}
-                    >
-                      {addOverrideMutation.isPending ? "Saving..." : "Save override"}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setAddingOverride(false);
-                        setNewOverrideSkill("");
-                        setNewOverrideContext("");
-                      }}
-                      className="btn btn-ghost"
-                      style={{ fontSize: "var(--text-xs)" }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </Section>
-          </SectionGroup>
-        )}
-
-        {activeGroup === "notifications" && (
-          <SectionGroup id="notifications" icon={Bell} label="Notifications">
-            {/* Email reminders */}
-            <Section
-              title="Email reminders"
-              subtitle="Get up to 3 emails per day when you have unapplied jobs scoring 8+/10, same nudge as the dashboard banner."
-            >
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: "var(--space-3)",
-                  cursor: "pointer",
-                  padding: "12px 14px",
-                  borderRadius: "var(--radius-sm)",
-                  border: "1px solid var(--border)",
-                  background: "var(--bg-secondary)",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={localPrefs.email_reminders_enabled}
-                  onChange={(e) => update({ email_reminders_enabled: e.target.checked })}
-                  style={{ marginTop: 3, accentColor: "var(--accent)" }}
+                <TagInput
+                  value={newIndustry}
+                  onChange={setNewIndustry}
+                  onAdd={addIndustry}
+                  placeholder="e.g. Payments, Healthcare compliance"
                 />
-                <span>
-                  <span
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "var(--space-2)",
-                      fontSize: "var(--text-base)",
-                      fontWeight: 600,
-                      color: "var(--text)",
-                      marginBottom: "var(--space-1)",
-                    }}
-                  >
-                    <Mail size={15} />
-                    Remind me to apply to high-scoring jobs
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "var(--text-sm)",
-                      color: "var(--text-muted)",
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    Requires SMTP on the server. Lists your top matches with scores and links.
-                    Disable anytime here.
-                  </span>
-                </span>
-              </label>
+              </Section>
 
-              {localPrefs.email_reminders_enabled && (
-                <div style={{ marginTop: "var(--space-4)" }}>
-                  <label className="label">When should we remind you?</label>
+              {/* Key skills */}
+              <Section
+                title="Key skills"
+                subtitle="Search queries only, keep this to about 8 short names (Python, FastAPI, React). The full skill list on your CV is already used for rating. Re-upload refreshes this list from the new CV."
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "var(--space-2)",
+                    marginBottom: "var(--space-2)",
+                  }}
+                >
+                  {localPrefs.key_skills.map((s) => (
+                    <Tag
+                      key={s}
+                      label={s}
+                      onRemove={() =>
+                        update({
+                          key_skills: localPrefs.key_skills.filter((x) => x !== s),
+                        })
+                      }
+                      color="var(--accent-light)"
+                      textColor="var(--accent)"
+                    />
+                  ))}
+                </div>
+                <TagInput
+                  value={newSkill}
+                  onChange={setNewSkill}
+                  onAdd={addSkill}
+                  placeholder="e.g. React"
+                />
+              </Section>
+
+              {/* Minimum salary */}
+              <Section
+                title="Minimum salary"
+                subtitle="Jobs below this are flagged. Pick the currency that matches your target market."
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "var(--space-3)",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <select
+                    value={salaryCurrency}
+                    onChange={(e) => setSalaryCurrency(e.target.value)}
+                    className="input"
+                    style={{ maxWidth: 90, cursor: "pointer" }}
+                  >
+                    {CURRENCIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    className="input"
+                    type="number"
+                    value={minSalaryInput}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setMinSalaryInput(raw);
+                      if (raw !== "") update({ min_salary: parseInt(raw, 10) || 0 });
+                    }}
+                    onBlur={() => {
+                      if (minSalaryInput === "") {
+                        setMinSalaryInput("0");
+                        update({ min_salary: 0 });
+                      }
+                    }}
+                    style={{ maxWidth: 140 }}
+                  />
+                  <span style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+                    per year
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "var(--space-2)",
+                    marginTop: "var(--space-2)",
+                  }}
+                >
+                  <Info
+                    size={13}
+                    style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 1 }}
+                  />
                   <p
                     style={{
                       fontSize: "var(--text-xs)",
                       color: "var(--text-muted)",
-                      margin: "0 0 var(--space-2)",
+                      margin: 0,
+                      lineHeight: 1.5,
                     }}
                   >
-                    Pick any times that work for you, in your own timezone (below). Leave none
-                    picked to use the app default ({DEFAULT_REMINDER_HOURS_LABEL}). Max 3 emails/day
-                    either way.
+                    €40-70k is mid-level in Ireland · ₹20-40 LPA is strong in India · AED 15-25k/mo
+                    is good in UAE (tax-free, higher real value than EUR equivalent).
                   </p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
-                    {REMINDER_HOUR_OPTIONS.map((opt) => {
-                      const active = localPrefs.reminder_hours.includes(opt.hour);
-                      return (
-                        <button
-                          key={opt.hour}
-                          type="button"
-                          onClick={() =>
-                            update({
-                              reminder_hours: active
-                                ? localPrefs.reminder_hours.filter((h) => h !== opt.hour)
-                                : [...localPrefs.reminder_hours, opt.hour].sort((a, b) => a - b),
-                            })
-                          }
-                          style={{
-                            padding: "6px 14px",
-                            borderRadius: "var(--radius-pill)",
-                            border: active
-                              ? "1.5px solid var(--accent)"
-                              : "1px solid var(--border)",
-                            background: active ? "var(--accent-light)" : "var(--bg-secondary)",
-                            color: active ? "var(--accent)" : "var(--text-secondary)",
-                            fontSize: "var(--text-sm)",
-                            fontWeight: active ? 600 : 400,
-                            cursor: "pointer",
-                            transition: "all 0.15s",
-                          }}
-                        >
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
                 </div>
-              )}
-            </Section>
+              </Section>
 
-            {/* Timezone */}
-            <Section
-              title="Timezone"
-              subtitle="Auto job search (5am/5pm) runs at these times, and reminder emails run at whatever times you've picked above (or the app default), all in your local timezone."
-            >
-              <label className="label">Where are you currently based?</label>
-              <select
-                className="input settings-field-narrow"
-                value={localPrefs.timezone}
-                onChange={(e) => update({ timezone: e.target.value })}
+              {/* Skill overrides */}
+              <Section
+                title="Skill overrides"
+                subtitle="Skills you have that aren't on your CV. Injected into every rating call so the LLM stops flagging them as gaps."
               >
-                {!TIMEZONE_OPTIONS.includes(localPrefs.timezone) && (
-                  <option value={localPrefs.timezone}>{localPrefs.timezone}</option>
+                {overrides.length > 0 && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "var(--space-2)",
+                      marginBottom: "var(--space-4)",
+                    }}
+                  >
+                    {overrides.map((o) => (
+                      <div
+                        key={o.skill}
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "var(--space-3)",
+                          background: "var(--purple-bg)",
+                          borderRadius: "var(--radius-sm)",
+                          padding: "10px 12px",
+                          border: "1px solid var(--border)",
+                        }}
+                      >
+                        <Brain
+                          size={13}
+                          style={{
+                            color: "var(--purple)",
+                            flexShrink: 0,
+                            marginTop: 1,
+                          }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontSize: "var(--text-xs)",
+                              fontWeight: 600,
+                              color: "var(--purple)",
+                              marginBottom: 2,
+                            }}
+                          >
+                            {o.skill}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "var(--text-xs)",
+                              color: "var(--text-secondary)",
+                              lineHeight: 1.5,
+                            }}
+                          >
+                            {o.context}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => deleteOverrideMutation.mutate(o.skill)}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            color: "var(--text-muted)",
+                            display: "flex",
+                            padding: 2,
+                            flexShrink: 0,
+                          }}
+                          title="Remove override"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
-                {TIMEZONE_OPTIONS.map((tz) => (
-                  <option key={tz} value={tz}>
-                    {tz.replace(/_/g, " ")}
-                  </option>
-                ))}
-              </select>
-            </Section>
-          </SectionGroup>
+
+                {!addingOverride ? (
+                  <button
+                    onClick={() => setAddingOverride(true)}
+                    className="btn btn-ghost"
+                    style={{ fontSize: "var(--text-xs)" }}
+                  >
+                    <Plus size={13} /> Add skill override
+                  </button>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+                    <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                      <input
+                        className="input"
+                        placeholder="Skill (e.g. plotly)"
+                        value={newOverrideSkill}
+                        onChange={(e) => setNewOverrideSkill(e.target.value)}
+                        style={{ maxWidth: 160 }}
+                        autoFocus
+                      />
+                      <input
+                        className="input"
+                        placeholder="Your experience with it..."
+                        value={newOverrideContext}
+                        onChange={(e) => setNewOverrideContext(e.target.value)}
+                        onKeyDown={(e) =>
+                          e.key === "Enter" &&
+                          newOverrideSkill &&
+                          newOverrideContext &&
+                          addOverrideMutation.mutate()
+                        }
+                      />
+                    </div>
+                    <p
+                      style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", margin: 0 }}
+                    >
+                      e.g. "plotly" → "used in BEng for ML model visualisation across 3 projects"
+                    </p>
+                    <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                      <button
+                        onClick={() => addOverrideMutation.mutate()}
+                        disabled={
+                          !newOverrideSkill.trim() ||
+                          !newOverrideContext.trim() ||
+                          addOverrideMutation.isPending
+                        }
+                        className="btn btn-primary"
+                        style={{ fontSize: "var(--text-xs)" }}
+                      >
+                        {addOverrideMutation.isPending ? "Saving..." : "Save override"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setAddingOverride(false);
+                          setNewOverrideSkill("");
+                          setNewOverrideContext("");
+                        }}
+                        className="btn btn-ghost"
+                        style={{ fontSize: "var(--text-xs)" }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </Section>
+            </SectionGroup>
+
+            <SectionGroup id="notifications" icon={Bell} label="Notifications">
+              {/* Email reminders */}
+              <Section
+                title="Email reminders"
+                subtitle="Get up to 3 emails per day when you have unapplied jobs scoring 8+/10, same nudge as the dashboard banner."
+              >
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "var(--space-3)",
+                    cursor: "pointer",
+                    padding: "12px 14px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-secondary)",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={localPrefs.email_reminders_enabled}
+                    onChange={(e) => update({ email_reminders_enabled: e.target.checked })}
+                    style={{ marginTop: 3, accentColor: "var(--accent)" }}
+                  />
+                  <span>
+                    <span
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "var(--space-2)",
+                        fontSize: "var(--text-base)",
+                        fontWeight: 600,
+                        color: "var(--text)",
+                        marginBottom: "var(--space-1)",
+                      }}
+                    >
+                      <Mail size={15} />
+                      Remind me to apply to high-scoring jobs
+                    </span>
+                    <span
+                      style={{
+                        fontSize: "var(--text-sm)",
+                        color: "var(--text-muted)",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Requires SMTP on the server. Lists your top matches with scores and links.
+                      Disable anytime here.
+                    </span>
+                  </span>
+                </label>
+
+                {localPrefs.email_reminders_enabled && (
+                  <div style={{ marginTop: "var(--space-4)" }}>
+                    <label className="label">When should we remind you?</label>
+                    <p
+                      style={{
+                        fontSize: "var(--text-xs)",
+                        color: "var(--text-muted)",
+                        margin: "0 0 var(--space-2)",
+                      }}
+                    >
+                      Pick any times that work for you, in your own timezone (below). Leave none
+                      picked to use the app default ({DEFAULT_REMINDER_HOURS_LABEL}). Max 3
+                      emails/day either way.
+                    </p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
+                      {REMINDER_HOUR_OPTIONS.map((opt) => {
+                        const active = localPrefs.reminder_hours.includes(opt.hour);
+                        return (
+                          <button
+                            key={opt.hour}
+                            type="button"
+                            onClick={() =>
+                              update({
+                                reminder_hours: active
+                                  ? localPrefs.reminder_hours.filter((h) => h !== opt.hour)
+                                  : [...localPrefs.reminder_hours, opt.hour].sort((a, b) => a - b),
+                              })
+                            }
+                            style={{
+                              padding: "6px 14px",
+                              borderRadius: "var(--radius-pill)",
+                              border: active
+                                ? "1.5px solid var(--accent)"
+                                : "1px solid var(--border)",
+                              background: active ? "var(--accent-light)" : "var(--bg-secondary)",
+                              color: active ? "var(--accent)" : "var(--text-secondary)",
+                              fontSize: "var(--text-sm)",
+                              fontWeight: active ? 600 : 400,
+                              cursor: "pointer",
+                              transition: "all 0.15s",
+                            }}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </Section>
+
+              {/* Timezone */}
+              <Section
+                title="Timezone"
+                subtitle="Auto job search (5am/5pm) runs at these times, and reminder emails run at whatever times you've picked above (or the app default), all in your local timezone."
+              >
+                <label className="label">Where are you currently based?</label>
+                <select
+                  className="input settings-field-narrow"
+                  value={localPrefs.timezone}
+                  onChange={(e) => update({ timezone: e.target.value })}
+                >
+                  {!TIMEZONE_OPTIONS.includes(localPrefs.timezone) && (
+                    <option value={localPrefs.timezone}>{localPrefs.timezone}</option>
+                  )}
+                  {TIMEZONE_OPTIONS.map((tz) => (
+                    <option key={tz} value={tz}>
+                      {tz.replace(/_/g, " ")}
+                    </option>
+                  ))}
+                </select>
+              </Section>
+            </SectionGroup>
+          </>
         )}
 
         {activeGroup === "account" && (
-          <SectionGroup id="account" icon={KeyRound} label="Account & security">
-            <Section title="Password" subtitle="Change your sign-in password">
-              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-                <div>
-                  <label className="label">Current password</label>
-                  <input
-                    className="input"
-                    type="password"
-                    value={pwForm.current}
-                    onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })}
-                  />
+          <>
+            <SectionGroup id="account" icon={KeyRound} label="Account & security">
+              <Section
+                title="Appearance"
+                subtitle="Same light / dark theme as the rest of the site (also in the top bar)."
+              >
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className={`btn ${!dark ? "btn-primary" : "btn-secondary"}`}
+                    onClick={() => {
+                      if (dark) toggleTheme();
+                    }}
+                  >
+                    <Sun size={14} /> Light
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${dark ? "btn-primary" : "btn-secondary"}`}
+                    onClick={() => {
+                      if (!dark) toggleTheme();
+                    }}
+                  >
+                    <Moon size={14} /> Dark
+                  </button>
                 </div>
-                <div>
-                  <label className="label">New password</label>
-                  <input
-                    className="input"
-                    type="password"
-                    placeholder="Min. 8 characters"
-                    value={pwForm.next}
-                    onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })}
-                  />
+              </Section>
+              <Section title="Password" subtitle="Change your sign-in password">
+                <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+                  <div>
+                    <label className="label">Current password</label>
+                    <input
+                      className="input"
+                      type="password"
+                      value={pwForm.current}
+                      onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">New password</label>
+                    <input
+                      className="input"
+                      type="password"
+                      placeholder="Min. 8 characters"
+                      value={pwForm.next}
+                      onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Confirm new password</label>
+                    <input
+                      className="input"
+                      type="password"
+                      value={pwForm.confirm}
+                      onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={changingPassword}
+                    style={{ alignSelf: "flex-start" }}
+                    onClick={async () => {
+                      if (pwForm.next.length < 8) {
+                        toast.error("New password must be at least 8 characters");
+                        return;
+                      }
+                      if (pwForm.next !== pwForm.confirm) {
+                        toast.error("New passwords do not match");
+                        return;
+                      }
+                      setChangingPassword(true);
+                      try {
+                        const res = await authApi.changePassword(pwForm.current, pwForm.next);
+                        toast.success(res.message);
+                        setPwForm({ current: "", next: "", confirm: "" });
+                      } catch (err: any) {
+                        toast.error(err.response?.data?.detail || "Could not change password");
+                      } finally {
+                        setChangingPassword(false);
+                      }
+                    }}
+                  >
+                    {changingPassword ? "Updating..." : "Change password"}
+                  </button>
+                  <p style={{ margin: 0, fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                    Forgot your password?{" "}
+                    <a href="/forgot-password" style={{ color: "var(--accent)" }}>
+                      Reset via email
+                    </a>
+                  </p>
                 </div>
-                <div>
-                  <label className="label">Confirm new password</label>
-                  <input
-                    className="input"
-                    type="password"
-                    value={pwForm.confirm}
-                    onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={changingPassword}
-                  style={{ alignSelf: "flex-start" }}
-                  onClick={async () => {
-                    if (pwForm.next.length < 8) {
-                      toast.error("New password must be at least 8 characters");
-                      return;
-                    }
-                    if (pwForm.next !== pwForm.confirm) {
-                      toast.error("New passwords do not match");
-                      return;
-                    }
-                    setChangingPassword(true);
-                    try {
-                      const res = await authApi.changePassword(pwForm.current, pwForm.next);
-                      toast.success(res.message);
-                      setPwForm({ current: "", next: "", confirm: "" });
-                    } catch (err: any) {
-                      toast.error(err.response?.data?.detail || "Could not change password");
-                    } finally {
-                      setChangingPassword(false);
-                    }
-                  }}
-                >
-                  {changingPassword ? "Updating..." : "Change password"}
-                </button>
-                <p style={{ margin: 0, fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
-                  Forgot your password?{" "}
-                  <a href="/forgot-password" style={{ color: "var(--accent)" }}>
-                    Reset via email
-                  </a>
-                </p>
-              </div>
-            </Section>
-          </SectionGroup>
-        )}
+              </Section>
+            </SectionGroup>
 
-        {activeGroup === "data" && (
-          <SectionGroup id="data" icon={DatabaseZap} label="Data & privacy">
-            {/* Job cleanup */}
-            <JobCleanupSection />
-
-            {/* Data & privacy */}
-            <DataPrivacySection
-              summary={dataSummary}
-              onExport={handleExportData}
-              onDeleteCv={() => {
-                if (window.confirm("Delete your CV from JobRadar? You can upload again later.")) {
-                  deleteCvMutation.mutate();
-                }
-              }}
-              deleteCvPending={deleteCvMutation.isPending}
-              onDeleteAccount={() => setShowDeleteAccount(true)}
-            />
-          </SectionGroup>
+            <SectionGroup id="data" icon={DatabaseZap} label="Data & privacy">
+              <JobCleanupSection />
+              <DataPrivacySection
+                summary={dataSummary}
+                onExport={handleExportData}
+                onDeleteCv={() => {
+                  if (window.confirm("Delete your CV from JobRadar? You can upload again later.")) {
+                    deleteCvMutation.mutate();
+                  }
+                }}
+                deleteCvPending={deleteCvMutation.isPending}
+                onDeleteAccount={() => setShowDeleteAccount(true)}
+              />
+            </SectionGroup>
+          </>
         )}
       </div>
 
