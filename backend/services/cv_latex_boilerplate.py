@@ -47,8 +47,10 @@ CV_LATEX_BOILERPLATE = r"""\documentclass[10pt, a4paper]{article}
 \usepackage{titlesec}
 \usepackage{hyperref}
 \usepackage{fontspec}
-\IfFontExistsTF{Latin Modern Roman}{\setmainfont{Latin Modern Roman}}{\setmainfont{DejaVu Serif}}
-\usepackage[ligatures=false]{microtype}
+\IfFontExistsTF{Latin Modern Roman}{\setmainfont{Latin Modern Roman}[Ligatures={NoCommon,NoDiscretionary}]}{\setmainfont{DejaVu Serif}[Ligatures={NoCommon,NoDiscretionary}]}
+\usepackage{microtype}
+\clubpenalty=10000
+\widowpenalty=10000
 \usepackage{parskip}
 \usepackage{xcolor}
 
@@ -105,6 +107,13 @@ def _normalize_template_prefs(user: dict) -> tuple[str, list[str]]:
     if not visible:
         visible = list(_DEFAULT_SECTIONS)
     return preset, visible
+
+
+_EMPTY_ITEM_RE = re.compile(r"^[ \t]*\\item[ \t]*$\n?", re.M)
+
+
+def _strip_empty_items(tex: str) -> str:
+    return _EMPTY_ITEM_RE.sub("", tex)
 
 
 def _boilerplate_for_user(user: dict) -> str:
@@ -198,55 +207,19 @@ def _slug_part(text: str, max_len: int = 24) -> str:
 
 
 def suggested_tex_filename(user: dict, job: dict) -> str:
+    """First_Last_Company_Role.tex, same stem convention as the PDF."""
     structured = (user.get("cv") or {}).get("structured") or {}
-    name = structured.get("name") or user.get("name") or "Candidate"
-    name_part = _slug_part(name.replace(" ", "_"), 40)
+    words = (structured.get("name") or user.get("name") or "Candidate").split()
+    name_part = _slug_part("_".join(words[:1] + words[-1:] if len(words) > 1 else words), 30)
     company = _slug_part(job.get("company") or "Company", 20)
-    role = _slug_part(job.get("title") or "Role", 28)
-    return f"{name_part}_CV_{company}_{role}.tex"
-
-
-_FILLER_WORDS = {
-    "senior",
-    "junior",
-    "staff",
-    "principal",
-    "lead",
-    "the",
-    "and",
-    "of",
-    "a",
-    "for",
-}
-
-
-def _abbreviate(
-    text: str, max_word_len: int = 5, max_words: int = 3, fallback: str = "Role"
-) -> str:
-    words = [w for w in re.split(r"[^A-Za-z0-9]+", text or "") if w]
-    significant = [w for w in words if w.lower() not in _FILLER_WORDS] or words
-    parts = [w[:max_word_len].capitalize() for w in significant[:max_words]]
-    return "".join(parts) or fallback
+    role = _slug_part(job.get("title") or "Role", 40)
+    return f"{name_part}_{company}_{role}.tex"
 
 
 def suggested_pdf_filename(user: dict, job: dict, suffix: str = "") -> str:
-    """Compact download filename: username_company_role.pdf, company/role shortened to
-    a handful of letters each so it stays readable in a downloads folder, unlike
-    suggested_tex_filename() above (still used for the longer, unambiguous name inside
-    the zero-LLM handoff text, a different context where brevity doesn't matter)."""
-    structured = (user.get("cv") or {}).get("structured") or {}
-    username = _abbreviate(
-        structured.get("name") or user.get("name") or "User",
-        max_word_len=12,
-        max_words=1,
-        fallback="User",
-    )
-    company = _abbreviate(
-        job.get("company") or "Company", max_word_len=6, max_words=1, fallback="Co"
-    )
-    role = _abbreviate(job.get("title") or "Role")
+    """Same stem as the .tex name (First_Last_Company_Role), plus optional suffix."""
     tail = f"_{suffix}" if suffix else ""
-    return f"{username}_{company}_{role}{tail}.pdf"
+    return suggested_tex_filename(user, job)[: -len(".tex")] + f"{tail}.pdf"
 
 
 def _display_url(url: str, *, host_only: bool = False) -> str:
@@ -304,11 +277,10 @@ def _work_auth_line(user: dict) -> str:
     """Built only from what the user explicitly declared in Settings
     (nationality, visa_country, visa_type) - never guessed from the CV's
     free-text location, which conflates city and country."""
-    nationality = (user.get("nationality") or "").strip()
     country = (user.get("visa_country") or "").strip()
     visa_type = (user.get("visa_type") or "").strip()
 
-    lead = f"{nationality} national" if nationality else ""
+    lead = ""  # hard rule: never put nationality in the CV header
     if country and visa_type:
         elig = f"eligible to work in {country} ({visa_type})"
     elif country:
@@ -487,13 +459,13 @@ def personalize_boilerplate(
     }
     for key, val in replacements.items():
         tex = tex.replace(key, val)
-    return tex
+    return _strip_empty_items(tex)
 
 
 COVER_LETTER_LATEX_BOILERPLATE = r"""\documentclass[11pt, a4paper]{article}
 \usepackage[a4paper, top=2cm, bottom=2cm, left=2.2cm, right=2.2cm]{geometry}
 \usepackage{fontspec}
-\IfFontExistsTF{Latin Modern Roman}{\setmainfont{Latin Modern Roman}}{\setmainfont{DejaVu Serif}}
+\IfFontExistsTF{Latin Modern Roman}{\setmainfont{Latin Modern Roman}[Ligatures={NoCommon,NoDiscretionary}]}{\setmainfont{DejaVu Serif}[Ligatures={NoCommon,NoDiscretionary}]}
 \usepackage{microtype}
 \usepackage{parskip}
 \usepackage{hyperref}
@@ -727,11 +699,18 @@ def compile_apply_pack_cv_pdf(
 def format_boilerplate_section(user: dict, job: dict) -> str:
     filename = suggested_tex_filename(user, job)
     body = personalize_boilerplate(user)
+    custom_warning = (
+        "WARNING: custom .tex template in use. The pipe-rendering/ligature fix "
+        "(fontspec Ligatures={NoCommon,NoDiscretionary}, \\clubpenalty/\\widowpenalty) is "
+        "NOT applied to custom templates; check the header manually.\n\n"
+        if (user.get("cv_latex_template") or "").strip()
+        else ""
+    )
     return f"""
-LATEX BOILERPLATE, compilable .tex starting point (tailor body for this role)
+{custom_warning}LATEX BOILERPLATE, compilable .tex starting point (tailor body for this role)
 {"=" * 42}
 Suggested filename: {filename}
-Compile: pdflatex {filename}   (or paste into Overleaf → Recompile)
+Compile: xelatex {filename}   (or paste into Overleaf → Recompile)
 
 Rules for the external LLM:
 - Keep \\documentclass, \\usepackage, geometry, and section structure UNCHANGED.

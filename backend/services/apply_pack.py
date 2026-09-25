@@ -922,9 +922,9 @@ Output ONE fenced ```latex code block with a FULL compilable document:
 - Tailor bullet order and keyword emphasis for this role ({_title_oneline} @ {_company_oneline}).
 - Escape LaTeX specials: % → \\%, & → \\&, _ → \\_ (outside \\texttt{{}}).
 - Suggested filename: {filename}
-- Must compile with pdflatex without errors.
+- Must compile with xelatex without errors.
 
-If your environment can write files: save as {filename}, run pdflatex twice, and report the .tex and .pdf paths.
+If your environment can write files: save as {filename}, run xelatex twice, and report the .tex and .pdf paths.
 If not (most chat UIs): the ```latex block alone is enough, user pastes into Overleaf and Recompile.
 No commentary after the code block.
 """.strip()

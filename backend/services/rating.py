@@ -1712,12 +1712,21 @@ async def generate_job_brief(job: dict, user: dict, rating: dict) -> str:
 
     jd_body = job.get("full_text", "")[:6000]
     jd_warning = ""
+    jd_label = "FULL JOB DESCRIPTION"
     if is_incomplete_jd(jd_body):
         jd_warning = (
             "⚠️  JD WARNING: The stored job description is incomplete (title/company only). "
             "Scores and gap analysis below may be unreliable until you paste the full JD "
             "via 'Paste JD' or open the URL and re-rate.\n\n"
         )
+
+    if not jd_warning and (len(jd_body.strip()) < 800 or jd_body.rstrip().endswith(("...", "…"))):
+        jd_warning = (
+            "⚠️  JD SNIPPET (partial): the stored description looks like a truncated preview. "
+            "Fit score, structural mismatch, and location/work-authorization are UNVERIFIED "
+            "until the full posting is checked.\n\n"
+        )
+        jd_label = "JD SNIPPET (partial, fetch full text before trusting fit score)"
 
     when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     attribution = (
@@ -1764,7 +1773,7 @@ GAPS TO ADDRESS:
 VERDICT:
   {rating.get("verdict", "")}
 
-ACTIONABLE TAILORING TIPS (use these when applying):
+ACTIONABLE TAILORING TIPS (use these when applying; CONSTRAINTS below win on any conflict, e.g. never advise applying above/below the stated level, flag the disagreement instead):
 {chr(10).join(f"  • {t}" for t in rating.get("tailoring_tips", [])) or "  (none generated)"}
 
 ==============================
@@ -1793,7 +1802,7 @@ EDUCATION:
 {education_text}
 
 ==============================
-FULL JOB DESCRIPTION
+{jd_label}
 ==============================
 {fence("JOB DESCRIPTION", jd_body) if jd_body.strip() else "(not available, listing had no description text stored)"}
 ==============================
