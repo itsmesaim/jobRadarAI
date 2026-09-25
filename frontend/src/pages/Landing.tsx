@@ -46,7 +46,7 @@ import { Overlay } from "../components/Modal";
 const FEATURES = [
   {
     title: "Multi-board search",
-    desc: "One button searches Jooble and Indeed for the roles and cities you set. Each market runs on its own. Duplicates get filtered out by URL.",
+    desc: "One button searches Jooble and Indeed for the roles and cities you set, plus any company career boards you add (Greenhouse, Lever, Ashby). Each market runs on its own. Duplicates get filtered out by URL.",
     Icon: Search,
   },
   {
@@ -71,12 +71,12 @@ const FEATURES = [
   },
   {
     title: "Apply packs",
-    desc: "Download a tailored CV PDF and cover letter from your real CV for jobs that score well. Rebuild the letter without touching the CV. You pick which projects lead.",
+    desc: "Download a tailored CV PDF and cover letter from your real CV for jobs that score well. Rebuild the letter without touching the CV. You pick which projects lead. A LangGraph pipeline drafts it, screens it like an ATS, revises only what is fixable, then rewrites it to read human, and undoes that last pass if it changes a number or bullet.",
     Icon: Briefcase,
   },
   {
     title: "Chat about each job",
-    desc: "Every job has its own chat: ask why it scored the way it did, build or rebuild the CV + cover letter, or paste employer form questions. Paste a JD right from chat to add a new job and switch between jobs without leaving the conversation. Mention a project, role, or skill and it proposes an edit to your CV for you to accept.",
+    desc: "Every job has its own chat: ask why it scored the way it did, build or rebuild the CV + cover letter, or paste employer form questions. Paste a whole job page right from chat to add a new job (role, company, pay and visa wording are filled in for you) and switch between jobs without leaving the conversation. Mention a project, role, or skill and it proposes an edit to your CV for you to accept.",
     Icon: MessageSquare,
   },
   {
@@ -106,9 +106,10 @@ const STACK = [
   "FastAPI + Motor (MongoDB)",
   "LangChain (rating, apply-pack, and CV parse as separate model picks)",
   "Pick rating, apply-pack, and CV-parse models independently in Settings.",
+  "LangGraph apply-pack pipeline (draft, ATS screen, revise, humanize)",
   "FAISS RAG for JD context + rating calibration",
   "TanStack Query + Zustand",
-  "Jooble · JobsAPI (Indeed)",
+  "Jooble · JobsAPI (Indeed) · Greenhouse / Lever / Ashby",
 ];
 
 const SEARCH_FLOW: FlowStep[] = [
@@ -121,7 +122,7 @@ const SEARCH_FLOW: FlowStep[] = [
   {
     icon: Search,
     label: "Search jobs",
-    desc: "Jooble + Indeed crawled per market. Duplicates cut.",
+    desc: "Jooble + Indeed per market, plus your company boards. Duplicates cut.",
     tone: "purple",
   },
   {
@@ -213,7 +214,7 @@ const HOW_IT_WORKS = [
   },
   {
     title: "Search your markets",
-    body: "One search on Jooble and Indeed, or paste a JD. Each city is its own search. Duplicates are cut.",
+    body: "One search on Jooble, Indeed and your company boards, or paste a whole job page and we read the role, company and pay for you. Each city is its own search. Duplicates are cut.",
   },
   {
     title: "AI scores every listing",
@@ -273,7 +274,7 @@ const EXPLAINER: { icon: React.ElementType; title: string; desc: string }[] = [
   {
     icon: Search,
     title: "It searches for you",
-    desc: "One click crawls Jooble and Indeed for the roles and cities you set, instead of you checking five tabs a day.",
+    desc: "One click crawls Jooble, Indeed and the company career boards you add for the roles and cities you set, instead of you checking five tabs a day.",
   },
   {
     icon: Sparkles,
@@ -288,7 +289,7 @@ const EXPLAINER: { icon: React.ElementType; title: string; desc: string }[] = [
 ];
 
 const HERO_STATS: { label: string; value: string; tone?: "accent" | "success" }[] = [
-  { label: "Boards searched", value: "2", tone: "accent" },
+  { label: "Job sources", value: "3", tone: "accent" },
   { label: "Profile inputs", value: "10+" },
   { label: "AI fit score", value: "1-10", tone: "success" },
 ];
@@ -957,8 +958,10 @@ export function LandingPage() {
               <p>
                 React frontend on TanStack Query, FastAPI backend, MongoDB in the EU. LangChain
                 splits three jobs: bulk rating, apply-pack CVs, and CV parsing. You pick each from
-                the list in Settings (local or hosted). FAISS retrieval picks the relevant JD
-                context and pulls in your past feedback on similar jobs.
+                the list in Settings (local or hosted). LangGraph runs the apply pack as four steps:
+                draft, ATS screen, one revision when the screen finds fixable issues, then a
+                humanizer pass. FAISS retrieval picks the relevant JD context and pulls in your past
+                feedback on similar jobs.
               </p>
               <ul className="landing-stack-list">
                 {STACK.map((item) => (
