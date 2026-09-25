@@ -1353,6 +1353,10 @@
     flex-direction: column;
     gap: 8px;
     margin-top: 14px;
+    position: sticky;
+    bottom: -14px;
+    padding: 10px 0 14px;
+    background: var(--bg-card);
   }
 
   .job-chat-thread {

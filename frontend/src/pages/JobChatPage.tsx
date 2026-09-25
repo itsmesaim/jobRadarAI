@@ -1298,6 +1298,12 @@ export function JobChatPage() {
               {rateMutation.isPending ? <Loader size={14} className="animate-spin" /> : null}
               Re-rate
             </button>
+            {(job?.score ?? 0) > 0 && (
+              <button type="button" className="btn btn-secondary" onClick={() => void copyPack()}>
+                {copiedPack ? <Check size={14} /> : <Copy size={14} />}
+                {copiedPack ? "Copied" : "Copy pack"}
+              </button>
+            )}
             {packReady ? (
               <>
                 <button type="button" className="btn btn-primary" onClick={() => void downloadCv()}>
@@ -1309,10 +1315,6 @@ export function JobChatPage() {
                   onClick={() => void downloadCover()}
                 >
                   <Download size={14} /> Download cover
-                </button>
-                <button type="button" className="btn btn-secondary" onClick={() => void copyPack()}>
-                  {copiedPack ? <Check size={14} /> : <Copy size={14} />}
-                  {copiedPack ? "Copied" : "Copy pack"}
                 </button>
                 <button
                   type="button"
