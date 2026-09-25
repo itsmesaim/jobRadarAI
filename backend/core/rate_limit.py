@@ -20,6 +20,7 @@ _LIMITS: dict[str, tuple[int, int]] = {
     "register": (5, 60),
     "forgot_password": (5, 300),
     "fetch_url": (10, 60),
+    "parse_text": (20, 60),
     "job_chat": (30, 60),
     "cv_upload": (20, 60),
 }

@@ -178,9 +178,28 @@ export const jobsApi = {
     return res.data as { message: string };
   },
 
-  addManual: async (payload: { title: string; company: string; url?: string; jd_text: string }) => {
+  addManual: async (payload: {
+    title: string;
+    company: string;
+    url?: string;
+    jd_text: string;
+    location?: string;
+    salary_text?: string;
+  }) => {
     const res = await api.post("/jobs/manual", payload);
     return res.data;
+  },
+
+  parseText: async (text: string) => {
+    const res = await api.post("/jobs/parse-text", { text });
+    return res.data as {
+      title: string;
+      company: string;
+      location: string;
+      salary_text: string;
+      visa: "" | "offered" | "not_offered";
+      source: "rules" | "llm";
+    };
   },
 
   fetchUrl: async (url: string) => {

@@ -18,7 +18,7 @@ import { StarRating } from "./StarRating";
 import { jobsApi, crawlerApi } from "../api/index";
 import { getErrorDetail } from "../api/client";
 import { LimitContactModal } from "./LimitContactModal";
-import { prettyRatedBy, sourceLabel } from "../utils/jobLabels";
+import { prettyRatedBy, safeHttpUrl, sourceLabel } from "../utils/jobLabels";
 import { fullDate, timeAgo } from "../utils/time";
 import type { Job } from "../types";
 
@@ -898,9 +898,9 @@ export function JobDetailModal({ job, onClose }: Props) {
           )}
 
           <div className="job-modal-footer-actions">
-            {job.url && (
+            {safeHttpUrl(job.url) && (
               <a
-                href={job.url}
+                href={safeHttpUrl(job.url)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn job-modal-action-btn job-modal-apply-here"

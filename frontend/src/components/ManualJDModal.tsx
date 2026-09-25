@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { X, Link, FileText, Loader } from "lucide-react";
 import toast from "react-hot-toast";
 import { jobsApi, scrapeApi } from "../api/index";
@@ -49,6 +49,31 @@ export function ManualJDModal({
   });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<RatingResult | null>(null);
+  const [reading, setReading] = useState(false);
+  const [hints, setHints] = useState<{
+    location: string;
+    salary_text: string;
+    visa: "" | "offered" | "not_offered";
+  }>({ location: "", salary_text: "", visa: "" });
+  const lastRead = useRef("");
+
+  // Fill title/company/etc. from the pasted page. Once per distinct text, and only
+  // empty fields, so nothing the user typed gets overwritten.
+  const readPasted = async (text: string) => {
+    const t = text.trim();
+    if (t.length < 200 || t === lastRead.current) return;
+    lastRead.current = t;
+    setReading(true);
+    try {
+      const d = await jobsApi.parseText(t);
+      setForm((f) => ({ ...f, title: f.title || d.title, company: f.company || d.company }));
+      setHints({ location: d.location, salary_text: d.salary_text, visa: d.visa });
+    } catch {
+      // Extraction is a convenience; the user can still type the fields.
+    } finally {
+      setReading(false);
+    }
+  };
 
   const handleScrape = async () => {
     if (!url.trim()) {
@@ -87,9 +112,17 @@ export function ManualJDModal({
       toast.error("Title, company, and JD text are required");
       return;
     }
+    if (form.url.trim() && !/^https?:\/\//i.test(form.url.trim())) {
+      toast.error("Job URL must start with http:// or https://");
+      return;
+    }
     setLoading(true);
     try {
-      const res = (await jobsApi.addManual(form)) as ManualJDResponse;
+      const res = (await jobsApi.addManual({
+        ...form,
+        location: hints.location,
+        salary_text: hints.salary_text,
+      })) as ManualJDResponse;
 
       if (res.message?.toLowerCase().includes("limit reached")) {
         const isToken = res.message.toLowerCase().includes("token");
@@ -242,6 +275,43 @@ export function ManualJDModal({
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+                  <div>
+                    <label className="label">Paste the whole job page *</label>
+                    <textarea
+                      className="input"
+                      placeholder="Copy everything from the job posting and paste it here. We read the role, company, pay and visa details for you."
+                      value={form.jd_text}
+                      maxLength={40000}
+                      onChange={(e) => setForm({ ...form, jd_text: e.target.value })}
+                      onPaste={(e) => {
+                        const pasted = e.clipboardData.getData("text");
+                        if (pasted) window.setTimeout(() => void readPasted(pasted), 0);
+                      }}
+                      onBlur={() => void readPasted(form.jd_text)}
+                      style={{ height: 160, resize: "vertical" }}
+                    />
+                    <p
+                      style={{
+                        fontSize: "var(--text-xs)",
+                        color: "var(--text-muted)",
+                        marginTop: "var(--space-1)",
+                      }}
+                    >
+                      {reading ? "Reading the posting..." : `${form.jd_text.length} characters`}
+                    </p>
+                  </div>
+                  {(hints.salary_text || hints.location || hints.visa) && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
+                      {hints.location && <span className="badge">{hints.location}</span>}
+                      {hints.salary_text && <span className="badge">{hints.salary_text}</span>}
+                      {hints.visa === "not_offered" && (
+                        <span className="badge">Says no visa sponsorship</span>
+                      )}
+                      {hints.visa === "offered" && (
+                        <span className="badge">Mentions visa sponsorship</span>
+                      )}
+                    </div>
+                  )}
                   <div
                     style={{
                       display: "grid",
@@ -253,7 +323,8 @@ export function ManualJDModal({
                       <label className="label">Role title *</label>
                       <input
                         className="input"
-                        placeholder="Full Stack Engineer"
+                        placeholder="Found automatically"
+                        maxLength={120}
                         value={form.title}
                         onChange={(e) => setForm({ ...form, title: e.target.value })}
                       />
@@ -262,39 +333,22 @@ export function ManualJDModal({
                       <label className="label">Company *</label>
                       <input
                         className="input"
-                        placeholder="Stripe"
+                        placeholder="Found automatically"
+                        maxLength={100}
                         value={form.company}
                         onChange={(e) => setForm({ ...form, company: e.target.value })}
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="label">Job URL (optional)</label>
+                    <label className="label">Job URL (optional, used for the Apply button)</label>
                     <input
                       className="input"
                       placeholder="https://..."
+                      maxLength={2000}
                       value={form.url}
                       onChange={(e) => setForm({ ...form, url: e.target.value })}
                     />
-                  </div>
-                  <div>
-                    <label className="label">Job description *</label>
-                    <textarea
-                      className="input"
-                      placeholder="Paste the full job description here..."
-                      value={form.jd_text}
-                      onChange={(e) => setForm({ ...form, jd_text: e.target.value })}
-                      style={{ height: 160, resize: "vertical" }}
-                    />
-                    <p
-                      style={{
-                        fontSize: "var(--text-xs)",
-                        color: "var(--text-muted)",
-                        marginTop: "var(--space-1)",
-                      }}
-                    >
-                      {form.jd_text.length} characters, more text = better rating
-                    </p>
                   </div>
                   {!canRate && (
                     <p
@@ -437,6 +491,8 @@ export function ManualJDModal({
                   onClick={() => {
                     setResult(null);
                     setForm({ title: "", company: "", url: "", jd_text: "" });
+                    setHints({ location: "", salary_text: "", visa: "" });
+                    lastRead.current = "";
                   }}
                   className="btn btn-ghost"
                   style={{ flex: 1, justifyContent: "center" }}

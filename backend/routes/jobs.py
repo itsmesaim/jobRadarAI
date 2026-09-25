@@ -18,7 +18,7 @@ from typing import Literal
 from bson import ObjectId
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from config import settings
 from database import get_database
@@ -47,6 +47,7 @@ from services.cv_latex_boilerplate import (
     suggested_pdf_filename,
 )
 from services.pdf_compile import PdfCompileError
+from services.jd_extract import extract_fields, llm_title_company
 from services.limits import (
     check_ai_token_quota,
     check_and_increment_apply_pack,
@@ -200,11 +201,39 @@ class StatusUpdate(BaseModel):
     reason: str | None = None
 
 
+_CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
 class ManualJD(BaseModel):
-    title: str
-    company: str
-    url: str = ""
-    jd_text: str
+    """Everything here is typed or pasted by the user: cap sizes, strip control
+    characters, and only allow http(s) links (a javascript: URL would become a
+    clickable Apply link)."""
+
+    title: str = Field(max_length=120)
+    company: str = Field(max_length=100)
+    url: str = Field(default="", max_length=2000)
+    jd_text: str = Field(max_length=40000)
+    location: str = Field(default="", max_length=100)
+    salary_text: str = Field(default="", max_length=80)
+
+    @field_validator(
+        "title", "company", "location", "salary_text", "jd_text", mode="after"
+    )
+    @classmethod
+    def _strip_ctrl(cls, v: str) -> str:
+        return _CTRL.sub("", v).strip()
+
+    @field_validator("url", mode="after")
+    @classmethod
+    def _http_only(cls, v: str) -> str:
+        v = v.strip()
+        if v and not re.match(r"https?://", v, re.I):
+            raise ValueError("Job URL must start with http:// or https://")
+        return v
+
+
+class ParseTextRequest(BaseModel):
+    text: str = Field(max_length=60000)
 
 
 class FetchUrlRequest(BaseModel):
@@ -771,6 +800,27 @@ async def fetch_job_url(
 
 
 # ── MANUAL JD ────────────────────────────────────────────
+@router.post("/parse-text")
+async def parse_pasted_job(
+    payload: ParseTextRequest, request: Request, user=Depends(get_current_user)
+):
+    enforce_rate_limit(request, "parse_text")
+    """Read title/company/location/salary/visa out of a whole pasted job page.
+    Rules first (free). The LLM only runs when title or company is still empty
+    and the user has AI token quota left; if it fails we return the rules result."""
+    text = payload.text[:20000]
+    fields = extract_fields(text)
+    if (not fields["title"] or not fields["company"]) and len(text) > 200:
+        ok, _ = await check_ai_token_quota(user)
+        if ok:
+            found = await llm_title_company(text, str(user["_id"]))
+            for k in ("title", "company", "location"):
+                if not fields[k] and found.get(k):
+                    fields[k] = found[k]
+                    fields["source"] = "llm"
+    return fields
+
+
 @router.post("/manual")
 async def add_manual_jd(payload: ManualJD, user=Depends(get_current_user)):
     db = get_database()
@@ -794,6 +844,8 @@ async def add_manual_jd(payload: ManualJD, user=Depends(get_current_user)):
         "content_fingerprint": content_fingerprint(payload.title, payload.company),
         "snippet": payload.jd_text[:400],
         "full_text": payload.jd_text,
+        "location": payload.location,
+        "salary_text": payload.salary_text,
         "source": "manual",
         "query": "manual",
         "crawled_at": datetime.now(timezone.utc),

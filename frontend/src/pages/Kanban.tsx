@@ -21,6 +21,7 @@ import { jobsApi } from "../api/index";
 import { ScoreBadge } from "../components/ScoreBadge";
 import { RejectReasonModal } from "../components/RejectReasonModal";
 import { useAuthStore } from "../hooks/useStores";
+import { safeHttpUrl } from "../utils/jobLabels";
 import type { Job, JobStatus } from "../types";
 
 const COLUMNS: { status: JobStatus; label: string; color: string }[] = [
@@ -144,9 +145,9 @@ function DraggableKanbanCard({ job }: { job: Job }) {
         }}
       >
         <ScoreBadge score={job.score} size="sm" />
-        {job.url && (
+        {safeHttpUrl(job.url) && (
           <a
-            href={job.url}
+            href={safeHttpUrl(job.url)}
             target="_blank"
             rel="noopener noreferrer"
             onPointerDown={(e) => e.stopPropagation()}
@@ -204,9 +205,9 @@ function MobileKanbanCard({
         <ScoreBadge score={job.score} size="sm" />
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           <StatusSelect value={job.status} onChange={(status) => onStatusChange(job.id, status)} />
-          {job.url && (
+          {safeHttpUrl(job.url) && (
             <a
-              href={job.url}
+              href={safeHttpUrl(job.url)}
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn-ghost"

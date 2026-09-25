@@ -7,7 +7,7 @@ import { RejectReasonModal } from "./RejectReasonModal";
 import { jobsApi } from "../api/index";
 import type { Job, JobStatus, Props } from "../types";
 import { timeAgo } from "../utils/time";
-import { sourceLabel } from "../utils/jobLabels";
+import { safeHttpUrl, sourceLabel } from "../utils/jobLabels";
 
 function fullDate(dateStr?: string): string {
   if (!dateStr) return "";
@@ -349,9 +349,9 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
             }}
           >
             <ScoreBadge score={job.score} size="md" loading={isRating} />
-            {job.url && (
+            {safeHttpUrl(job.url) && (
               <a
-                href={job.url}
+                href={safeHttpUrl(job.url)}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
