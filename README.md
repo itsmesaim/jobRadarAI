@@ -1,6 +1,6 @@
 # JobRadar AI
 
-Upload a CV, set the markets you actually want, hit **Search jobs**. JobRadar crawls Jooble and Indeed, scores each listing 1-10 against *that* person's profile (not a generic resume keyword dump), and can download a tailored CV PDF plus cover letter for jobs that are worth applying to.
+Upload a CV, set the markets you actually want, hit **Search jobs**. JobRadar crawls Jooble, Indeed, and any company career boards you add (Greenhouse, Lever, Ashby), scores each listing 1-10 against *that* person's profile (not a generic resume keyword dump), and can download a tailored CV PDF plus cover letter for jobs that are worth applying to.
 
 It learns: star + note a bad rating and similar jobs pick that up. Applications live on a Kanban, not a spreadsheet.
 
@@ -25,7 +25,7 @@ The rating engine isn't a one-shot prompt: a cosine-similarity pre-filter skips 
 
 ### High-Level Overview
 
-A React SPA talks to a FastAPI backend, which orchestrates MongoDB, two job-board APIs, and a **three-purpose LLM catalog** via LangChain so you can cut cost: cheap/local for bulk rating, stronger for apply-pack CVs, separate for CV parsing. Switch independently in Settings.
+A React SPA talks to a FastAPI backend, which orchestrates MongoDB, two job-board APIs plus company career-board feeds, and a **three-purpose LLM catalog** via LangChain so you can cut cost: cheap/local for bulk rating, stronger for apply-pack CVs, separate for CV parsing. Switch independently in Settings.
 
 Supported providers: **Ollama** (local, free), **Grok (xAI)**, **Anthropic Claude**, Mistral (EU default), OpenAI, DeepSeek. A model only shows if its API key (or Ollama) is on the server. Typical cost split: Ollama for rating hundreds of jobs, Grok or Claude for the few apply-pack PDFs.
 
@@ -44,8 +44,9 @@ flowchart TB
             CVParser["cv_parser.py"]
             Rating["rating.py - prefilter + RAG + calibration"]
             Vectorstore["vectorstore.py - FAISS chunk/retrieve"]
-            ApplyPack["apply_pack.py + cv_latex_boilerplate.py + pdf_compile.py"]
-            Crawlers["jooble_crawler.py · jobsapi_indeed_crawler.py"]
+            ApplyPack["apply_pack.py + apply_pack_graph.py (LangGraph) + cv_latex_boilerplate.py + pdf_compile.py"]
+            Crawlers["jooble_crawler.py · jobsapi_indeed_crawler.py · ats_boards_crawler.py"]
+            Scheduler["scheduler.py - auto crawl + rate, apply reminders"]
             LLM["llm.py + ai_models.py - catalog + keys"]
         end
         Security["core/security.py - bcrypt + JWT"]
@@ -58,6 +59,7 @@ flowchart TB
     subgraph External["External Services"]
         Jooble["Jooble API"]
         JobsAPI["JobsAPI (Indeed)"]
+        ATS["Greenhouse / Lever / Ashby boards"]
         Ollama["Ollama (local, free)"]
         LLMs["Ollama / Grok / Claude / Mistral / OpenAI / DeepSeek"]
         Tectonic["Tectonic binary (server-side PDF)"]
@@ -73,7 +75,9 @@ flowchart TB
     Rating --> LLM
     ApplyPack --> LLM
     ApplyPack --> Tectonic
-    Crawlers --> Jooble & JobsAPI
+    Crawlers --> Jooble & JobsAPI & ATS
+    Scheduler --> Crawlers
+    Scheduler --> Rating
     LLM --> Ollama & LLMs
 ```
 
@@ -140,6 +144,7 @@ sequenceDiagram
     par Parallel crawl
         API->>Crawler: crawl_jobs_for_user_jooble()
         API->>Crawler: crawl_jobs_for_user_jobsapi()
+        API->>Crawler: crawl_jobs_for_user_ats_boards()
     end
     Crawler->>DB: Dedupe by url_hash, skip short JDs, insert new
 
@@ -174,24 +179,27 @@ Email + password, bcrypt-hashed, JWT sessions (7-day expiry, `token_version` inv
 Accepts PDF, Word (`.docx`), OpenDocument (`.odt`), plain text, and LaTeX (max 5MB, format detected from the file extension since browsers send inconsistent MIME types for the less common ones). PyMuPDF/`python-docx`/`odfpy` extract raw text depending on format, no API call for extraction itself. Contact details (email/phone) are redacted before the text goes to the LLM; the LLM returns structured JSON (skills grouped by category, experience, projects with live-deploy/repo links, education, portfolio/GitHub/LinkedIn links, only ever extracted if actually written in the CV, never invented); the real contact info is spliced back in locally. Both raw text and structured data are saved on the user document. On upload, Settings fields that overlap with the parse (`primary_role`, `preferred_locations`, `key_skills`) are auto-filled. `about_me` (the user's own notes) is never overwritten. A separate `about_me_from_cv` holds the parsed summary and refreshes on each upload. `key_skills` is capped to a short search list (the full categorized CV skills still feed rating). Settings → Flagship work lists parsed projects and jobs so the user can tick what tailored CVs should lead with. Every URL from a CV is validated against a strict http(s) pattern before it goes into a LaTeX `\href{}`.
 
 ### 3. Preferences & About Me
-Settings (tabs: Profile & CV, AI models, Job search, Notifications, Account, Data & privacy - each tab stamps "cleared" when its required fields are done) captures target roles, locations, experience, work mode, salary floor, key skills, nationality, visa/permit, work authorization, flagship projects, timezone, and `about_me`. Empty location/role prefs do **not** fall back to Dublin or "Full Stack". Timezone defaults to the browser (UTC if missing). `about_me` and rating-feedback comments go through `text_cleanup.py` on save. Nationality + visa status feed sponsorship/visa auto-reject: the LLM reasons per nationality/country pair, no Ireland-only table. Search location is not treated as work authorization (searching Germany does not claim a German visa).
+Settings (tabs: Profile & CV, Job search, AI & usage, Account. Notification and Data & privacy sections sit inside those tabs) captures target roles, locations, experience, work mode, salary floor, key skills, nationality, visa/permit, work authorization, flagship projects, timezone, and `about_me`. Empty location/role prefs do **not** fall back to Dublin or "Full Stack". Timezone defaults to the browser (UTC if missing). `about_me` and rating-feedback comments go through `text_cleanup.py` on save. Nationality + visa status feed sponsorship/visa auto-reject: the LLM reasons per nationality/country pair, no Ireland-only table. Search location is not treated as work authorization (searching Germany does not claim a German visa).
 
 ### 4. Job Discovery
-`POST /crawler/search` runs **Jooble** and **JobsAPI (Indeed)** in parallel - the only two crawlers currently wired into the live endpoint. Every job is deduplicated by SHA-256 of its URL, scoped per user. You can also paste a job description directly (**Paste JD**) via URL-fetch or manual text.
+`POST /crawler/search` runs **Jooble**, **JobsAPI (Indeed)** and the **company ATS boards** in parallel. ATS boards are Greenhouse, Lever and Ashby feeds the user adds in Settings (a board URL or `ats:slug`, up to 40); they need no API key. Every job is deduplicated by SHA-256 of its URL, scoped per user. A background scheduler also crawls and rates for each user every 12 hours (`AUTO_CRAWL_INTERVAL_HOURS`, at most 25 new jobs per user per cycle, split across the sources) and emails apply reminders for high scores when SMTP is set. You can also paste a job description directly (**Paste JD**) via URL-fetch or manual text.
 
 ### 5. AI Rating - prefilter, RAG, and calibration
-- **Cosine pre-filter**: low-similarity jobs get a cheap graduated score (1-4), no LLM call.
+- **No LLM call** for a missing CV or too-short JD text (score 0, not billed). Salary is ignored unless the user turns on "Use my minimum salary when rating" in Settings; then the minimum goes into the prompt as a soft constraint and only jobs that state clearly lower pay lose points.
+- **Cosine pre-filter**: jobs with similarity below 0.18 get a cheap graduated score (1-4), no LLM call. Embeddings always come from OpenAI, whichever provider rates.
 - **RAG chunk retrieval** (`services/vectorstore.py`): long JDs are chunked and FAISS retrieves the chunks most relevant to the candidate, instead of naive truncation losing tail content.
 - **Calibration**: the user's own past-rated similar jobs (including any star rating + comment they left) are retrieved and injected into the prompt, so the LLM stays consistent with corrections made before.
 - **Structured output**: `JobRating` Pydantic model - `score`, `matched_strengths`, `gaps`, `structural_mismatch`, `verdict`, `auto_reject`, `tailoring_tips`.
 - **Sponsorship/visa reasoning**: the candidate's nationality, visa/permit status, and work authorization are reasoned about together against the job's country and stated sponsorship policy, using the LLM's own general knowledge, no fixed per-country rule table, and auto-rejects with score ≤ 2 when the candidate can't legally work there without sponsorship the JD says isn't offered.
 - **Essential-gap score cap**: enforced as a hard post-processing rule (not just a prompt instruction), 2+ gaps tagged `[Essential]` clamps the score to 6 regardless of what the LLM returned, so a listing with multiple must-have skills the candidate is missing can't slip through as a strong match.
+- **Rate limits**: a 429 from the provider is retried up to 5 times, waiting 4, 8, 16 and 32 seconds (or the wait the provider asks for). Bulk rating runs `RATING_CONCURRENCY` jobs at once, but Mistral is capped at 1 through `PROVIDER_CONCURRENCY_CAP` in `rating.py` because its limits are strict. A job that still fails is saved as score 0 with a "Rating failed" verdict, is not billed, and is picked up again by the next rate-all.
 - **Rate the rating**: every job's detail view has an always-visible star (1-5) + comment panel, feeding directly into the calibration loop above.
 
 ### 6. Apply Packs (premium)
-Two ways to turn a rated job into an application, from a job's chat, gated by score (6+), daily quota, and AI token quota:
+Two ways to turn a rated job into an application, from a job's chat, gated by daily quota and AI token quota. Below a score of 6 the build asks for confirmation first (the API answers `LOW_SCORE_CONFIRM` until the caller confirms):
 
 - **Build / download apply pack**: streams progress over SSE through a LangGraph pipeline - **draft** (tailor from MASTER CV) → **ATS critique** (structured issues, each tiered R1/R2/R3 and owned by drafter/humanizer/user) → **revise once** only for R1/R2 drafter-owned issues (R3/humanizer-owned go straight to the humanizer brief; user-owned surface as "Needs your input", no revision spent) → **humanize** (strip AI-tell wording, facts locked; reverts to the pre-humanize draft if a deterministic integrity check catches a bullet/number/fact drift, or if the pass times out). Each LLM call is capped at 5 minutes; an ATS timeout still ships the draft, marked **Unaudited**. Generation runs in a background task: closing the tab does not cancel it. Server compiles CV + cover-letter PDFs with a **Tectonic** binary at `backend/bin/tectonic` (gitignored; install on the VPS, warm `.tectonic_cache/`). No Overleaf on the user side.
+  - Templates: Settings offers three CV presets (Classic, Compact, Technical), per-section on/off toggles for the built-in presets, and an optional custom LaTeX template. Custom templates are checked for shell-escape and file-read commands before use (`latex_template_safe.py`).
   - CV: per-role XYZ bullets only where a real metric exists in that MASTER CV bullet; flagship projects from Settings lead Key Projects when those names exist on the CV; fake measured-by clauses are stripped in code; em dashes are stripped (they read as AI-default).
   - Cover letter: 4 parts (strongest match, concrete examples, Essential gaps named-then-pivoted, specific close). Preferred gaps the JD leans on still get one acknowledgment if a tailoring tip asked for it. Body is real paragraphs, not one run-on sentence.
   - Cache is **not** a 12-hour TTL. It stays until this job is re-rated or the CV is replaced. Rebuild **CV**, **letter**, or **both**, with an optional note ("lead with X, mention AWS as learning"). CV-only / letter-only is one LLM call on the existing pack, merges the prior build's Unaudited/Humanizer-fallback/Needs-your-input flags forward instead of clearing them, and does not burn another daily pack. Rebuild both does.
@@ -208,13 +216,13 @@ Every job has its own chat (`/jobs/:id`), fenced to that role plus product FAQ -
 - **MASTER CV propose / confirm**: mention a project, role, or skill in plain language ("I worked as X at Y", "add Rust as a skill") and chat proposes the exact addition as a card - **Edit** the fields, **Accept into MASTER CV**, or **Keep chat-only** to dismiss it. Nothing is written until you Accept.
 
 ### 8. Freemium & Admin
-Four-layer quota, enforced server-side with atomic Mongo increments: searches (default 3/day), ratings (10/day, reserved before the LLM call and refunded on failure), apply packs (1/day free), AI tokens (250k/day). Admin panel (`/{ADMIN_SECRET_PATH}/`) lists users, sets per-user overrides (including separate rating / apply-pack / CV-parse models), grants temporary/permanent full access, and shows a platform-wide AI cost summary. Admin bypasses all limits. Models without an API key on the server are hidden from Settings.
+Five-part quota, enforced server-side with atomic Mongo increments: searches (default 3/day), ratings (10/day, reserved before the LLM call and refunded on failure), CV parses (3/day), apply packs (1/day free), and AI tokens (250k/day plus a 3M monthly backstop). Daily resets follow the user's own timezone. Admin panel (`/{ADMIN_SECRET_PATH}/`) lists users, sets per-user overrides (including separate rating / apply-pack / CV-parse models), grants temporary/permanent full access, and shows a platform-wide AI cost summary. Admin bypasses all limits. Models without an API key on the server are hidden from Settings.
 
 ### 9. Kanban & Freshness
 Each job carries a per-user pipeline status. Dashboard shows relative post/crawl time ("2d ago"); Kanban gives desktop drag-and-drop and a mobile tabbed view.
 
 ### 10. Notifications
-A small bell in the navbar, not a full notification history - computed live from signals that already exist rather than a separate stored event log: top matches ready to apply to, stale follow-ups, and new AI models added to the admin-managed catalog since you last checked (`GET /users/notifications`, `POST /users/notifications/seen`).
+A small bell in the navbar, not a full notification history - computed live from signals that already exist rather than a separate stored event log: top matches ready to apply to, stale follow-ups, and new AI models added to the admin-managed catalog since you last checked (`GET /users/notifications`, `POST /users/notifications/seen` and `/dismiss`).
 
 ### 11. Privacy & Data Rights
 Settings → Data & privacy: a live inventory of what's stored, a full JSON export (`GET /users/data-export`), CV-only deletion, and full account deletion (hard delete of the user doc + every job they crawled, password re-entry required). The Privacy Policy names every third party data actually goes to (Jooble, JobsAPI, your configured LLM provider, MongoDB) and states retention/rights. CV parsing and job rating default to Mistral, an EU-hosted provider, and the app itself is hosted on EU infrastructure - CV/JD content doesn't leave the EU for processing by default. Users can opt into OpenAI or DeepSeek per model (CV parsing / rating independently) from an admin-managed catalog in Settings; doing so sends that data outside the EU to that provider instead, and is treated as a consent action (confirmed in the UI, timestamped server-side). Server logs auto-rotate within 30 days (`pm2-logrotate`). **Not legal advice** - known gap: no formal DPA on file with any LLM provider.
@@ -230,7 +238,9 @@ JobRadar/
 │   ├── config.py                      # Env settings - LLM providers, quotas, JWT
 │   ├── database.py                    # MongoDB connection (Motor)
 │   ├── deps.py                        # JWT auth dependency
-│   ├── core/security.py               # bcrypt + JWT
+│   ├── core/
+│   │   ├── security.py                # bcrypt + JWT
+│   │   └── rate_limit.py              # In-memory brute-force limiter for auth routes
 │   ├── models/user.py                 # Auth-related Pydantic schemas
 │   ├── routes/
 │   │   ├── auth.py                    # Register, login, password reset
@@ -239,10 +249,14 @@ JobRadar/
 │   │   ├── jobs.py                    # List, rate, rating-feedback, apply-pack, cleanup
 │   │   ├── users.py                   # Preferences, skill overrides, data export/deletion
 │   │   └── admin.py                   # Secret-path admin panel
+│   ├── skills/                        # ai-tells, ats_critic_prompt, humanizer_prompt (loaded by skill_prompts.py)
+│   ├── scripts/
+│   │   └── diagnose_matching.py       # Why a user sees few or no matches (run on the server)
 │   └── services/
 │       ├── llm.py                     # Main + rating LLM split (ollama/openai/xai/mistral)
 │       ├── cv_parser.py                # PDF → text → structured JSON, PII redaction
 │       ├── rating.py                  # Prefilter + RAG + calibration + brief/roast
+│       ├── calibration.py             # Distils rating feedback into standing notes applied to every rating
 │       ├── vectorstore.py             # FAISS chunking/embedding/retrieval helpers
 │       ├── text_cleanup.py            # LLM cleanup for about_me / feedback text
 │       ├── apply_pack_graph.py        # LangGraph: draft → ATS critique → revise (R1/R2 only) → humanize
@@ -252,6 +266,7 @@ JobRadar/
 │       ├── faq_rag.py                 # Product-question FAQ (canned + retrieve, no LLM)
 │       ├── skill_prompts.py           # Loads backend/skills/*.md, appends to system prompts
 │       ├── cv_latex_boilerplate.py    # LaTeX CV/cover-letter templates, URL validation
+│       ├── latex_template_safe.py     # Rejects custom LaTeX templates with shell-escape/file-read commands
 │       ├── pdf_compile.py             # Tectonic subprocess wrapper, page-count check
 │       ├── ai_models.py               # Admin-managed catalog per purpose (rating/apply_pack/cv_parsing)
 │       ├── job_dedup.py               # URL hashing + content-fingerprint dedup
@@ -260,7 +275,8 @@ JobRadar/
 │       ├── prompt_safety.py           # Fences untrusted JD/CV text before it hits an LLM prompt
 │       ├── limits.py                  # Search/rating/token quotas + admin overrides
 │       ├── ai_usage.py                # Per-user token tracking + platform summary
-│       ├── scheduler.py               # Auto crawl + rate (respects limits)
+│       ├── scheduler.py               # Auto crawl + rate every 12h, apply reminders (respects limits)
+│       ├── user_time.py               # Per-user timezone and local-day helpers (quota resets, reminders)
 │       ├── email.py / job_reminders.py
 │       ├── jooble_crawler.py / jobsapi_indeed_crawler.py
 │       └── ats_boards_crawler.py      # Greenhouse / Lever / Ashby public feeds
@@ -270,21 +286,21 @@ JobRadar/
 │       │   ├── Landing.tsx / Login.tsx / ForgotPassword.tsx / ResetPassword.tsx
 │       │   ├── Dashboard.tsx          # Jobs, quotas, search, rate, Paste JD
 │       │   ├── JobChatPage.tsx        # Per-job chat: rating Q&A, build/rebuild pack, MASTER CV propose/edit, Jobs rail
-│       │   ├── Kanban.tsx
+│       │   ├── Kanban.tsx             # Shown as "Track" in the nav
 │       │   ├── Settings.tsx           # CV, flagship work, prefs, privacy, skill overrides
 │       │   ├── Admin.tsx
-│       │   └── Privacy.tsx / Terms.tsx
+│       │   └── Privacy.tsx / Terms.tsx / Cookies.tsx
 │       ├── components/
 │       │   ├── JobCard.tsx / JobDetailModal.tsx / ScoreBadge.tsx / StarRating.tsx
-│       │   ├── RejectReasonModal.tsx / RadarSweep.tsx / FaqRichText.tsx
+│       │   ├── RejectReasonModal.tsx / RadarSweep.tsx / FaqRichText.tsx / FlowDiagram.tsx / Reveal.tsx
+│       │   ├── NotificationBell.tsx / CvHistoryBell.tsx
+│       │   ├── SetRatingModelModal.tsx / RatingProviderConfirmModal.tsx / RequestModelModal.tsx
 │       │   ├── ManualJDModal.tsx / WelcomeModal.tsx / LimitContactModal.tsx / Modal.tsx (Overlay)
 │       │   ├── ProgressBar.tsx / StatTile.tsx      # shared dashboard/admin primitives
-│       │   └── Navbar.tsx / AuthPageShell.tsx / ThemeToggle.tsx / Logo.tsx
-│       ├── utils/profileCompleteness.ts  # Shared "what's still missing" check (Dashboard gating + Settings)
+│       │   └── Navbar.tsx (top bar + mobile bottom tabs) / AuthPageShell.tsx / LegalShell.tsx / ThemeToggle.tsx / Logo.tsx
+│       ├── hooks/                     # useIsMobile, useStores (Zustand auth)
+│       ├── utils/                     # profileCompleteness (Dashboard gating + Settings), jobLabels, theme, time
 │       └── api/                       # fetch-based client + API helpers
-├── docs/
-│   ├── build-status.md                # Handoff notes, done/remaining by feature
-│   └── apply-pack-workflow.md         # Draft → ATS → revise? → humanize, in detail
 ├── README.md
 ```
 
@@ -300,13 +316,20 @@ JobRadar/
 | GET | `/auth/me` | Current user profile |
 | POST/GET/DELETE | `/cv/upload`, `/cv/me` | Upload (PDF/DOCX/ODT/TXT/TeX), fetch, delete parsed CV |
 | GET/PATCH | `/users/preferences` | Get/update search preferences + about_me |
+| GET | `/users/faq` | Product FAQ list, or ranked answers with `?q=` (no LLM) |
+| GET | `/users/ai-models` | Active model catalog for the Settings picker (`purpose=rating\|apply_pack\|cv_parsing`) |
+| POST | `/users/rating-model-request` | Ask an admin for a model outside the catalog |
+| POST | `/users/calibration-notes/regenerate` | Rebuild the standing calibration notes from rating feedback |
+| GET/PUT/DELETE | `/users/cv-latex-template` (+ `/sample`) | Read, save, or remove a custom LaTeX CV template |
 | POST/GET/DELETE | `/users/skill-overrides[/{skill}]` | Per-skill candidate knowledge overrides |
 | GET | `/users/data-summary` / `/users/data-export` | What's stored / full JSON export |
-| GET/POST | `/users/notifications` / `/users/notifications/seen` | Notification bell feed / mark seen |
+| GET/POST | `/users/notifications`, `/notifications/seen`, `/notifications/dismiss` | Notification bell feed / mark seen / dismiss |
 | DELETE | `/users/account` | Permanently delete account + all jobs |
-| POST | `/crawler/search` | Run job discovery (Jooble + JobsAPI) |
+| POST | `/crawler/search` | Run job discovery (Jooble + JobsAPI + ATS boards) |
 | GET | `/crawler/status` | Crawl stats + quota fields |
 | GET | `/jobs` | List jobs (filters; `kanban=true` for pipeline board) |
+| GET | `/jobs/{id}` / DELETE `/jobs/{id}` | Fetch or delete one job |
+| GET | `/jobs/apply-packs` | Jobs with a currently ready apply pack (recent history, paged) |
 | POST | `/jobs/rate-all` | Rate all unrated jobs (background) |
 | POST | `/jobs/{id}/rate` | Re-rate a single job |
 | POST | `/jobs/{id}/rating-feedback` | Star rating (1-5) + comment on a job's AI rating |
@@ -321,7 +344,8 @@ JobRadar/
 | GET/POST | `/jobs/{id}/chat` | Per-job chat thread: rating Q&A, build-pack trigger, form answers, MASTER CV propose |
 | POST | `/users/cv/projects` / `/users/cv/experience` / `/users/cv/skills` | Accept a MASTER CV addition proposed in job chat |
 | GET/POST/PATCH/DELETE | `/{ADMIN_SECRET_PATH}/ai-models` | Manage the per-purpose (rating/apply_pack/cv_parsing) model catalog |
-| GET/PATCH/DELETE | `/{ADMIN_SECRET_PATH}/users[...]` | List, adjust access/limits, suspend/delete users |
+| GET/PATCH/DELETE | `/{ADMIN_SECRET_PATH}/users[...]` | List, adjust access (`/access`), suspend (`/suspend`), set model (`/model`), delete users |
+| GET | `/{ADMIN_SECRET_PATH}/usage/{user_id}` | Raw AI usage for one user (admin) |
 | GET | `/{ADMIN_SECRET_PATH}/ai-summary` | Platform-wide AI token/cost summary |
 | POST | `/{ADMIN_SECRET_PATH}/jobs/cleanup` | Admin: delete jobs for any user, scoped to `crawled_by` |
 
@@ -363,6 +387,8 @@ Everything is `.env`-driven - no model names are hardcoded. See `backend/.env.ex
 | `MONGO_URI` / `MONGO_HOST`+`MONGO_USER`+`MONGO_PASSWORD` | Connection (local, VPS-auth, or Atlas) |
 | `LLM_PROVIDER` | `ollama`, `xai` (Grok), `anthropic`, `mistral`, `openai`, `deepseek` |
 | `RATING_PROVIDER` / `RATING_MODEL` | Separate default for bulk rating (often Ollama to cut cost) |
+| `RATING_CONCURRENCY` | Jobs rated at once in bulk (default 4). Lower it if your rating provider returns 429s. Mistral is held to 1 regardless. |
+| `OPENAI_API_KEY` | **Required for embeddings** (cosine pre-filter, RAG), even if no chat model uses OpenAI |
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | Local models, no API bill |
 | `GROK_API_KEY` / `XAI_API_KEY` / `GROK_MODEL` | Grok via xAI |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | Claude |
@@ -372,7 +398,8 @@ Everything is `.env`-driven - no model names are hardcoded. See `backend/.env.ex
 | `FREE_SEARCH_LIMIT` / `FREE_RATING_LIMIT` / `FREE_DAILY_TOKEN_LIMIT` | Freemium caps (defaults: 3 / 10 / 250k). Apply-pack daily cap is in `limits.py`. |
 | `DEEPSEEK_API_KEY` | Optional. Without it, DeepSeek is hidden from Settings. |
 | `LANGSMITH_TRACING` / `LANGSMITH_API_KEY` / `LANGSMITH_PROJECT` | Optional per-call LLM tracing (prompt/response/latency/errors) |
-| `JOOBLE_API_KEY` / `JOBSAPI_KEY` | Job sources |
+| `JOOBLE_API_KEY` / `JOBSAPI_KEY` | Job sources (ATS boards need no key) |
+| `AUTO_CRAWL_INTERVAL_HOURS` / `AUTO_CRAWL_MAX_STORED_PER_CYCLE` | Background crawl + rate cadence (default 12h, 25 new jobs per user per cycle) |
 | `SMTP_*` | Optional - password reset + job reminder emails |
 
 ---
@@ -381,7 +408,7 @@ Everything is `.env`-driven - no model names are hardcoded. See `backend/.env.ex
 
 Intentional protections already in place: bcrypt password hashing, JWT with `token_version` invalidation and per-token expiry jitter (avoids many sessions expiring at the exact same instant), in-memory brute-force rate limiting on auth routes (only trusts `X-Forwarded-For` when the immediate peer is a loopback/private address, i.e. an actual local reverse proxy, not spoofable by a direct caller), all job routes scoped to `crawled_by == current user` (no IDOR), server-side admin email check, no email-enumeration on forgot-password, account deletion requires password re-entry, SSRF-guarded server-side URL fetch (rate-limited, 10/60s), atomic Mongo quota increments, `/docs` disabled when `DEBUG=false`, `.env` gitignored. Untrusted text handed to an LLM call (scraped job descriptions, uploaded CV text) is fenced (`services/prompt_safety.py`) with an explicit "this is data, not instructions" marker before being embedded in a prompt, applied at every LLM call site that embeds crawler-controlled or persisted text: main rating, apply-pack draft/critique/revision, the roast/fit-brief endpoints, calibration-notes summarization, and the apply-pack job title/company block. Every endpoint that calls an LLM checks the daily AI token quota first, including rating-feedback text cleanup and calibration-notes regeneration.
 
-**Known risks / product limits**: CV text and job descriptions go to whichever LLM the user picked (default Mistral EU). OpenAI is still used for embeddings. Contact details are redacted before the CV is sent; the rest of the CV is not. JWT in `localStorage`. Rate limits and in-flight apply-pack tasks are in-memory (one uvicorn process; a restart drops an in-flight generate). Apply-pack PDFs need Tectonic on the server. First pack can take several minutes on slow models (draft + ATS + revision). No formal DPA with any LLM provider. Not legal advice.
+**Known risks / product limits**: CV text and job descriptions go to whichever LLM the user picked (default Mistral EU). OpenAI is still used for embeddings. Contact details are redacted before the CV is sent; the rest of the CV is not. JWT in `localStorage`. Rate limits and in-flight apply-pack tasks are in-memory (one uvicorn process; a restart drops an in-flight generate). A failed rating (for example a provider 429 that outlasts the retries) shows as 0/10 until it is retried. Apply-pack PDFs need Tectonic on the server. First pack can take several minutes on slow models (draft + ATS + revision). No formal DPA with any LLM provider. Not legal advice.
 
 ---
 
@@ -393,11 +420,12 @@ Intentional protections already in place: bcrypt password hashing, JWT with `tok
 | **Backend framework** | FastAPI, Uvicorn, Pydantic v2, pydantic-settings |
 | **Auth & security** | bcrypt, PyJWT, email-validator |
 | **Database** | MongoDB, Motor (async driver) |
-| **AI / LLM** | LangChain, langchain-ollama, langchain-openai, langchain-xai, langchain-anthropic, langchain-community, FAISS, LangSmith |
+| **AI / LLM** | LangChain, langchain-ollama, langchain-openai, langchain-xai, langchain-anthropic, langchain-community, LangGraph (apply-pack pipeline), FAISS, LangSmith |
 | **LLM providers** | Ollama, Grok (xAI), Anthropic Claude, Mistral, OpenAI, DeepSeek. Rating / apply-pack / CV-parse picked separately for cost |
 | **CV file parsing** | PyMuPDF (`fitz`) for PDF, `python-docx` for Word, `odfpy` for OpenDocument |
-| **Job discovery** | Jooble API, JobsAPI (Indeed) |
+| **Job discovery** | Jooble API, JobsAPI (Indeed), Greenhouse / Lever / Ashby public feeds |
 | **Scheduling** | APScheduler |
+| **PDF** | Tectonic (server-side LaTeX compile) |
 | **Frontend framework** | React 18, Vite 5, React Router 6 |
 | **Frontend state & data** | TanStack Query, Zustand, native `fetch` |
 | **Frontend UI** | Hand-rolled CSS design system (spacing/type/radius tokens, light+dark), Lucide React icons, react-hot-toast, @dnd-kit (Kanban drag-and-drop) |

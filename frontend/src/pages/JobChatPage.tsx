@@ -418,7 +418,7 @@ export function JobChatPage() {
   const [metaOpen, setMetaOpen] = useState(false);
   const [showPasteJd, setShowPasteJd] = useState(false);
   const [pastedJobId, setPastedJobId] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
 
   const isMobileChat = useIsMobile(960);
 
@@ -508,9 +508,28 @@ export function JobChatPage() {
       (tokensLeft != null && dailyLimit > 0 && tokensLeft <= dailyLimit * 0.2) ||
       packsLeft <= 1);
 
+  // Scroll only the message list; scrollIntoView also moves the window and makes mobile jitter.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = messagesRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages.length, packBusy, chatQ.isFetching]);
+
+  // Mobile: lock page scroll and use the real nav height so the shell fits exactly.
+  useEffect(() => {
+    const root = document.documentElement;
+    const nav = document.querySelector<HTMLElement>(".nav");
+    const sync = () => {
+      if (nav) root.style.setProperty("--nav-h", `${nav.offsetHeight}px`);
+    };
+    root.classList.add("chat-lock");
+    sync();
+    window.addEventListener("resize", sync);
+    return () => {
+      root.classList.remove("chat-lock");
+      root.style.removeProperty("--nav-h");
+      window.removeEventListener("resize", sync);
+    };
+  }, []);
 
   const packReady = !!job?.apply_pack_ready;
 
@@ -1289,7 +1308,7 @@ export function JobChatPage() {
             Chatting about <strong>{job?.title || "this role"}</strong>
             {job?.company ? ` · ${job.company}` : ""}
           </div>
-          <div className="job-chat-messages">
+          <div className="job-chat-messages" ref={messagesRef}>
             {messages.map((m, i) => {
               const isUser = m.role === "user";
               return (
@@ -1389,7 +1408,6 @@ export function JobChatPage() {
                 </div>
               </div>
             )}
-            <div ref={bottomRef} />
           </div>
           <div className="job-chat-composer">
             <div className="job-chat-composer-box">

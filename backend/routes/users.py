@@ -61,6 +61,7 @@ class UserPreferences(BaseModel):
     secondary_roles: list[str] = []
     job_types: JobTypes = JobTypes()
     min_salary: int = 0
+    use_salary_in_rating: bool = False  # opt-in: rating may weigh min_salary
     key_skills: list[str] = []
     experience_level: str = "mid"
     nationality: str = ""
@@ -72,13 +73,13 @@ class UserPreferences(BaseModel):
     work_mode: WorkMode = WorkMode()
     about_me: str = ""  # user's own notes, never overwritten by CV parse
     about_me_from_cv: str = ""  # CV summary, refreshed on each upload
-    showcase_projects: list[str] = (
-        []
-    )  # flagship work to lead tailored CVs, any user's list
+    showcase_projects: list[
+        str
+    ] = []  # flagship work to lead tailored CVs, any user's list
     email_reminders_enabled: bool = True  # daily high-score apply nudges via SMTP
-    reminder_hours: list[int] = (
-        []
-    )  # local hours (0-23) to send reminders; [] = app default (see job_reminders.py)
+    reminder_hours: list[
+        int
+    ] = []  # local hours (0-23) to send reminders; [] = app default (see job_reminders.py)
     timezone: str = ""  # IANA tz; empty = UTC until they pick one in Settings
     # "" = app default. Otherwise must match an active entry in the
     # admin-managed AI model catalog (services/ai_models.py), validated in
@@ -154,6 +155,7 @@ async def update_preferences(payload: UserPreferences, user=Depends(get_current_
         "secondary_roles": prefs["secondary_roles"],
         "job_types": prefs["job_types"],
         "min_salary": prefs["min_salary"],
+        "use_salary_in_rating": prefs["use_salary_in_rating"],
         "key_skills": prefs["key_skills"],
         "experience_level": prefs["experience_level"],
         "nationality": prefs["nationality"],
@@ -239,6 +241,7 @@ async def get_preferences(user=Depends(get_current_user)):
         "secondary_roles": user.get("secondary_roles", []),
         "job_types": user.get("job_types", {}),
         "min_salary": user.get("min_salary", 0),
+        "use_salary_in_rating": bool(user.get("use_salary_in_rating", False)),
         "key_skills": user.get("key_skills", []),
         "experience_level": user.get("experience_level", "mid"),
         "nationality": user.get("nationality", ""),

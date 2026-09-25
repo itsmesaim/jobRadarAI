@@ -111,6 +111,7 @@ export interface UserPreferences {
     graduate: boolean;
   };
   min_salary: number;
+  use_salary_in_rating?: boolean;
   key_skills: string[];
   experience_level: "junior" | "mid" | "senior";
   nationality: string;

@@ -67,6 +67,7 @@ const DEFAULT_PREFS: UserPreferences = {
     graduate: false,
   },
   min_salary: 0,
+  use_salary_in_rating: false,
   key_skills: [],
   experience_level: "mid",
   nationality: "",
@@ -1572,7 +1573,7 @@ export function SettingsPage() {
               {/* Minimum salary */}
               <Section
                 title="Minimum salary"
-                subtitle="Jobs below this are flagged. Pick the currency that matches your target market."
+                subtitle="Only used when the option below is on. Pick the currency that matches your target market."
               >
                 <div
                   style={{
@@ -1639,6 +1640,23 @@ export function SettingsPage() {
                     is good in UAE (tax-free, higher real value than EUR equivalent).
                   </p>
                 </div>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginTop: "var(--space-3)",
+                    fontSize: "var(--text-sm)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!localPrefs.use_salary_in_rating}
+                    onChange={(e) => update({ use_salary_in_rating: e.target.checked })}
+                  />
+                  Use my minimum salary when rating (jobs that state lower pay score lower)
+                </label>
               </Section>
 
               {/* Skill overrides */}
