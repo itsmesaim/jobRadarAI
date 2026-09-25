@@ -5418,3 +5418,50 @@
     }
   }
 }
+
+/* Touch devices. Unlayered on purpose so it wins over the layered desktop rules above. */
+@media (hover: none) and (pointer: coarse) {
+  html {
+    scroll-behavior: auto;
+    overscroll-behavior-y: contain; /* no accidental pull-to-refresh while scrolling up */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Cards, chips and tags are tap targets, not reading text. Selectable text here makes
+     Chrome open its "Tap to Search" panel (e.g. tapping "React"). */
+  .job-card,
+  .badge,
+  .chip,
+  .kanban-card,
+  .kanban-mobile-card,
+  button,
+  a {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* :hover sticks after a tap on touch screens and makes cards jump. */
+  .card-hover:hover,
+  .job-card:hover,
+  .dash-metric.is-clickable:hover {
+    transform: none;
+  }
+
+  .job-card:active {
+    background: var(--bg-hover);
+  }
+
+  /* Blurring what is behind a sticky bar is costly to repaint on every scroll frame. */
+  .nav,
+  .landing-nav {
+    backdrop-filter: none;
+    background: var(--bg-card);
+  }
+
+  /* Native overlay scrollbars only; the 6px desktop bars look broken on phones. */
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
