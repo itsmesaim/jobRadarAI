@@ -38,3 +38,8 @@ export function prettyRatedBy(raw?: string | null): string {
   const prov = provider.charAt(0).toUpperCase() + provider.slice(1);
   return stripped ? `${prov} ${stripped}` : prov;
 }
+
+/** Only http(s) links may be rendered as hrefs; a saved javascript: URL would run on click. */
+export function safeHttpUrl(url?: string | null): string {
+  return /^https?:\/\//i.test(url || "") ? (url as string) : "";
+}

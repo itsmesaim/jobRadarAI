@@ -37,10 +37,7 @@ _REFUSE_TEXT = (
     "**Next:** pick one of the options above."
 )
 
-_RETRY_TEXT = (
-    "I could not finish that reply. Please try again in a moment, "
-    "or use **Re-rate** / **Build CV + cover** from Tools."
-)
+_RETRY_TEXT = "I could not finish that reply. Please try again in a moment."
 
 _UNCLEAR_TEXT = (
     "I am not sure what you need yet.\n\n"

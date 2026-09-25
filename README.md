@@ -182,7 +182,7 @@ Accepts PDF, Word (`.docx`), OpenDocument (`.odt`), plain text, and LaTeX (max 5
 Settings (tabs: Profile & CV, Job search, AI & usage, Account. Notification and Data & privacy sections sit inside those tabs) captures target roles, locations, experience, work mode, salary floor, key skills, nationality, visa/permit, work authorization, flagship projects, timezone, and `about_me`. Empty location/role prefs do **not** fall back to Dublin or "Full Stack". Timezone defaults to the browser (UTC if missing). `about_me` and rating-feedback comments go through `text_cleanup.py` on save. Nationality + visa status feed sponsorship/visa auto-reject: the LLM reasons per nationality/country pair, no Ireland-only table. Search location is not treated as work authorization (searching Germany does not claim a German visa).
 
 ### 4. Job Discovery
-`POST /crawler/search` runs **Jooble**, **JobsAPI (Indeed)** and the **company ATS boards** in parallel. ATS boards are Greenhouse, Lever and Ashby feeds the user adds in Settings (a board URL or `ats:slug`, up to 40); they need no API key. Every job is deduplicated by SHA-256 of its URL, scoped per user. A background scheduler also crawls and rates for each user every 12 hours (`AUTO_CRAWL_INTERVAL_HOURS`, at most 25 new jobs per user per cycle, split across the sources) and emails apply reminders for high scores when SMTP is set. You can also paste a job description directly (**Paste JD**) via URL-fetch or manual text.
+`POST /crawler/search` runs **Jooble**, **JobsAPI (Indeed)** and the **company ATS boards** in parallel. ATS boards are Greenhouse, Lever and Ashby feeds the user adds in Settings (a board URL or `ats:slug`, up to 40); they need no API key. Every job is deduplicated by SHA-256 of its URL, scoped per user. A background scheduler also crawls and rates for each user every 12 hours (`AUTO_CRAWL_INTERVAL_HOURS`, at most 25 new jobs per user per cycle, split across the sources) and emails apply reminders for high scores when SMTP is set. You can also paste a job description directly (**Paste JD**): paste the whole job page and the title, company, location, pay and any visa-sponsorship wording are filled in for you (`services/jd_extract.py`). Regex rules run first and cost nothing; the LLM is only asked for title and company when the rules miss them and the user still has token quota. Pasted text is treated as untrusted: it is fenced in every LLM prompt, extracted values are capped and stripped of control characters, and only http(s) links are ever rendered as links.
 
 ### 5. AI Rating - prefilter, RAG, and calibration
 - **No LLM call** for a missing CV or too-short JD text (score 0, not billed). Salary is ignored unless the user turns on "Use my minimum salary when rating" in Settings; then the minimum goes into the prompt as a soft constraint and only jobs that state clearly lower pay lose points.
@@ -271,6 +271,7 @@ JobRadar/
 │       ├── ai_models.py               # Admin-managed catalog per purpose (rating/apply_pack/cv_parsing)
 │       ├── job_dedup.py               # URL hashing + content-fingerprint dedup
 │       ├── jd_text.py                 # Incomplete-JD detection, URL enrichment
+│       ├── jd_extract.py              # Title/company/pay/visa extraction from pasted pages (rules, LLM fallback)
 │       ├── url_fetch.py               # SSRF-safe server-side JD URL fetch
 │       ├── prompt_safety.py           # Fences untrusted JD/CV text before it hits an LLM prompt
 │       ├── limits.py                  # Search/rating/token quotas + admin overrides
@@ -333,7 +334,8 @@ JobRadar/
 | POST | `/jobs/rate-all` | Rate all unrated jobs (background) |
 | POST | `/jobs/{id}/rate` | Re-rate a single job |
 | POST | `/jobs/{id}/rating-feedback` | Star rating (1-5) + comment on a job's AI rating |
-| POST | `/jobs/manual` | Add & rate a pasted JD (also the paste-JD-from-chat endpoint) |
+| POST | `/jobs/parse-text` | Read title, company, location, pay and visa hints from a whole pasted job page. Rules first (free); one small LLM call only if title or company is still missing |
+| POST | `/jobs/manual` | Add & rate a pasted JD (also the paste-JD-from-chat endpoint). Fields are length-capped and the URL must be http(s) |
 | POST | `/jobs/fetch-url` | Server-side JD URL fetch (SSRF-guarded) |
 | GET | `/jobs/{id}/brief` | Zero-LLM handoff doc (fit summary + CV + JD + LaTeX boilerplate) to paste into your own AI chat |
 | GET | `/jobs/{id}/apply-pack` | Generate tailored CV + cover letter (SSE) through the draft → ATS → revise? → humanize graph. Cached until re-rate or CV change. `?regenerate=true`, optional `part=cv\|cover` + `note=` |

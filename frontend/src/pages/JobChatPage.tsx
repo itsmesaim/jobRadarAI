@@ -30,11 +30,12 @@ import { ManualJDModal } from "../components/ManualJDModal";
 import { useAuthStore } from "../hooks/useStores";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { FaqRichText } from "../components/FaqRichText";
-import { prettyRatedBy, sourceLabel } from "../utils/jobLabels";
+import { prettyRatedBy, safeHttpUrl, sourceLabel } from "../utils/jobLabels";
 import { fullDate, timeAgo } from "../utils/time";
 import type { AiModelCatalogEntry, Job, MasterCvProposal, UserPreferences } from "../types";
 
-type ChatAction = "download_cv" | "download_cover" | "copy_pack" | "rebuild_pack";
+type ChatAction =
+  "download_cv" | "download_cover" | "copy_pack" | "rebuild_pack" | "apply" | "rerate";
 
 type ChatMsg = {
   role: string;
@@ -58,16 +59,25 @@ const HELP_CHIPS = [
   },
   { label: "CV tips", text: "How should I tailor my CV for this role using only my MASTER CV?" },
   { label: "Cover tips", text: "What should the cover letter emphasize for this job?" },
+  { label: "Where to apply", text: "Where do I apply for this job?" },
   { label: "How to use JobRadar", text: "How do I use JobRadar?" },
   { label: "Who built this?", text: "Who built JobRadar?" },
   { label: "What is a MASTER CV?", text: "What is a MASTER CV and how should I write mine?" },
 ];
 
-type ChatIntent = "build_pack" | "rerate" | "chat";
+type ChatIntent = "build_pack" | "rerate" | "apply_link" | "chat";
 
 function detectIntent(text: string): ChatIntent {
   const t = text.toLowerCase().trim();
   if (/\b(re-?rate|rate (again|this|it|me)|score (again|this))\b/.test(t)) return "rerate";
+  // Answered locally from job.url, so no LLM call and no re-rate or rebuild.
+  if (
+    !/\b(cv|resume|cover|pack|letter)\b/.test(t) &&
+    (/\b(where|how)\b.{0,30}\b(apply|application)\b/.test(t) ||
+      /\b(apply|application) (link|url|page)\b|\blink to apply\b/.test(t))
+  ) {
+    return "apply_link";
+  }
   if (
     /\b(build|make|generate|create|rebuild|write|draft).{0,48}(cv|resume|cover|apply\s*pack|letter)\b/.test(
       t,
@@ -453,6 +463,7 @@ export function JobChatPage() {
 
   const prefs = prefsQ.data;
   const job = jobQ.data;
+  const applyUrl = safeHttpUrl(job?.url);
   const storedMessages: ChatMsg[] = chatQ.data?.messages || [];
   const usage = statusQ.data;
 
@@ -713,8 +724,7 @@ export function JobChatPage() {
       // Soft retry - not a roast
       pushLocalThread(message, {
         role: "assistant",
-        content:
-          "Couldn't finish that reply just now. Try again, or use Re-rate / Build CV + cover.",
+        content: "Couldn't finish that reply just now. Please try again in a moment.",
         at: new Date().toISOString(),
       });
       setShowRefuseChips(false);
@@ -781,6 +791,32 @@ export function JobChatPage() {
         at: new Date().toISOString(),
       });
       void runPack(false, false);
+      return;
+    }
+    if (intent === "apply_link") {
+      pushLocalThread(text, {
+        role: "assistant",
+        content: applyUrl
+          ? "Use the **Apply here** button below to open the employer's page. Nothing was re-rated or rebuilt.\n\n" +
+            "**Next:** build the CV + cover if you have not yet, then apply."
+          : "This listing has no apply link saved. Open it from the source you found it on.",
+        at: new Date().toISOString(),
+        actions: applyUrl ? ["apply"] : undefined,
+      });
+      return;
+    }
+    if (intent === "rerate" && job?.score != null) {
+      // Re-rating spends a daily rating and rarely changes the score unless the CV,
+      // preferences or model changed, so ask before spending it.
+      pushLocalThread(text, {
+        role: "assistant",
+        content:
+          `This job is already rated **${job.score}/10**. Nothing was spent.\n\n` +
+          "Re-rating uses one of your daily ratings and only changes the result if you updated your CV, preferences or model since.\n\n" +
+          "**Next:** re-rate only if one of those changed, otherwise ask a follow-up.",
+        at: new Date().toISOString(),
+        actions: ["rerate"],
+      });
       return;
     }
     if (intent === "rerate") {
@@ -1041,10 +1077,10 @@ export function JobChatPage() {
           )}
         </div>
         {score != null && <span className={`job-chat-score${scoreClass(score)}`}>{score}/10</span>}
-        {job?.url ? (
+        {applyUrl ? (
           <a
             className="btn btn-primary job-chat-apply job-chat-apply--desktop"
-            href={job.url}
+            href={applyUrl}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -1160,7 +1196,10 @@ export function JobChatPage() {
           <button
             type="button"
             className="btn btn-secondary job-chat-paste-jd"
-            onClick={() => setShowPasteJd(true)}
+            onClick={() => {
+              setDrawerOpen(false); // the modal sits below the Tools panel, so close it first
+              setShowPasteJd(true);
+            }}
           >
             <Plus size={14} /> Paste JD → new job
           </button>
@@ -1240,10 +1279,10 @@ export function JobChatPage() {
             </button>
           ))}
           <div className="job-chat-actions">
-            {job?.url ? (
+            {applyUrl ? (
               <a
                 className="btn btn-primary job-chat-apply-drawer"
-                href={job.url}
+                href={applyUrl}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -1332,6 +1371,33 @@ export function JobChatPage() {
                     {m.proposal && <MasterCvProposalCard proposal={m.proposal} />}
                     {!!m.actions?.length && (
                       <div className="job-chat-inline-chips">
+                        {m.actions.includes("apply") && applyUrl && (
+                          <a
+                            className="chip chip-primary"
+                            href={applyUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Apply here
+                          </a>
+                        )}
+                        {m.actions.includes("rerate") && (
+                          <button
+                            type="button"
+                            className="chip"
+                            disabled={rateMutation.isPending}
+                            onClick={() => {
+                              pushLocalThread("", {
+                                role: "assistant",
+                                content: "Re-rating this job with your current rating model…",
+                                at: new Date().toISOString(),
+                              });
+                              rateMutation.mutate();
+                            }}
+                          >
+                            Re-rate anyway
+                          </button>
+                        )}
                         {m.actions.includes("download_cv") && (
                           <button
                             type="button"
