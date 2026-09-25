@@ -210,7 +210,9 @@ def suggested_tex_filename(user: dict, job: dict) -> str:
     """First_Last_Company_Role.tex, same stem convention as the PDF."""
     structured = (user.get("cv") or {}).get("structured") or {}
     words = (structured.get("name") or user.get("name") or "Candidate").split()
-    name_part = _slug_part("_".join(words[:1] + words[-1:] if len(words) > 1 else words), 30)
+    name_part = _slug_part(
+        "_".join(words[:1] + words[-1:] if len(words) > 1 else words), 30
+    )
     company = _slug_part(job.get("company") or "Company", 20)
     role = _slug_part(job.get("title") or "Role", 40)
     return f"{name_part}_{company}_{role}.tex"

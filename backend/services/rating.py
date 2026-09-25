@@ -1720,7 +1720,9 @@ async def generate_job_brief(job: dict, user: dict, rating: dict) -> str:
             "via 'Paste JD' or open the URL and re-rate.\n\n"
         )
 
-    if not jd_warning and (len(jd_body.strip()) < 800 or jd_body.rstrip().endswith(("...", "…"))):
+    if not jd_warning and (
+        len(jd_body.strip()) < 800 or jd_body.rstrip().endswith(("...", "…"))
+    ):
         jd_warning = (
             "⚠️  JD SNIPPET (partial): the stored description looks like a truncated preview. "
             "Fit score, structural mismatch, and location/work-authorization are UNVERIFIED "
