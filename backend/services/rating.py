@@ -563,6 +563,14 @@ def _build_constraints_block(user: dict) -> str:
     ]
     if avoid_industries:
         lines.append(f"Industries to avoid: {', '.join(avoid_industries)}")
+    # Opt-in only: the candidate asked for salary to count when rating.
+    min_salary = user.get("min_salary", 0) or 0
+    if user.get("use_salary_in_rating") and min_salary > 0:
+        lines.append(
+            f"Minimum salary: {min_salary} per year (currency not stated). Lower the "
+            "score only when the JD states pay that is clearly below this in a "
+            "comparable currency. If no pay is listed, ignore salary."
+        )
 
     return "\n".join(lines)
 
@@ -727,20 +735,8 @@ def _should_skip_rating(job: dict, user_id: str) -> bool:
 
 @traceable(name="rate_job_for_user", run_type="chain")
 async def rate_job_for_user(job: dict, user: dict) -> dict:
-    disqualified, reason = hard_disqualify(
-        parse_comp_max(job.get("salary_text", "")),
-        salary_ceiling=user.get("min_salary", 0) or 0,
-    )
-    if disqualified:
-        return {
-            "score": 1,
-            "matched_strengths": [],
-            "gaps": [reason],
-            "verdict": f"Hard filter: {reason}",
-            "auto_reject": True,
-            "structural_mismatch": True,
-        }
-
+    # Salary is not used to score or reject jobs; hard_disqualify() is kept only
+    # for scripts/diagnose_matching.py.
     cv = user.get("cv", {})
     if not cv:
         return {
@@ -876,7 +872,7 @@ Education: {json.dumps(structured.get("education", []))}
                     raise
                 # exponential covers per-minute limits better when the
                 # provider doesn't name a wait time in its error.
-                wait_s = _retry_after_seconds(e, default=1.5 * (2 ** (attempt - 1)))
+                wait_s = _retry_after_seconds(e, default=4.0 * (2 ** (attempt - 1)))
                 print(
                     f"[rating] rate limited (attempt {attempt}/{max_attempts}, "
                     f"provider={provider_label} model={model_label}), retrying in {wait_s:.2f}s"
@@ -948,7 +944,7 @@ Education: {json.dumps(structured.get("education", []))}
             f"[rating] [job] LLM invoke provider={provider} model={model} cost_multiplier={cost_multiplier}"
         )
         result = await _try_structured(
-            llm, provider, str(model), max_attempts=3, cost_multiplier=cost_multiplier
+            llm, provider, str(model), max_attempts=5, cost_multiplier=cost_multiplier
         )
         used_by = f"{provider}:{model}"
 
@@ -1036,6 +1032,8 @@ Education: {json.dumps(structured.get("education", []))}
 # on your provider's tokens-per-minute limit, every call now sends the full
 # rating prompt (no cheap first pass), so this is what controls burst TPM.
 RATING_CONCURRENCY = settings.rating_concurrency
+# Providers with strict rate limits get a lower cap than RATING_CONCURRENCY.
+PROVIDER_CONCURRENCY_CAP = {"mistral": 1}
 
 # Embedding similarity threshold (cosine).
 # Jobs below this get a cheap low score (no full LLM call) to save tokens on irrelevant results from broad search.
@@ -1447,7 +1445,14 @@ async def rate_all_jobs_for_user(user: dict, queue_filter: dict | None = None) -
             f"[rating] EMBEDDING_SIMILARITY_CUTOFF={EMBEDDING_SIMILARITY_CUTOFF} (jobs below this get cheap pre-filter, no LLM call)"
         )
 
-    sem = asyncio.Semaphore(RATING_CONCURRENCY)
+    provider = (
+        user.get("rating_provider") or settings.rating_provider or settings.llm_provider
+    )
+    concurrency = min(
+        RATING_CONCURRENCY, PROVIDER_CONCURRENCY_CAP.get(provider, RATING_CONCURRENCY)
+    )
+    print(f"[rating] concurrency={concurrency} (provider={provider})")
+    sem = asyncio.Semaphore(concurrency)
 
     prefilter_count = 0
     llm_count = 0

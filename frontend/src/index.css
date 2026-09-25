@@ -1648,6 +1648,17 @@
   }
 
   @media (max-width: 960px) {
+    html.chat-lock,
+    html.chat-lock body {
+      overflow: hidden;
+      overscroll-behavior: none;
+    }
+
+    .job-chat-messages {
+      overscroll-behavior: contain;
+      overflow-anchor: none;
+    }
+
     /* Mobile chat: full height under top nav; reserve bottom tabs below 640px */
     .job-chat-shell {
       position: relative;
@@ -1903,6 +1914,15 @@
 
     .job-chat-inspector.is-open {
       transform: translateY(0);
+    }
+
+    /* Closed panels sit above the tab bar (bottom: 64px), so 110% still peeks out; hide fully. */
+    .job-chat-inspector:not(.is-open),
+    .job-chat-rail:not(.is-open) {
+      visibility: hidden;
+      transition:
+        transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+        visibility 0s 0.22s;
     }
 
     .job-chat-sheet-handle {
