@@ -18,7 +18,6 @@ from services.job_dedup import content_fingerprint, find_duplicate_job, hash_url
 
 BASE_URL = "https://jobs-api14.p.rapidapi.com"
 MIN_CONTENT_LENGTH = MIN_JD_LENGTH
-MAX_JOB_AGE_DAYS = 21
 
 
 def _build_search_terms(user: dict) -> list[str]:
@@ -289,7 +288,7 @@ async def crawl_jobs_for_user_jobsapi(
                                 str(posted).replace("Z", "+00:00")
                             )
                             if posted_dt < datetime.now(timezone.utc) - timedelta(
-                                days=MAX_JOB_AGE_DAYS
+                                days=settings.max_job_age_days
                             ):
                                 skipped += 1
                                 continue
