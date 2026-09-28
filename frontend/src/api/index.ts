@@ -323,8 +323,8 @@ export const jobsApi = {
   downloadApplyPackCoverLetter: (id: string) =>
     downloadFile(`/jobs/${id}/apply-pack/cover-letter.pdf`, "cover-letter.pdf"),
 
-  hide: async (id: string) => {
-    const res = await api.delete(`/jobs/${id}`);
+  hide: async (id: string, reason?: "too_senior" | "location" | "salary" | "other") => {
+    const res = await api.delete(`/jobs/${id}`, { params: reason ? { reason } : undefined });
     return res.data;
   },
 

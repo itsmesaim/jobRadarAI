@@ -1611,8 +1611,26 @@ async def get_job(job_id: str, user=Depends(get_current_user)):
     return result
 
 
+# Reuses the rating_feedback pipeline (services/calibration.py) so a hide
+# reason becomes calibration signal exactly like a typed comment would, no
+# separate collector needed. "too_senior" is the one the LLM prompt can't
+# infer on its own (freelance/junior mismatches are already handled in the
+# rating prompt itself, see services/rating.py Step 1.5).
+_HIDE_REASON_COMMENTS = {
+    "too_senior": "Hid this job: role is too senior for me.",
+    "location": "Hid this job: wrong location.",
+    "salary": "Hid this job: salary too low.",
+    "other": "Hid this job: not a fit.",
+}
+
+
 @router.delete("/{job_id}")
-async def hide_job(job_id: str, user=Depends(get_current_user)):
+async def hide_job(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    reason: Literal["too_senior", "location", "salary", "other"] | None = None,
+    user=Depends(get_current_user),
+):
     db = get_database()
     user_id = str(user["_id"])
 
@@ -1628,9 +1646,15 @@ async def hide_job(job_id: str, user=Depends(get_current_user)):
         await db.jobs.delete_one({"_id": ObjectId(job_id)})
         return {"message": "Job deleted."}
 
-    await db.jobs.update_one(
-        {"_id": ObjectId(job_id)}, {"$set": {f"hidden_{user_id}": True}}
-    )
+    update: dict = {f"hidden_{user_id}": True}
+    if reason:
+        # ponytail: overwrites any earlier rating-feedback comment on this job,
+        # last reason wins. Fine in practice, nobody leaves feedback then hides.
+        update[f"rating_feedback.{user_id}.comment"] = _HIDE_REASON_COMMENTS[reason]
+        update[f"rating_feedback.{user_id}.created_at"] = datetime.now(timezone.utc)
+    await db.jobs.update_one({"_id": ObjectId(job_id)}, {"$set": update})
+    if reason:
+        background_tasks.add_task(regenerate_calibration_notes, user_id)
     return {"message": "Job hidden."}
 
 
