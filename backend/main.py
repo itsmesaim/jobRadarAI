@@ -7,7 +7,7 @@ Run from inside the backend/ folder:
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -217,4 +217,8 @@ async def root():
 
 @app.get("/health", tags=["health"])
 async def health():
+    try:
+        await get_database().command("ping")
+    except Exception:
+        raise HTTPException(status_code=503, detail="database unavailable")
     return {"status": "healthy"}

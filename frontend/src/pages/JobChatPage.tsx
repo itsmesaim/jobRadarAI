@@ -998,11 +998,52 @@ export function JobChatPage() {
     return `${prefs.apply_pack_provider}::${prefs.apply_pack_model || ""}`;
   }, [prefs]);
 
+  const pasteJdModal = showPasteJd && (
+    <ManualJDModal
+      canRate={!isFull ? ratingsLeft > 0 : true}
+      ratingsRemaining={ratingsLeft}
+      onLimitReached={setLimitKind}
+      onClose={() => {
+        setShowPasteJd(false);
+        if (pastedJobId) {
+          const id = pastedJobId;
+          setPastedJobId(null);
+          navigate(`/jobs/${id}`);
+        }
+      }}
+      onAdded={(id) => {
+        setPastedJobId(id ?? null);
+        queryClient.invalidateQueries({ queryKey: ["jobs"] });
+        queryClient.invalidateQueries({ queryKey: ["crawl-status"] });
+      }}
+    />
+  );
+
   if (jobQ.isError) {
+    const status = (jobQ.error as { response?: { status?: number } })?.response?.status;
+    const notMine = status === 404 || status === 400;
     return (
       <div className="page-shell">
-        <p>Job not found.</p>
+        {notMine ? (
+          <>
+            <p>
+              This job isn&apos;t on your account. Job links are private to the account that added
+              it.
+            </p>
+            <button type="button" onClick={() => setShowPasteJd(true)}>
+              Paste JD to add it
+            </button>
+          </>
+        ) : (
+          <>
+            <p>Couldn&apos;t load this job.</p>
+            <button type="button" onClick={() => jobQ.refetch()}>
+              Try again
+            </button>
+          </>
+        )}
         <Link to="/">Back to jobs</Link>
+        {pasteJdModal}
       </div>
     );
   }
@@ -1527,26 +1568,7 @@ export function JobChatPage() {
       </div>
 
       {limitKind && <LimitContactModal kind={limitKind} onClose={() => setLimitKind(null)} />}
-      {showPasteJd && (
-        <ManualJDModal
-          canRate={!isFull ? ratingsLeft > 0 : true}
-          ratingsRemaining={ratingsLeft}
-          onLimitReached={setLimitKind}
-          onClose={() => {
-            setShowPasteJd(false);
-            if (pastedJobId) {
-              const id = pastedJobId;
-              setPastedJobId(null);
-              navigate(`/jobs/${id}`);
-            }
-          }}
-          onAdded={(id) => {
-            setPastedJobId(id ?? null);
-            queryClient.invalidateQueries({ queryKey: ["jobs"] });
-            queryClient.invalidateQueries({ queryKey: ["crawl-status"] });
-          }}
-        />
-      )}
+      {pasteJdModal}
     </div>
   );
 }
