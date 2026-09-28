@@ -164,13 +164,13 @@ export function ManualJDModal({
   };
 
   return (
-    <Overlay zIndex={50} dim={0.5}>
+    <Overlay dim={0.5}>
       <div
         className="card"
         style={{
           width: "100%",
           maxWidth: 560,
-          maxHeight: "90vh",
+          maxHeight: "90dvh",
           overflow: "auto",
         }}
       >

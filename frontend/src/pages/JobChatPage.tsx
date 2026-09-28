@@ -1133,7 +1133,10 @@ export function JobChatPage() {
           type="button"
           className="job-chat-menu-btn"
           aria-label="Open tools menu"
-          onClick={() => setDrawerOpen(true)}
+          onClick={() => {
+            setSheetOpen(false);
+            setDrawerOpen(true);
+          }}
         >
           <PanelLeft size={20} />
         </button>
@@ -1237,10 +1240,7 @@ export function JobChatPage() {
           <button
             type="button"
             className="btn btn-secondary job-chat-paste-jd"
-            onClick={() => {
-              setDrawerOpen(false); // the modal sits below the Tools panel, so close it first
-              setShowPasteJd(true);
-            }}
+            onClick={() => setShowPasteJd(true)}
           >
             <Plus size={14} /> Paste JD → new job
           </button>
