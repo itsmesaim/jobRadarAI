@@ -110,6 +110,8 @@ class Settings(BaseSettings):
 
     jooble_api_key: str = ""
     jobsapi_key: str = ""
+    # Skip crawled jobs older than this many days.
+    max_job_age_days: int = 14
 
     # Auto scheduler (search + rate every N hours in background)
     auto_crawl_interval_hours: int = 12

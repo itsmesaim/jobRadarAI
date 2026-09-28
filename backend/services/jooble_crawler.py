@@ -19,13 +19,11 @@ from services.cv_parser import flatten_skills, search_skills_from_cv
 from services.job_dedup import content_fingerprint, hash_url, job_exists_for_user
 
 JOOBLE_BASE = "https://jooble.org/api"
-MAX_JOB_AGE_DAYS = 21
 
-# Jooble's own index lags behind the source site - a listing can be "updated"
-# recently in Jooble while the actual posting was pulled. Since expired
-# postings on most boards redirect (200 OK) to a generic page instead of
-# 404ing, an HTTP 200 alone doesn't mean the job is still live - check the
-# scraped page for the phrases boards use on that fallback page.
+# "updated" is Jooble's index refresh time, not the real posting date - use it
+# for the staleness filter below but never as posted_at.
+# Expired postings on most boards redirect (200 OK) to a generic page instead
+# of 404ing, so check the scraped page for that fallback page's phrases.
 _DEAD_LISTING_MARKERS = (
     "no longer available",
     "no longer accepting applications",
@@ -164,7 +162,7 @@ async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) 
 
                     url_hash = hash_url(url)
 
-                    # date filter - skip older than 21 days
+                    # skip if Jooble hasn't touched this listing in a while
                     updated_str = job.get("updated", "")
                     if updated_str:
                         try:
@@ -172,7 +170,7 @@ async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) 
                                 updated_str.replace("Z", "+00:00")
                             )
                             if job_date < datetime.now(timezone.utc) - timedelta(
-                                days=MAX_JOB_AGE_DAYS
+                                days=settings.max_job_age_days
                             ):
                                 skipped += 1
                                 continue
@@ -200,16 +198,9 @@ async def crawl_jobs_for_user_jooble(user: dict, max_stored: int | None = None) 
                         skipped += 1
                         continue
 
-                    # Jooble often has "updated" as posted/refresh date
+                    # No true posted date from Jooble, leave unset so the UI
+                    # falls back to "Pulled" (crawled_at) instead of faking it.
                     posted_at = None
-                    updated = job.get("updated") or job.get("created")
-                    if updated:
-                        try:
-                            posted_at = datetime.fromisoformat(
-                                str(updated).replace("Z", "+00:00")
-                            ).isoformat()
-                        except Exception:
-                            posted_at = None
 
                     doc = {
                         "title": title,
