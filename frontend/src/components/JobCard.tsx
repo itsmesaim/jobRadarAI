@@ -4,6 +4,7 @@ import { ExternalLink, Building2, MapPin, EyeOff, MessageSquare, Clock } from "l
 import toast from "react-hot-toast";
 import { ScoreBadge } from "./ScoreBadge";
 import { RejectReasonModal } from "./RejectReasonModal";
+import { HideReasonModal, type HideReason } from "./HideReasonModal";
 import { jobsApi } from "../api/index";
 import type { Job, JobStatus, Props } from "../types";
 import { timeAgo } from "../utils/time";
@@ -90,6 +91,7 @@ function cleanTitle(job: Job): string {
 export function JobCard({ job, onStatusChange, onHidden }: Props) {
   const navigate = useNavigate();
   const [showRejectPrompt, setShowRejectPrompt] = useState(false);
+  const [showHidePrompt, setShowHidePrompt] = useState(false);
   const openChat = () => navigate(`/jobs/${job.id}`);
 
   const [currentStatus, setCurrentStatus] = useState<JobStatus>(job.status);
@@ -129,10 +131,9 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
     }
   };
 
-  const handleHide = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleHide = async (reason: HideReason | null) => {
     try {
-      await jobsApi.hide(job.id);
+      await jobsApi.hide(job.id, reason ?? undefined);
       toast.success("Job removed from your list");
       onHidden?.();
     } catch {
@@ -460,7 +461,10 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
 
           <div className="job-card-footer-actions">
             <button
-              onClick={handleHide}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowHidePrompt(true);
+              }}
               className="btn btn-ghost job-card-icon-btn"
               title="Remove from list"
             >
@@ -492,6 +496,16 @@ export function JobCard({ job, onStatusChange, onHidden }: Props) {
                 // Optional note, not worth surfacing an error for.
               }
             }
+          }}
+        />
+      )}
+
+      {showHidePrompt && (
+        <HideReasonModal
+          jobTitle={title}
+          onSubmit={(reason) => {
+            setShowHidePrompt(false);
+            handleHide(reason);
           }}
         />
       )}
