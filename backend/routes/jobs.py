@@ -1346,8 +1346,8 @@ async def get_apply_pack_cv_pdf(job_id: str, user=Depends(get_current_user)):
     print(f"[apply_pack] CV PDF requested job={job_id}", flush=True)
     job, parsed = await _get_cached_apply_pack_content(job_id, user)
     try:
-        pdf_bytes, overflow, _dropped, pdf_warns = compile_apply_pack_cv_pdf(
-            user, job, parsed
+        pdf_bytes, overflow, _dropped, pdf_warns = await asyncio.to_thread(
+            compile_apply_pack_cv_pdf, user, job, parsed
         )
     except PdfCompileError as exc:
         print(f"[apply_pack] CV PDF compile failed job={job_id}: {exc}", flush=True)
@@ -1383,7 +1383,9 @@ async def get_apply_pack_cover_letter_pdf(job_id: str, user=Depends(get_current_
     print(f"[apply_pack] cover-letter PDF requested job={job_id}", flush=True)
     job, parsed = await _get_cached_apply_pack_content(job_id, user)
     try:
-        pdf_bytes = compile_apply_pack_cover_letter_pdf(user, job, parsed)
+        pdf_bytes = await asyncio.to_thread(
+            compile_apply_pack_cover_letter_pdf, user, job, parsed
+        )
     except PdfCompileError as exc:
         print(
             f"[apply_pack] cover-letter PDF compile failed job={job_id}: {exc}",

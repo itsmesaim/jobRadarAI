@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     #  App
     app_name: str = "JobRadar AI"
-    debug: bool = True
+    debug: bool = False
 
     #  MongoDB
     # Option A (dev): MONGO_URI=mongodb://localhost:27017
